@@ -183,7 +183,77 @@ abstract class MediaPlaylistTagWriter extends ExtTagWriter {
         };
     };
 
-    // SSAI / DATERANGE playlist tags
+    // SGAI DEFINE + SSAI / DATERANGE playlist tags
+
+    static final IExtTagWriter EXT_X_DEFINE = new MediaPlaylistTagWriter() {
+        private final Map<String, AttributeWriter<DefineData>> HANDLERS = new LinkedHashMap<String, AttributeWriter<DefineData>>();
+
+        {
+            HANDLERS.put(Constants.DEFINE_NAME, new AttributeWriter<DefineData>() {
+                @Override
+                public boolean containsAttribute(DefineData attributes) {
+                    return attributes.hasName();
+                }
+
+                @Override
+                public String write(DefineData attributes) throws ParseException {
+                    return WriteUtil.writeQuotedString(attributes.getName(), getTag());
+                }
+            });
+            HANDLERS.put(Constants.DEFINE_VALUE, new AttributeWriter<DefineData>() {
+                @Override
+                public boolean containsAttribute(DefineData attributes) {
+                    return attributes.hasValue();
+                }
+
+                @Override
+                public String write(DefineData attributes) throws ParseException {
+                    return WriteUtil.writeQuotedString(attributes.getValue(), getTag());
+                }
+            });
+            HANDLERS.put(Constants.DEFINE_IMPORT, new AttributeWriter<DefineData>() {
+                @Override
+                public boolean containsAttribute(DefineData attributes) {
+                    return attributes.hasImportName();
+                }
+
+                @Override
+                public String write(DefineData attributes) throws ParseException {
+                    return WriteUtil.writeQuotedString(attributes.getImportName(), getTag());
+                }
+            });
+            HANDLERS.put(Constants.DEFINE_QUERYPARAM, new AttributeWriter<DefineData>() {
+                @Override
+                public boolean containsAttribute(DefineData attributes) {
+                    return attributes.hasQueryParam();
+                }
+
+                @Override
+                public String write(DefineData attributes) throws ParseException {
+                    return WriteUtil.writeQuotedString(attributes.getQueryParam(), getTag());
+                }
+            });
+        }
+
+        @Override
+        public String getTag() {
+            return Constants.EXT_X_DEFINE_TAG;
+        }
+
+        @Override
+        boolean hasData() {
+            return true;
+        }
+
+        @Override
+        public void doWrite(TagWriter tagWriter, Playlist playlist, MediaPlaylist mediaPlaylist) throws IOException, ParseException {
+            if (mediaPlaylist.hasDefines()) {
+                for (DefineData defineData : mediaPlaylist.getDefines()) {
+                    writeAttributes(tagWriter, defineData, HANDLERS);
+                }
+            }
+        }
+    };
 
     static final IExtTagWriter EXT_X_DATERANGE = new MediaPlaylistTagWriter() {
         private final Map<String, AttributeWriter<DateRangeData>> HANDLERS = new LinkedHashMap<String, AttributeWriter<DateRangeData>>();

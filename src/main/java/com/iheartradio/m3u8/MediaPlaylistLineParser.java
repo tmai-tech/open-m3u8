@@ -688,4 +688,68 @@ class MediaPlaylistLineParser implements LineParser {
             state.getMedia().dateRanges.add(dateRangeData);
         }
     };
+
+    static final IExtTagParser EXT_X_DEFINE = new IExtTagParser() {
+        private final LineParser lineParser = new MediaPlaylistLineParser(this);
+        private final Map<String, AttributeParser<DefineData.Builder>> HANDLERS = new HashMap<>();
+
+        {
+            HANDLERS.put(Constants.DEFINE_NAME, new AttributeParser<DefineData.Builder>() {
+                @Override
+                public void parse(Attribute attribute, DefineData.Builder builder, ParseState state) throws ParseException {
+                    builder.withName(ParseUtil.parseQuotedString(attribute.value, getTag()));
+                }
+            });
+            HANDLERS.put(Constants.DEFINE_VALUE, new AttributeParser<DefineData.Builder>() {
+                @Override
+                public void parse(Attribute attribute, DefineData.Builder builder, ParseState state) throws ParseException {
+                    builder.withValue(ParseUtil.parseQuotedString(attribute.value, getTag()));
+                }
+            });
+            HANDLERS.put(Constants.DEFINE_IMPORT, new AttributeParser<DefineData.Builder>() {
+                @Override
+                public void parse(Attribute attribute, DefineData.Builder builder, ParseState state) throws ParseException {
+                    builder.withImportName(ParseUtil.parseQuotedString(attribute.value, getTag()));
+                }
+            });
+            HANDLERS.put(Constants.DEFINE_QUERYPARAM, new AttributeParser<DefineData.Builder>() {
+                @Override
+                public void parse(Attribute attribute, DefineData.Builder builder, ParseState state) throws ParseException {
+                    builder.withQueryParam(ParseUtil.parseQuotedString(attribute.value, getTag()));
+                }
+            });
+        }
+
+        @Override
+        public String getTag() {
+            return Constants.EXT_X_DEFINE_TAG;
+        }
+
+        @Override
+        public boolean hasData() {
+            return true;
+        }
+
+        @Override
+        public void parse(String line, ParseState state) throws ParseException {
+            lineParser.parse(line, state);
+            final DefineData.Builder builder = new DefineData.Builder();
+            ParseUtil.parseAttributes(line, builder, state, HANDLERS, getTag());
+            final DefineData defineData = builder.build();
+
+            final boolean hasNameValue = defineData.hasName() && defineData.hasValue();
+            final boolean hasImport = defineData.hasImportName();
+            final boolean hasQueryParam = defineData.hasQueryParam();
+            final int modes = (hasNameValue ? 1 : 0) + (hasImport ? 1 : 0) + (hasQueryParam ? 1 : 0);
+
+            if (modes != 1) {
+                throw ParseException.create(ParseExceptionType.INVALID_ATTRIBUTE_NAME, getTag(), line);
+            }
+            if (defineData.hasName() ^ defineData.hasValue()) {
+                throw ParseException.create(ParseExceptionType.MISSING_ATTRIBUTE_NAME, getTag(), line);
+            }
+
+            state.getMedia().defines.add(defineData);
+        }
+    };
 }
