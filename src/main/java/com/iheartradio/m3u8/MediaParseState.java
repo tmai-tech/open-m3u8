@@ -26,6 +26,7 @@ class MediaParseState implements PlaylistParseState<MediaPlaylist> {
     public boolean hasCueIn;
     public CueOutContData cueOutCont;
     public final List<DateRangeData> dateRanges = new ArrayList<>();
+    public final List<DefineData> defines = new ArrayList<>();
 
     @Override
     public PlaylistParseState<MediaPlaylist> setUnknownTags(final List<String> unknownTags) {
@@ -45,6 +46,7 @@ class MediaParseState implements PlaylistParseState<MediaPlaylist> {
                 .withTracks(tracks)
                 .withUnknownTags(mUnknownTags)
                 .withDateRanges(dateRanges)
+                .withDefines(defines)
                 .withTargetDuration(targetDuration == null ? maximumDuration(tracks, 0) : targetDuration)
                 .withIsIframesOnly(isIframesOnly)
                 .withStartData(mStartData)

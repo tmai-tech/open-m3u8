@@ -1,0 +1,15 @@
+#EXTM3U
+#EXT-X-VERSION:11
+#EXT-X-TARGETDURATION:10
+#EXT-X-MEDIA-SEQUENCE:0
+#EXT-X-DEFINE:NAME="userId",VALUE="user-12345"
+#EXT-X-DEFINE:NAME="sessionToken",VALUE="tok-abc-xyz"
+#EXT-X-DATERANGE:ID="adbreak-1",CLASS="com.apple.hls.interstitial",START-DATE=2024-06-15T12:00:00.000Z,DURATION=30.0,X-ASSET-URI="https://ads.example.com/vast?user={$userId}&session={$sessionToken}",X-RESTRICTIONS="SKIP,JUMP",X-RESUME-OFFSET=0.0
+#EXTINF:10.0,
+http://example.com/content/seg0.ts
+#EXTINF:10.0,
+http://example.com/content/seg1.ts
+#EXT-X-DISCONTINUITY
+#EXTINF:10.0,
+http://example.com/content/seg2.ts
+#EXT-X-ENDLIST

@@ -72,9 +72,16 @@ final class Constants {
     public static final String EXT_X_I_FRAMES_ONLY_TAG = "EXT-X-I-FRAMES-ONLY";
     public static final String EXT_X_DISCONTINUITY_TAG = "EXT-X-DISCONTINUITY";
     public static final String EXT_X_DATERANGE_TAG = "EXT-X-DATERANGE";
+    public static final String EXT_X_DEFINE_TAG = "EXT-X-DEFINE";
     public static final String EXT_X_CUE_OUT_TAG = "EXT-X-CUE-OUT";
     public static final String EXT_X_CUE_IN_TAG = "EXT-X-CUE-IN";
     public static final String EXT_X_CUE_OUT_CONT_TAG = "EXT-X-CUE-OUT-CONT";
+
+    // EXT-X-DEFINE attributes
+    public static final String DEFINE_NAME = "NAME";
+    public static final String DEFINE_VALUE = "VALUE";
+    public static final String DEFINE_IMPORT = "IMPORT";
+    public static final String DEFINE_QUERYPARAM = "QUERYPARAM";
 
     // EXT-X-DATERANGE attributes (SSAI / SGAI)
     public static final String ID = "ID";
@@ -139,7 +146,9 @@ final class Constants {
 
     public static final int[] UTF_8_BOM_BYTES = {0xEF, 0xBB, 0xBF};
     public static final char UNICODE_BOM = '\uFEFF';
+    /** HLS version 11 enables interstitial / SGAI support. */
     public static final int MAX_COMPATIBILITY_VERSION = 11;
+    public static final int SGAI_MIN_COMPATIBILITY_VERSION = 11;
     public static final int IV_SIZE = 16;
     //Against the spec but used by Adobe
     public static final int IV_SIZE_ALTERNATIVE = 32;
