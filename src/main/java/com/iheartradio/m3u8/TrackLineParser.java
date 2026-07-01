@@ -20,6 +20,9 @@ class TrackLineParser implements LineParser {
                 .withDiscontinuity(mediaState.hasDiscontinuity)
                 .withMapInfo(mediaState.mapInfo)
                 .withByteRange(mediaState.byteRange)
+                .withCueOut(mediaState.cueOut)
+                .withCueIn(mediaState.hasCueIn)
+                .withCueOutCont(mediaState.cueOutCont)
                 .build());
 
         mediaState.trackInfo = null;
@@ -27,5 +30,8 @@ class TrackLineParser implements LineParser {
         mediaState.hasDiscontinuity = false;
         mediaState.mapInfo = null;
         mediaState.byteRange = null;
+        mediaState.cueOut = null;
+        mediaState.hasCueIn = false;
+        mediaState.cueOutCont = null;
     }
 }

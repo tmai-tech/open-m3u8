@@ -183,6 +183,166 @@ abstract class MediaPlaylistTagWriter extends ExtTagWriter {
         };
     };
 
+    // SSAI / DATERANGE playlist tags
+
+    static final IExtTagWriter EXT_X_DATERANGE = new MediaPlaylistTagWriter() {
+        private final Map<String, AttributeWriter<DateRangeData>> HANDLERS = new LinkedHashMap<String, AttributeWriter<DateRangeData>>();
+
+        {
+            HANDLERS.put(Constants.ID, new AttributeWriter<DateRangeData>() {
+                @Override
+                public boolean containsAttribute(DateRangeData attributes) {
+                    return attributes.getId() != null;
+                }
+
+                @Override
+                public String write(DateRangeData attributes) throws ParseException {
+                    return WriteUtil.writeQuotedString(attributes.getId(), getTag());
+                }
+            });
+            HANDLERS.put(Constants.CLASS, new AttributeWriter<DateRangeData>() {
+                @Override
+                public boolean containsAttribute(DateRangeData attributes) {
+                    return attributes.hasClassAttribute();
+                }
+
+                @Override
+                public String write(DateRangeData attributes) throws ParseException {
+                    return WriteUtil.writeQuotedString(attributes.getClassAttribute(), getTag());
+                }
+            });
+            HANDLERS.put(Constants.START_DATE, new AttributeWriter<DateRangeData>() {
+                @Override
+                public boolean containsAttribute(DateRangeData attributes) {
+                    return attributes.hasStartDate();
+                }
+
+                @Override
+                public String write(DateRangeData attributes) {
+                    return attributes.getStartDate();
+                }
+            });
+            HANDLERS.put(Constants.END_DATE, new AttributeWriter<DateRangeData>() {
+                @Override
+                public boolean containsAttribute(DateRangeData attributes) {
+                    return attributes.hasEndDate();
+                }
+
+                @Override
+                public String write(DateRangeData attributes) {
+                    return attributes.getEndDate();
+                }
+            });
+            HANDLERS.put(Constants.DURATION, new AttributeWriter<DateRangeData>() {
+                @Override
+                public boolean containsAttribute(DateRangeData attributes) {
+                    return attributes.hasDuration();
+                }
+
+                @Override
+                public String write(DateRangeData attributes) {
+                    return Float.toString(attributes.getDuration());
+                }
+            });
+            HANDLERS.put(Constants.PLANNED_DURATION, new AttributeWriter<DateRangeData>() {
+                @Override
+                public boolean containsAttribute(DateRangeData attributes) {
+                    return attributes.hasPlannedDuration();
+                }
+
+                @Override
+                public String write(DateRangeData attributes) {
+                    return Float.toString(attributes.getPlannedDuration());
+                }
+            });
+            HANDLERS.put(Constants.SCTE35_OUT, new AttributeWriter<DateRangeData>() {
+                @Override
+                public boolean containsAttribute(DateRangeData attributes) {
+                    return attributes.hasScte35Out();
+                }
+
+                @Override
+                public String write(DateRangeData attributes) throws ParseException {
+                    return WriteUtil.writeQuotedString(attributes.getScte35Out(), getTag());
+                }
+            });
+            HANDLERS.put(Constants.SCTE35_IN, new AttributeWriter<DateRangeData>() {
+                @Override
+                public boolean containsAttribute(DateRangeData attributes) {
+                    return attributes.hasScte35In();
+                }
+
+                @Override
+                public String write(DateRangeData attributes) throws ParseException {
+                    return WriteUtil.writeQuotedString(attributes.getScte35In(), getTag());
+                }
+            });
+            HANDLERS.put(Constants.SCTE35_CMD, new AttributeWriter<DateRangeData>() {
+                @Override
+                public boolean containsAttribute(DateRangeData attributes) {
+                    return attributes.hasScte35Cmd();
+                }
+
+                @Override
+                public String write(DateRangeData attributes) throws ParseException {
+                    return WriteUtil.writeQuotedString(attributes.getScte35Cmd(), getTag());
+                }
+            });
+            HANDLERS.put(Constants.X_ASSET_URI, new AttributeWriter<DateRangeData>() {
+                @Override
+                public boolean containsAttribute(DateRangeData attributes) {
+                    return attributes.hasAssetUri();
+                }
+
+                @Override
+                public String write(DateRangeData attributes) throws ParseException {
+                    return WriteUtil.writeQuotedString(attributes.getAssetUri(), getTag());
+                }
+            });
+            HANDLERS.put(Constants.X_RESTRICTIONS, new AttributeWriter<DateRangeData>() {
+                @Override
+                public boolean containsAttribute(DateRangeData attributes) {
+                    return attributes.hasRestrictions();
+                }
+
+                @Override
+                public String write(DateRangeData attributes) throws ParseException {
+                    return WriteUtil.writeQuotedString(attributes.getRestrictions(), getTag());
+                }
+            });
+            HANDLERS.put(Constants.X_RESUME_OFFSET, new AttributeWriter<DateRangeData>() {
+                @Override
+                public boolean containsAttribute(DateRangeData attributes) {
+                    return attributes.hasResumeOffset();
+                }
+
+                @Override
+                public String write(DateRangeData attributes) {
+                    return Float.toString(attributes.getResumeOffset());
+                }
+            });
+        }
+
+        @Override
+        public String getTag() {
+            return Constants.EXT_X_DATERANGE_TAG;
+        }
+
+        @Override
+        boolean hasData() {
+            return true;
+        }
+
+        @Override
+        public void doWrite(TagWriter tagWriter, Playlist playlist, MediaPlaylist mediaPlaylist) throws IOException, ParseException {
+            if (mediaPlaylist.hasDateRanges()) {
+                for (DateRangeData dateRangeData : mediaPlaylist.getDateRanges()) {
+                    writeAttributes(tagWriter, dateRangeData, HANDLERS);
+                }
+            }
+        }
+    };
+
     // media segment tags
 
     static final SectionWriter MEDIA_SEGMENTS = new SectionWriter() {
@@ -193,6 +353,15 @@ abstract class MediaPlaylistTagWriter extends ExtTagWriter {
                 MapInfoWriter mapInfoWriter = new MapInfoWriter();
 
                 for (TrackData trackData : playlist.getMediaPlaylist().getTracks()) {
+                    if (trackData.hasCueOut()) {
+                        writeCueOut(tagWriter, trackData.getCueOut());
+                    }
+                    if (trackData.hasCueOutCont()) {
+                        writeCueOutCont(tagWriter, trackData.getCueOutCont());
+                    }
+                    if (trackData.hasCueIn()) {
+                        tagWriter.writeTag(Constants.EXT_X_CUE_IN_TAG);
+                    }
                     if (trackData.hasDiscontinuity()) {
                         tagWriter.writeTag(Constants.EXT_X_DISCONTINUITY_TAG);
                     }
@@ -210,6 +379,41 @@ abstract class MediaPlaylistTagWriter extends ExtTagWriter {
             }
         }
     };
+
+    private static void writeCueOut(TagWriter tagWriter, CueOutData cueOut) throws IOException {
+        if (cueOut.hasDuration()) {
+            tagWriter.writeTag(Constants.EXT_X_CUE_OUT_TAG, Float.toString(cueOut.getDuration()));
+        } else {
+            tagWriter.writeTag(Constants.EXT_X_CUE_OUT_TAG);
+        }
+    }
+
+    private static void writeCueOutCont(TagWriter tagWriter, CueOutContData cont) throws IOException, ParseException {
+        if (cont.hasElapsedTime() && cont.hasDuration() && !cont.hasScte35()) {
+            tagWriter.writeTag(Constants.EXT_X_CUE_OUT_CONT_TAG,
+                    Float.toString(cont.getElapsedTime()) + "/" + Float.toString(cont.getDuration()));
+            return;
+        }
+
+        final StringBuilder sb = new StringBuilder();
+        if (cont.hasElapsedTime()) {
+            sb.append(Constants.ELAPSED_TIME).append(Constants.ATTRIBUTE_SEPARATOR)
+                    .append(Float.toString(cont.getElapsedTime())).append(Constants.ATTRIBUTE_LIST_SEPARATOR);
+        }
+        if (cont.hasDuration()) {
+            sb.append(Constants.CUE_DURATION_ATTR).append(Constants.ATTRIBUTE_SEPARATOR)
+                    .append(Float.toString(cont.getDuration())).append(Constants.ATTRIBUTE_LIST_SEPARATOR);
+        }
+        if (cont.hasScte35()) {
+            sb.append(Constants.SCTE35).append(Constants.ATTRIBUTE_SEPARATOR)
+                    .append(WriteUtil.writeQuotedString(cont.getScte35(), Constants.EXT_X_CUE_OUT_CONT_TAG))
+                    .append(Constants.ATTRIBUTE_LIST_SEPARATOR);
+        }
+        if (sb.length() > 0) {
+            sb.deleteCharAt(sb.length() - 1);
+        }
+        tagWriter.writeTag(Constants.EXT_X_CUE_OUT_CONT_TAG, sb.toString());
+    }
 
     private static void writeExtinf(TagWriter tagWriter, Playlist playlist, TrackData trackData) throws IOException {
         final StringBuilder builder = new StringBuilder();

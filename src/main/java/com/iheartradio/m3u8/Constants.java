@@ -71,6 +71,30 @@ final class Constants {
     public static final String EXT_X_ENDLIST_TAG = "EXT-X-ENDLIST";
     public static final String EXT_X_I_FRAMES_ONLY_TAG = "EXT-X-I-FRAMES-ONLY";
     public static final String EXT_X_DISCONTINUITY_TAG = "EXT-X-DISCONTINUITY";
+    public static final String EXT_X_DATERANGE_TAG = "EXT-X-DATERANGE";
+    public static final String EXT_X_CUE_OUT_TAG = "EXT-X-CUE-OUT";
+    public static final String EXT_X_CUE_IN_TAG = "EXT-X-CUE-IN";
+    public static final String EXT_X_CUE_OUT_CONT_TAG = "EXT-X-CUE-OUT-CONT";
+
+    // EXT-X-DATERANGE attributes (SSAI / SGAI)
+    public static final String ID = "ID";
+    public static final String CLASS = "CLASS";
+    public static final String START_DATE = "START-DATE";
+    public static final String END_DATE = "END-DATE";
+    public static final String DURATION = "DURATION";
+    public static final String PLANNED_DURATION = "PLANNED-DURATION";
+    public static final String SCTE35_OUT = "SCTE35-OUT";
+    public static final String SCTE35_IN = "SCTE35-IN";
+    public static final String SCTE35_CMD = "SCTE35-CMD";
+    public static final String X_ASSET_URI = "X-ASSET-URI";
+    public static final String X_RESTRICTIONS = "X-RESTRICTIONS";
+    public static final String X_RESUME_OFFSET = "X-RESUME-OFFSET";
+    public static final String INTERSTITIAL_CLASS = "com.apple.hls.interstitial";
+
+    // EXT-X-CUE-OUT-CONT attributes
+    public static final String ELAPSED_TIME = "ElapsedTime";
+    public static final String CUE_DURATION_ATTR = "Duration";
+    public static final String SCTE35 = "SCTE35";
 
     // media segment tags
 
@@ -106,12 +130,16 @@ final class Constants {
     public static final Pattern EXT_X_DISCONTINUITY_PATTERN = Pattern.compile("^#" + EXT_X_DISCONTINUITY_TAG + "$");
     public static final Pattern EXT_X_BYTERANGE_PATTERN = Pattern.compile("^#" + EXT_X_BYTERANGE_TAG + EXT_TAG_END + BYTERANGE_REGEX + "$");
     public static final Pattern EXT_X_BYTERANGE_VALUE_PATTERN = Pattern.compile("^" + BYTERANGE_REGEX + "$");
+    public static final Pattern DATE_TIME_PATTERN = Pattern.compile("^" + TIMESTAMP_REGEX + "$");
+    public static final Pattern EXT_X_CUE_OUT_PATTERN = Pattern.compile("^#" + EXT_X_CUE_OUT_TAG + "(?:" + EXT_TAG_END + "(" + SIGNED_FLOAT_REGEX + "))?$");
+    public static final Pattern EXT_X_CUE_IN_PATTERN = Pattern.compile("^#" + EXT_X_CUE_IN_TAG + "$");
+    public static final Pattern EXT_X_CUE_OUT_CONT_SLASH_PATTERN = Pattern.compile("^#" + EXT_X_CUE_OUT_CONT_TAG + EXT_TAG_END + "(" + SIGNED_FLOAT_REGEX + ")/(" + SIGNED_FLOAT_REGEX + ")$");
 
     // other
 
     public static final int[] UTF_8_BOM_BYTES = {0xEF, 0xBB, 0xBF};
     public static final char UNICODE_BOM = '\uFEFF';
-    public static final int MAX_COMPATIBILITY_VERSION = 5;
+    public static final int MAX_COMPATIBILITY_VERSION = 11;
     public static final int IV_SIZE = 16;
     //Against the spec but used by Adobe
     public static final int IV_SIZE_ALTERNATIVE = 32;

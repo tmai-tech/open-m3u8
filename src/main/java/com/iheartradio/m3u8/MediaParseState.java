@@ -22,6 +22,10 @@ class MediaParseState implements PlaylistParseState<MediaPlaylist> {
     public boolean hasDiscontinuity;
     public MapInfo mapInfo;
     public ByteRange byteRange;
+    public CueOutData cueOut;
+    public boolean hasCueIn;
+    public CueOutContData cueOutCont;
+    public final List<DateRangeData> dateRanges = new ArrayList<>();
 
     @Override
     public PlaylistParseState<MediaPlaylist> setUnknownTags(final List<String> unknownTags) {
@@ -40,6 +44,7 @@ class MediaParseState implements PlaylistParseState<MediaPlaylist> {
         return new MediaPlaylist.Builder()
                 .withTracks(tracks)
                 .withUnknownTags(mUnknownTags)
+                .withDateRanges(dateRanges)
                 .withTargetDuration(targetDuration == null ? maximumDuration(tracks, 0) : targetDuration)
                 .withIsIframesOnly(isIframesOnly)
                 .withStartData(mStartData)
