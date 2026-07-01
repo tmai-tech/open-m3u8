@@ -6,6 +6,7 @@ import java.util.Objects;
 public class MediaPlaylist {
     private final List<TrackData> mTracks;
     private final List<String> mUnknownTags;
+    private final List<DateRangeData> mDateRanges;
     private final int mTargetDuration;
     private final int mMediaSequenceNumber;
     private final boolean mIsIframesOnly;
@@ -13,9 +14,10 @@ public class MediaPlaylist {
     private final PlaylistType mPlaylistType;
     private final StartData mStartData;
 
-    private MediaPlaylist(List<TrackData> tracks, List<String> unknownTags, int targetDuration, StartData startData, int mediaSequenceNumber, boolean isIframesOnly, boolean isOngoing, PlaylistType playlistType) {
+    private MediaPlaylist(List<TrackData> tracks, List<String> unknownTags, List<DateRangeData> dateRanges, int targetDuration, StartData startData, int mediaSequenceNumber, boolean isIframesOnly, boolean isOngoing, PlaylistType playlistType) {
         mTracks = DataUtil.emptyOrUnmodifiable(tracks);
         mUnknownTags = DataUtil.emptyOrUnmodifiable(unknownTags);
+        mDateRanges = DataUtil.emptyOrUnmodifiable(dateRanges);
         mTargetDuration = targetDuration;
         mMediaSequenceNumber = mediaSequenceNumber;
         mIsIframesOnly = isIframesOnly;
@@ -55,6 +57,14 @@ public class MediaPlaylist {
     public List<String> getUnknownTags() {
         return mUnknownTags;
     }
+
+    public boolean hasDateRanges() {
+        return !mDateRanges.isEmpty();
+    }
+
+    public List<DateRangeData> getDateRanges() {
+        return mDateRanges;
+    }
     
     public StartData getStartData() {
         return mStartData;
@@ -89,7 +99,7 @@ public class MediaPlaylist {
     }
 
     public Builder buildUpon() {
-        return new Builder(mTracks, mUnknownTags, mTargetDuration, mMediaSequenceNumber, mIsIframesOnly, mIsOngoing, mPlaylistType, mStartData);
+        return new Builder(mTracks, mUnknownTags, mDateRanges, mTargetDuration, mMediaSequenceNumber, mIsIframesOnly, mIsOngoing, mPlaylistType, mStartData);
     }
     
     @Override
@@ -97,6 +107,7 @@ public class MediaPlaylist {
         return Objects.hash(
                 mTracks,
                 mUnknownTags,
+                mDateRanges,
                 mTargetDuration,
                 mMediaSequenceNumber,
                 mIsIframesOnly,
@@ -115,6 +126,7 @@ public class MediaPlaylist {
 
         return Objects.equals(mTracks, other.mTracks) &&
                Objects.equals(mUnknownTags, other.mUnknownTags) &&
+               Objects.equals(mDateRanges, other.mDateRanges) &&
                mTargetDuration == other.mTargetDuration &&
                mMediaSequenceNumber == other.mMediaSequenceNumber &&
                mIsIframesOnly == other.mIsIframesOnly &&
@@ -129,6 +141,7 @@ public class MediaPlaylist {
                 .append("(MediaPlaylist")
                 .append(" mTracks=").append(mTracks)
                 .append(" mUnknownTags=").append(mUnknownTags)
+                .append(" mDateRanges=").append(mDateRanges)
                 .append(" mTargetDuration=").append(mTargetDuration)
                 .append(" mMediaSequenceNumber=").append(mMediaSequenceNumber)
                 .append(" mIsIframesOnly=").append(mIsIframesOnly)
@@ -142,6 +155,7 @@ public class MediaPlaylist {
     public static class Builder {
         private List<TrackData> mTracks;
         private List<String> mUnknownTags;
+        private List<DateRangeData> mDateRanges;
         private int mTargetDuration;
         private int mMediaSequenceNumber;
         private boolean mIsIframesOnly;
@@ -152,9 +166,10 @@ public class MediaPlaylist {
         public Builder() {
         }
 
-        private Builder(List<TrackData> tracks, List<String> unknownTags, int targetDuration, int mediaSequenceNumber, boolean isIframesOnly, boolean isOngoing, PlaylistType playlistType, StartData startData) {
+        private Builder(List<TrackData> tracks, List<String> unknownTags, List<DateRangeData> dateRanges, int targetDuration, int mediaSequenceNumber, boolean isIframesOnly, boolean isOngoing, PlaylistType playlistType, StartData startData) {
             mTracks = tracks;
             mUnknownTags = unknownTags;
+            mDateRanges = dateRanges;
             mTargetDuration = targetDuration;
             mMediaSequenceNumber = mediaSequenceNumber;
             mIsIframesOnly = isIframesOnly;
@@ -170,6 +185,11 @@ public class MediaPlaylist {
         
         public Builder withUnknownTags(List<String> unknownTags) {
             mUnknownTags = unknownTags;
+            return this;
+        }
+
+        public Builder withDateRanges(List<DateRangeData> dateRanges) {
+            mDateRanges = dateRanges;
             return this;
         }
 
@@ -204,7 +224,7 @@ public class MediaPlaylist {
         }
 
         public MediaPlaylist build() {
-            return new MediaPlaylist(mTracks, mUnknownTags, mTargetDuration, mStartData, mMediaSequenceNumber, mIsIframesOnly, mIsOngoing, mPlaylistType);
+            return new MediaPlaylist(mTracks, mUnknownTags, mDateRanges, mTargetDuration, mStartData, mMediaSequenceNumber, mIsIframesOnly, mIsOngoing, mPlaylistType);
         }
     }
 }
