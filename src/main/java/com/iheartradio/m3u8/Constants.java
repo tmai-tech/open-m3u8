@@ -76,6 +76,23 @@ final class Constants {
     public static final String EXT_X_CUE_OUT_TAG = "EXT-X-CUE-OUT";
     public static final String EXT_X_CUE_IN_TAG = "EXT-X-CUE-IN";
     public static final String EXT_X_CUE_OUT_CONT_TAG = "EXT-X-CUE-OUT-CONT";
+    public static final String EXT_X_SERVER_CONTROL_TAG = "EXT-X-SERVER-CONTROL";
+    public static final String EXT_X_SKIP_TAG = "EXT-X-SKIP";
+
+    // EXT-X-SERVER-CONTROL attributes (Playlist Delta Updates / LL-HLS)
+    public static final String CAN_SKIP_UNTIL = "CAN-SKIP-UNTIL";
+    public static final String CAN_SKIP_DATERANGES = "CAN-SKIP-DATERANGES";
+    public static final String HOLD_BACK = "HOLD-BACK";
+    public static final String PART_HOLD_BACK = "PART-HOLD-BACK";
+    public static final String CAN_BLOCK_RELOAD = "CAN-BLOCK-RELOAD";
+
+    // EXT-X-SKIP attributes
+    public static final String SKIPPED_SEGMENTS = "SKIPPED-SEGMENTS";
+    public static final String RECENTLY_REMOVED_DATERANGES = "RECENTLY-REMOVED-DATERANGES";
+    public static final String DATERANGE_ID_SEPARATOR = "\t";
+    public static final String HLS_SKIP_YES = "YES";
+    public static final String HLS_SKIP_V2 = "v2";
+    public static final String HLS_SKIP_QUERY_PARAM = "_HLS_skip";
 
     // EXT-X-DEFINE attributes
     public static final String DEFINE_NAME = "NAME";
@@ -149,6 +166,12 @@ final class Constants {
     /** HLS version 11 enables interstitial / SGAI support. */
     public static final int MAX_COMPATIBILITY_VERSION = 11;
     public static final int SGAI_MIN_COMPATIBILITY_VERSION = 11;
+    /** EXT-X-SKIP requires protocol version 9 or higher. */
+    public static final int DELTA_UPDATE_MIN_COMPATIBILITY_VERSION = 9;
+    /** EXT-X-SKIP that replaces EXT-X-DATERANGE tags requires version 10+. */
+    public static final int DELTA_UPDATE_DATERANGE_MIN_COMPATIBILITY_VERSION = 10;
+    /** Skip Boundary must be at least this many Target Durations. */
+    public static final int MIN_SKIP_BOUNDARY_TARGET_DURATIONS = 6;
     public static final int IV_SIZE = 16;
     //Against the spec but used by Adobe
     public static final int IV_SIZE_ALTERNATIVE = 32;

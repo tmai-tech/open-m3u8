@@ -129,4 +129,29 @@ public enum PlaylistError {
      * with a sub-range of the same media resource.
      */
     BYTERANGE_WITH_UNDEFINED_OFFSET,
+
+    /**
+     * EXT-X-SKIP requires a non-negative SKIPPED-SEGMENTS attribute.
+     */
+    SKIP_WITHOUT_SKIPPED_SEGMENTS,
+
+    /**
+     * CAN-SKIP-DATERANGES requires CAN-SKIP-UNTIL on EXT-X-SERVER-CONTROL.
+     */
+    SERVER_CONTROL_SKIP_DATERANGES_WITHOUT_CAN_SKIP_UNTIL,
+
+    /**
+     * CAN-SKIP-UNTIL must be at least six times the Target Duration.
+     */
+    SERVER_CONTROL_CAN_SKIP_UNTIL_TOO_SMALL,
+
+    /**
+     * merge() was called with a playlist that is not a delta update (no EXT-X-SKIP).
+     */
+    DELTA_UPDATE_WITHOUT_SKIP,
+
+    /**
+     * Client cannot recover all skipped Media Segments from the previous playlist.
+     */
+    DELTA_UPDATE_MISSING_SEGMENTS,
 }

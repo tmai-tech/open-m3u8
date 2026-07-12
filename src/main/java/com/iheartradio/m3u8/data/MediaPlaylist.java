@@ -14,8 +14,10 @@ public class MediaPlaylist {
     private final boolean mIsOngoing;
     private final PlaylistType mPlaylistType;
     private final StartData mStartData;
+    private final ServerControlData mServerControlData;
+    private final SkipData mSkipData;
 
-    private MediaPlaylist(List<TrackData> tracks, List<String> unknownTags, List<DateRangeData> dateRanges, List<DefineData> defines, int targetDuration, StartData startData, int mediaSequenceNumber, boolean isIframesOnly, boolean isOngoing, PlaylistType playlistType) {
+    private MediaPlaylist(List<TrackData> tracks, List<String> unknownTags, List<DateRangeData> dateRanges, List<DefineData> defines, int targetDuration, StartData startData, int mediaSequenceNumber, boolean isIframesOnly, boolean isOngoing, PlaylistType playlistType, ServerControlData serverControlData, SkipData skipData) {
         mTracks = DataUtil.emptyOrUnmodifiable(tracks);
         mUnknownTags = DataUtil.emptyOrUnmodifiable(unknownTags);
         mDateRanges = DataUtil.emptyOrUnmodifiable(dateRanges);
@@ -26,6 +28,8 @@ public class MediaPlaylist {
         mIsOngoing = isOngoing;
         mStartData = startData;
         mPlaylistType = playlistType;
+        mServerControlData = serverControlData;
+        mSkipData = skipData;
     }
 
     public boolean hasTracks() {
@@ -92,6 +96,29 @@ public class MediaPlaylist {
         return mPlaylistType != null;
     }
 
+    public ServerControlData getServerControlData() {
+        return mServerControlData;
+    }
+
+    public boolean hasServerControlData() {
+        return mServerControlData != null;
+    }
+
+    public SkipData getSkipData() {
+        return mSkipData;
+    }
+
+    public boolean hasSkipData() {
+        return mSkipData != null;
+    }
+
+    /**
+     * @return true if this media playlist is a Playlist Delta Update (contains EXT-X-SKIP)
+     */
+    public boolean isDeltaUpdate() {
+        return mSkipData != null;
+    }
+
     public int getDiscontinuitySequenceNumber(final int segmentIndex) {
         if (segmentIndex < 0 || segmentIndex >= mTracks.size()) {
             throw new IndexOutOfBoundsException();
@@ -109,7 +136,7 @@ public class MediaPlaylist {
     }
 
     public Builder buildUpon() {
-        return new Builder(mTracks, mUnknownTags, mDateRanges, mDefines, mTargetDuration, mMediaSequenceNumber, mIsIframesOnly, mIsOngoing, mPlaylistType, mStartData);
+        return new Builder(mTracks, mUnknownTags, mDateRanges, mDefines, mTargetDuration, mMediaSequenceNumber, mIsIframesOnly, mIsOngoing, mPlaylistType, mStartData, mServerControlData, mSkipData);
     }
     
     @Override
@@ -124,7 +151,9 @@ public class MediaPlaylist {
                 mIsIframesOnly,
                 mIsOngoing,
                 mPlaylistType,
-                mStartData);
+                mStartData,
+                mServerControlData,
+                mSkipData);
     }
 
     @Override
@@ -144,7 +173,9 @@ public class MediaPlaylist {
                mIsIframesOnly == other.mIsIframesOnly &&
                mIsOngoing == other.mIsOngoing &&
                Objects.equals(mPlaylistType, other.mPlaylistType) &&
-               Objects.equals(mStartData, other.mStartData);
+               Objects.equals(mStartData, other.mStartData) &&
+               Objects.equals(mServerControlData, other.mServerControlData) &&
+               Objects.equals(mSkipData, other.mSkipData);
     }
 
     @Override
@@ -161,6 +192,8 @@ public class MediaPlaylist {
                 .append(" mIsOngoing=").append(mIsOngoing)
                 .append(" mPlaylistType=").append(mPlaylistType)
                 .append(" mStartData=").append(mStartData)
+                .append(" mServerControlData=").append(mServerControlData)
+                .append(" mSkipData=").append(mSkipData)
                 .append(")")
                 .toString();
     }
@@ -176,11 +209,13 @@ public class MediaPlaylist {
         private boolean mIsOngoing;
         private PlaylistType mPlaylistType;
         private StartData mStartData;
+        private ServerControlData mServerControlData;
+        private SkipData mSkipData;
 
         public Builder() {
         }
 
-        private Builder(List<TrackData> tracks, List<String> unknownTags, List<DateRangeData> dateRanges, List<DefineData> defines, int targetDuration, int mediaSequenceNumber, boolean isIframesOnly, boolean isOngoing, PlaylistType playlistType, StartData startData) {
+        private Builder(List<TrackData> tracks, List<String> unknownTags, List<DateRangeData> dateRanges, List<DefineData> defines, int targetDuration, int mediaSequenceNumber, boolean isIframesOnly, boolean isOngoing, PlaylistType playlistType, StartData startData, ServerControlData serverControlData, SkipData skipData) {
             mTracks = tracks;
             mUnknownTags = unknownTags;
             mDateRanges = dateRanges;
@@ -191,6 +226,8 @@ public class MediaPlaylist {
             mIsOngoing = isOngoing;
             mPlaylistType = playlistType;
             mStartData = startData;
+            mServerControlData = serverControlData;
+            mSkipData = skipData;
         }
 
         public Builder withTracks(List<TrackData> tracks) {
@@ -243,8 +280,18 @@ public class MediaPlaylist {
             return this;
         }
 
+        public Builder withServerControlData(ServerControlData serverControlData) {
+            mServerControlData = serverControlData;
+            return this;
+        }
+
+        public Builder withSkipData(SkipData skipData) {
+            mSkipData = skipData;
+            return this;
+        }
+
         public MediaPlaylist build() {
-            return new MediaPlaylist(mTracks, mUnknownTags, mDateRanges, mDefines, mTargetDuration, mStartData, mMediaSequenceNumber, mIsIframesOnly, mIsOngoing, mPlaylistType);
+            return new MediaPlaylist(mTracks, mUnknownTags, mDateRanges, mDefines, mTargetDuration, mStartData, mMediaSequenceNumber, mIsIframesOnly, mIsOngoing, mPlaylistType, mServerControlData, mSkipData);
         }
     }
 }

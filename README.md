@@ -34,7 +34,20 @@ writer.write(playlist);
 
 Build playlists with `Builder` / `buildUpon()` on `Playlist`, `MediaPlaylist`, `TrackData`, etc.
 
+## Playlist Delta Updates
+
+Parse/write `EXT-X-SERVER-CONTROL` and `EXT-X-SKIP`. Merge a delta refresh with a previous playlist:
+
+```java
+// Request only changes (client networking is out of scope)
+String deltaUri = PlaylistDeltaUtil.appendSkipDirective(playlistUri, /* skipDateRanges */ false);
+
+Playlist previous = /* last full media playlist */;
+Playlist delta = new PlaylistParser(deltaStream, Format.EXT_M3U, Encoding.UTF_8).parse();
+Playlist merged = PlaylistDeltaUtil.merge(previous, delta);
+```
+
 ## Docs
 
-- Spec: [draft-pantos-http-live-streaming-16](https://datatracker.ietf.org/doc/html/draft-pantos-http-live-streaming-16)
+- Spec: [draft-pantos-hls-rfc8216bis](https://datatracker.ietf.org/doc/html/draft-pantos-hls-rfc8216bis) (Playlist Delta Updates)
 - Issues / PRs welcome
