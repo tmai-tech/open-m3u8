@@ -752,4 +752,132 @@ class MediaPlaylistLineParser implements LineParser {
             state.getMedia().defines.add(defineData);
         }
     };
+
+    // Playlist Delta Updates (LL-HLS)
+
+    static final IExtTagParser EXT_X_SERVER_CONTROL = new IExtTagParser() {
+        private final LineParser lineParser = new MediaPlaylistLineParser(this);
+        private final Map<String, AttributeParser<ServerControlData.Builder>> HANDLERS = new HashMap<>();
+
+        {
+            HANDLERS.put(Constants.CAN_SKIP_UNTIL, new AttributeParser<ServerControlData.Builder>() {
+                @Override
+                public void parse(Attribute attribute, ServerControlData.Builder builder, ParseState state) throws ParseException {
+                    builder.withCanSkipUntil(ParseUtil.parseFloat(attribute.value, getTag()));
+                }
+            });
+            HANDLERS.put(Constants.CAN_SKIP_DATERANGES, new AttributeParser<ServerControlData.Builder>() {
+                @Override
+                public void parse(Attribute attribute, ServerControlData.Builder builder, ParseState state) throws ParseException {
+                    builder.withCanSkipDateranges(ParseUtil.parseYesNo(attribute, getTag()));
+                }
+            });
+            HANDLERS.put(Constants.HOLD_BACK, new AttributeParser<ServerControlData.Builder>() {
+                @Override
+                public void parse(Attribute attribute, ServerControlData.Builder builder, ParseState state) throws ParseException {
+                    builder.withHoldBack(ParseUtil.parseFloat(attribute.value, getTag()));
+                }
+            });
+            HANDLERS.put(Constants.PART_HOLD_BACK, new AttributeParser<ServerControlData.Builder>() {
+                @Override
+                public void parse(Attribute attribute, ServerControlData.Builder builder, ParseState state) throws ParseException {
+                    builder.withPartHoldBack(ParseUtil.parseFloat(attribute.value, getTag()));
+                }
+            });
+            HANDLERS.put(Constants.CAN_BLOCK_RELOAD, new AttributeParser<ServerControlData.Builder>() {
+                @Override
+                public void parse(Attribute attribute, ServerControlData.Builder builder, ParseState state) throws ParseException {
+                    builder.withCanBlockReload(ParseUtil.parseYesNo(attribute, getTag()));
+                }
+            });
+        }
+
+        @Override
+        public String getTag() {
+            return Constants.EXT_X_SERVER_CONTROL_TAG;
+        }
+
+        @Override
+        public boolean hasData() {
+            return true;
+        }
+
+        @Override
+        public void parse(String line, ParseState state) throws ParseException {
+            lineParser.parse(line, state);
+
+            if (state.getMedia().serverControlData != null) {
+                throw ParseException.create(ParseExceptionType.MULTIPLE_EXT_TAG_INSTANCES, getTag(), line);
+            }
+
+            final ServerControlData.Builder builder = new ServerControlData.Builder();
+            ParseUtil.parseAttributes(line, builder, state, HANDLERS, getTag());
+            final ServerControlData serverControlData = builder.build();
+
+            if (serverControlData.canSkipDateranges() && !serverControlData.hasCanSkipUntil()) {
+                throw ParseException.create(ParseExceptionType.MISSING_ATTRIBUTE_NAME, getTag(), line);
+            }
+
+            state.getMedia().serverControlData = serverControlData;
+        }
+    };
+
+    static final IExtTagParser EXT_X_SKIP = new IExtTagParser() {
+        private final LineParser lineParser = new MediaPlaylistLineParser(this);
+        private final Map<String, AttributeParser<SkipData.Builder>> HANDLERS = new HashMap<>();
+
+        {
+            HANDLERS.put(Constants.SKIPPED_SEGMENTS, new AttributeParser<SkipData.Builder>() {
+                @Override
+                public void parse(Attribute attribute, SkipData.Builder builder, ParseState state) throws ParseException {
+                    builder.withSkippedSegments(ParseUtil.parseInt(attribute.value, getTag()));
+                }
+            });
+            HANDLERS.put(Constants.RECENTLY_REMOVED_DATERANGES, new AttributeParser<SkipData.Builder>() {
+                @Override
+                public void parse(Attribute attribute, SkipData.Builder builder, ParseState state) throws ParseException {
+                    final String value = ParseUtil.parseQuotedString(attribute.value, getTag());
+                    if (value.isEmpty()) {
+                        builder.withRecentlyRemovedDateranges(new ArrayList<String>());
+                    } else {
+                        final String[] parts = value.split(Constants.DATERANGE_ID_SEPARATOR, -1);
+                        final List<String> ids = new ArrayList<String>();
+                        for (String part : parts) {
+                            ids.add(part);
+                        }
+                        builder.withRecentlyRemovedDateranges(ids);
+                    }
+                }
+            });
+        }
+
+        @Override
+        public String getTag() {
+            return Constants.EXT_X_SKIP_TAG;
+        }
+
+        @Override
+        public boolean hasData() {
+            return true;
+        }
+
+        @Override
+        public void parse(String line, ParseState state) throws ParseException {
+            lineParser.parse(line, state);
+
+            if (state.getMedia().skipData != null) {
+                throw ParseException.create(ParseExceptionType.MULTIPLE_EXT_TAG_INSTANCES, getTag(), line);
+            }
+
+            final SkipData.Builder builder = new SkipData.Builder();
+            ParseUtil.parseAttributes(line, builder, state, HANDLERS, getTag());
+            final SkipData skipData = builder.build();
+
+            if (skipData.getSkippedSegments() < 0) {
+                throw ParseException.create(ParseExceptionType.BAD_EXT_TAG_FORMAT, getTag(), line);
+            }
+
+            state.getMedia().skipData = skipData;
+        }
+    };
 }

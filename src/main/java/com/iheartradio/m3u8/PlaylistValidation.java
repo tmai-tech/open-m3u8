@@ -99,10 +99,38 @@ public class PlaylistValidation {
             addStartErrors(playlist.getStartData(), errors);
         }
 
+        if (playlist.hasServerControlData()) {
+            addServerControlErrors(playlist.getServerControlData(), playlist.getTargetDuration(), errors);
+        }
+
+        if (playlist.hasSkipData()) {
+            addSkipDataErrors(playlist.getSkipData(), errors);
+        }
+
         addByteRangeErrors(playlist.getTracks(), errors, parsingMode);
 
         for (TrackData trackData : playlist.getTracks()) {
             addTrackDataErrors(trackData, errors, isExtended, parsingMode);
+        }
+    }
+
+    private static void addServerControlErrors(com.iheartradio.m3u8.data.ServerControlData serverControl,
+                                               int targetDuration,
+                                               Set<PlaylistError> errors) {
+        if (serverControl.canSkipDateranges() && !serverControl.hasCanSkipUntil()) {
+            errors.add(PlaylistError.SERVER_CONTROL_SKIP_DATERANGES_WITHOUT_CAN_SKIP_UNTIL);
+        }
+        if (serverControl.hasCanSkipUntil() && targetDuration > 0) {
+            final float minSkipUntil = Constants.MIN_SKIP_BOUNDARY_TARGET_DURATIONS * targetDuration;
+            if (serverControl.getCanSkipUntil() < minSkipUntil) {
+                errors.add(PlaylistError.SERVER_CONTROL_CAN_SKIP_UNTIL_TOO_SMALL);
+            }
+        }
+    }
+
+    private static void addSkipDataErrors(com.iheartradio.m3u8.data.SkipData skipData, Set<PlaylistError> errors) {
+        if (skipData.getSkippedSegments() < 0) {
+            errors.add(PlaylistError.SKIP_WITHOUT_SKIPPED_SEGMENTS);
         }
     }
 

@@ -27,6 +27,8 @@ class MediaParseState implements PlaylistParseState<MediaPlaylist> {
     public CueOutContData cueOutCont;
     public final List<DateRangeData> dateRanges = new ArrayList<>();
     public final List<DefineData> defines = new ArrayList<>();
+    public ServerControlData serverControlData;
+    public SkipData skipData;
 
     @Override
     public PlaylistParseState<MediaPlaylist> setUnknownTags(final List<String> unknownTags) {
@@ -53,6 +55,8 @@ class MediaParseState implements PlaylistParseState<MediaPlaylist> {
                 .withIsOngoing(!endOfList)
                 .withMediaSequenceNumber(mediaSequenceNumber == null ? 0 : mediaSequenceNumber)
                 .withPlaylistType(playlistType)
+                .withServerControlData(serverControlData)
+                .withSkipData(skipData)
                 .build();
     }
 

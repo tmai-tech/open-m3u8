@@ -5,6 +5,7 @@ import com.iheartradio.m3u8.data.*;
 import java.io.IOException;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 abstract class MediaPlaylistTagWriter extends ExtTagWriter {
@@ -409,6 +410,155 @@ abstract class MediaPlaylistTagWriter extends ExtTagWriter {
                 for (DateRangeData dateRangeData : mediaPlaylist.getDateRanges()) {
                     writeAttributes(tagWriter, dateRangeData, HANDLERS);
                 }
+            }
+        }
+    };
+
+    static final IExtTagWriter EXT_X_SERVER_CONTROL = new MediaPlaylistTagWriter() {
+        private final Map<String, AttributeWriter<ServerControlData>> HANDLERS = new LinkedHashMap<String, AttributeWriter<ServerControlData>>();
+
+        {
+            HANDLERS.put(Constants.CAN_SKIP_UNTIL, new AttributeWriter<ServerControlData>() {
+                @Override
+                public boolean containsAttribute(ServerControlData attributes) {
+                    return attributes.hasCanSkipUntil();
+                }
+
+                @Override
+                public String write(ServerControlData attributes) {
+                    return Float.toString(attributes.getCanSkipUntil());
+                }
+            });
+            HANDLERS.put(Constants.CAN_SKIP_DATERANGES, new AttributeWriter<ServerControlData>() {
+                @Override
+                public boolean containsAttribute(ServerControlData attributes) {
+                    return attributes.canSkipDateranges();
+                }
+
+                @Override
+                public String write(ServerControlData attributes) {
+                    return Constants.YES;
+                }
+            });
+            HANDLERS.put(Constants.HOLD_BACK, new AttributeWriter<ServerControlData>() {
+                @Override
+                public boolean containsAttribute(ServerControlData attributes) {
+                    return attributes.hasHoldBack();
+                }
+
+                @Override
+                public String write(ServerControlData attributes) {
+                    return Float.toString(attributes.getHoldBack());
+                }
+            });
+            HANDLERS.put(Constants.PART_HOLD_BACK, new AttributeWriter<ServerControlData>() {
+                @Override
+                public boolean containsAttribute(ServerControlData attributes) {
+                    return attributes.hasPartHoldBack();
+                }
+
+                @Override
+                public String write(ServerControlData attributes) {
+                    return Float.toString(attributes.getPartHoldBack());
+                }
+            });
+            HANDLERS.put(Constants.CAN_BLOCK_RELOAD, new AttributeWriter<ServerControlData>() {
+                @Override
+                public boolean containsAttribute(ServerControlData attributes) {
+                    return attributes.canBlockReload();
+                }
+
+                @Override
+                public String write(ServerControlData attributes) {
+                    return Constants.YES;
+                }
+            });
+        }
+
+        @Override
+        public String getTag() {
+            return Constants.EXT_X_SERVER_CONTROL_TAG;
+        }
+
+        @Override
+        boolean hasData() {
+            return true;
+        }
+
+        @Override
+        public void doWrite(TagWriter tagWriter, Playlist playlist, MediaPlaylist mediaPlaylist) throws IOException, ParseException {
+            if (mediaPlaylist.hasServerControlData() && hasAnyAttribute(mediaPlaylist.getServerControlData())) {
+                writeAttributes(tagWriter, mediaPlaylist.getServerControlData(), HANDLERS);
+            }
+        }
+
+        private boolean hasAnyAttribute(ServerControlData data) {
+            return data.hasCanSkipUntil()
+                    || data.canSkipDateranges()
+                    || data.hasHoldBack()
+                    || data.hasPartHoldBack()
+                    || data.canBlockReload();
+        }
+    };
+
+    static final IExtTagWriter EXT_X_SKIP = new MediaPlaylistTagWriter() {
+        private final Map<String, AttributeWriter<SkipData>> HANDLERS = new LinkedHashMap<String, AttributeWriter<SkipData>>();
+
+        {
+            HANDLERS.put(Constants.SKIPPED_SEGMENTS, new AttributeWriter<SkipData>() {
+                @Override
+                public boolean containsAttribute(SkipData attributes) {
+                    return true;
+                }
+
+                @Override
+                public String write(SkipData attributes) {
+                    return Integer.toString(attributes.getSkippedSegments());
+                }
+            });
+            HANDLERS.put(Constants.RECENTLY_REMOVED_DATERANGES, new AttributeWriter<SkipData>() {
+                @Override
+                public boolean containsAttribute(SkipData attributes) {
+                    // Spec: REQUIRED if the client requested an update that skips Date Ranges.
+                    // Emit when the model carries any IDs (including a single empty-string list
+                    // is not used; empty attribute is represented by an empty list + write flag
+                    // via hasRecentlyRemovedDateranges for non-empty only).
+                    return attributes.hasRecentlyRemovedDateranges();
+                }
+
+                @Override
+                public String write(SkipData attributes) throws ParseException {
+                    final List<String> ids = attributes.getRecentlyRemovedDateranges();
+                    final StringBuilder joined = new StringBuilder();
+                    for (int i = 0; i < ids.size(); i++) {
+                        if (i > 0) {
+                            joined.append(Constants.DATERANGE_ID_SEPARATOR);
+                        }
+                        joined.append(ids.get(i));
+                    }
+                    return WriteUtil.writeQuotedString(joined.toString(), getTag());
+                }
+            });
+        }
+
+        @Override
+        public String getTag() {
+            return Constants.EXT_X_SKIP_TAG;
+        }
+
+        @Override
+        boolean hasData() {
+            return true;
+        }
+
+        @Override
+        public void doWrite(TagWriter tagWriter, Playlist playlist, MediaPlaylist mediaPlaylist) throws IOException, ParseException {
+            if (mediaPlaylist.hasSkipData()) {
+                SkipData skipData = mediaPlaylist.getSkipData();
+                // Special-case empty RECENTLY-REMOVED-DATERANGES: writeAttributes skips empty list
+                // so write the attribute list manually when only SKIPPED-SEGMENTS is needed, or
+                // when empty recently-removed must be present.
+                writeAttributes(tagWriter, skipData, HANDLERS);
             }
         }
     };
