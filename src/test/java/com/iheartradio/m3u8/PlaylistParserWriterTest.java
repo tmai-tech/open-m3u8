@@ -189,19 +189,21 @@ public class PlaylistParserWriterTest {
 
         assertEquals(expected, byteRanges);
 
+        // EXTINF always includes the comma after duration (title optional), per HLS
+        // and MediaPlaylistTagWriter.writeExtinf().
         assertEquals(
                 "#EXTM3U\n" +
                 "#EXT-X-VERSION:4\n" +
                 "#EXT-X-TARGETDURATION:10\n" +
                 "#EXT-X-MEDIA-SEQUENCE:0\n"+
                 "#EXT-X-BYTERANGE:0@10\n" +
-                "#EXTINF:9.009\n" +
+                "#EXTINF:9.009,\n" +
                 "http://media.example.com/first.ts\n" +
                 "#EXT-X-BYTERANGE:20\n" +
-                "#EXTINF:9.009\n" +
+                "#EXTINF:9.009,\n" +
                 "http://media.example.com/first.ts\n" +
                 "#EXT-X-BYTERANGE:30\n" +
-                "#EXTINF:3.003\n" +
+                "#EXTINF:3.003,\n" +
                 "http://media.example.com/first.ts\n" +
                 "#EXT-X-ENDLIST\n", writePlaylist(playlist));
     }

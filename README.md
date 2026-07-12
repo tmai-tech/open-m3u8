@@ -34,7 +34,33 @@ writer.write(playlist);
 
 Build playlists with `Builder` / `buildUpon()` on `Playlist`, `MediaPlaylist`, `TrackData`, etc.
 
+## Supported tags
+
+Full tag/feature matrix and annotated samples: [docs/SUPPORTED_FEATURES.md](docs/SUPPORTED_FEATURES.md).
+
+## Code coverage
+
+Measured with **JaCoCo 0.8.7** over the full unit-test suite (**68 tests, all passing**).
+
+| Metric | Coverage |
+|--------|----------|
+| **Line** | **74.0%** (2131 / 2881) |
+| **Branch** | **55.9%** (617 / 1104) |
+| **Method** | **78.5%** (852 / 1085) |
+| **Instruction** | **71.7%** (10633 / 14829) |
+| **Class** | **98.8%** (238 / 241) |
+
+### By package
+
+| Package | Line | Branch |
+|---------|-----:|-------:|
+| `com.iheartradio.m3u8` | 80.4% | 64.1% |
+| `com.iheartradio.m3u8.data` | 61.5% | 43.0% |
+
+Gaps are mostly data-model builders/`equals`/`toString`, simple M3U write path (`M3uWriter`), and some master/media attribute edge cases. After a local test run, HTML report path: `build/reports/jacoco/test/html/index.html`.
+
 ## Docs
 
 - Spec: [draft-pantos-http-live-streaming-16](https://datatracker.ietf.org/doc/html/draft-pantos-http-live-streaming-16)
+- Supported tags: [docs/SUPPORTED_FEATURES.md](docs/SUPPORTED_FEATURES.md)
 - Issues / PRs welcome
