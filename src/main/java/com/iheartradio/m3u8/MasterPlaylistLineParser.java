@@ -338,6 +338,14 @@ class MasterPlaylistLineParser implements LineParser {
             }
         });
 
+        // Common non-spec / vendor attribute on STREAM-INF (e.g. Mux demo streams)
+        handlers.put(Constants.NAME, new AttributeParser<T>() {
+            @Override
+            public void parse(Attribute attribute, T builder, ParseState state) throws ParseException {
+                // accepted; not modeled on StreamInfo yet
+            }
+        });
+
         return handlers;
     }
 }

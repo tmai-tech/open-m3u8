@@ -1537,7 +1537,7 @@
         .catch(function () {
           proxyAvailable = false;
           if (proxyStatusEl) {
-            proxyStatusEl.textContent = "Offline — run: python3 proxy_server.py";
+            proxyStatusEl.textContent = "Offline — run: ./gradlew runHlsPlayer";
             proxyStatusEl.style.color = "var(--danger)";
           }
           if (playPathSelect) playPathSelect.value = "direct";
@@ -1573,8 +1573,8 @@
 
       if (isProxyMode()) {
         if (!proxyAvailable) {
-          setStatus("Proxy offline — start python3 proxy_server.py (or switch to Direct)", "err");
-          showOverlay("Proxy offline", "Run: python3 proxy_server.py");
+          setStatus("Proxy offline — start ./gradlew runHlsPlayer (or switch to Direct)", "err");
+          showOverlay("Proxy offline", "Run: ./gradlew runHlsPlayer");
           return;
         }
         pushRewriteConfig()
@@ -1717,7 +1717,7 @@
     if (playPathSelect) {
       playPathSelect.addEventListener("change", function () {
         if (playPathSelect.value === "proxy" && !proxyAvailable) {
-          setStatus("Proxy not detected — run python3 proxy_server.py", "err");
+          setStatus("Proxy not detected — run ./gradlew runHlsPlayer", "err");
         } else if (playPathSelect.value === "proxy") {
           setStatus("Proxy mode: tags appear on localhost Network responses", "ok");
         } else {

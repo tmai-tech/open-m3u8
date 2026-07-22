@@ -44,7 +44,8 @@ import java.util.concurrent.atomic.AtomicReference;
 public final class HlsPlayerServer {
 
     private static final int DEFAULT_PORT = 8765;
-    private static final String HOST = "127.0.0.1";
+    /** Bind all interfaces so Windows browsers can reach WSL2 (not only 127.0.0.1). */
+    private static final String BIND_HOST = "0.0.0.0";
 
     private final int port;
     private final File staticRoot;
@@ -82,19 +83,23 @@ public final class HlsPlayerServer {
     }
 
     public void start() throws IOException {
-        HttpServer server = HttpServer.create(new InetSocketAddress(HOST, port), 0);
+        // 0.0.0.0: reachable from Windows host via localhost forwarding and via WSL eth0 IP
+        HttpServer server = HttpServer.create(new InetSocketAddress(BIND_HOST, port), 0);
         server.createContext("/", new RootHandler());
         server.createContext("/api/health", new HealthHandler());
         server.createContext("/api/rewrite-config", new ConfigHandler());
         server.createContext("/proxy", new ProxyHandler());
-        server.setExecutor(Executors.newCachedThreadPool());
+        // Bounded pool — unlimited cached threads + full-buffer segments caused OOM under ABR
+        server.setExecutor(Executors.newFixedThreadPool(16));
         server.start();
         System.out.println("HLS player (open-m3u8 rewrite proxy)");
-        System.out.println("  UI:     http://" + HOST + ":" + port + "/");
-        System.out.println("  Proxy:  http://" + HOST + ":" + port + "/proxy?url=<encoded-m3u8>");
-        System.out.println("  Config: POST/GET http://" + HOST + ":" + port + "/api/rewrite-config");
+        System.out.println("  Bind:   " + BIND_HOST + ":" + port);
+        System.out.println("  UI:     http://127.0.0.1:" + port + "/");
+        System.out.println("  Proxy:  http://127.0.0.1:" + port + "/proxy?url=<encoded-m3u8>");
+        System.out.println("  Config: POST/GET http://127.0.0.1:" + port + "/api/rewrite-config");
         System.out.println("  Static: " + staticRoot.getAbsolutePath());
         System.out.println("  Engine: open-m3u8 PlaylistParser / PlaylistWriter / PlaylistRewriteUtil");
+        System.out.println("  Tip:    If the Windows browser times out on 127.0.0.1, try the WSL IP on port " + port);
     }
 
     // ---------------- handlers ----------------
@@ -182,9 +187,34 @@ public final class HlsPlayerServer {
                 return;
             }
 
+            // Forward Range so fMP4 / BYTERANGE ad + content segments work through the proxy
+            // (hls.js issues Range requests for EXT-X-BYTERANGE / EXT-X-MAP).
+            String rangeHeader = firstHeader(ex.getRequestHeaders(), "Range");
+
+            // Stream media segments (do not buffer multi‑MB bodies — that caused OOM under ABR).
+            // Only buffer full body for playlists that need rewrite.
+            boolean likelyPlaylist = urlLooksLikePlaylist(target)
+                    && (rangeHeader == null || rangeHeader.trim().isEmpty());
+
+            if (!likelyPlaylist) {
+                try {
+                    streamRemote(ex, target, rangeHeader);
+                } catch (Exception e) {
+                    // If client already got headers this may fail silently
+                    try {
+                        send(ex, 502, "application/json; charset=utf-8",
+                                "{\"error\":" + jsonString("fetch failed: " + e.getMessage()) +
+                                        ",\"url\":" + jsonString(target) + "}");
+                    } catch (Exception ignored) {
+                        // response may already be committed
+                    }
+                }
+                return;
+            }
+
             FetchResult remote;
             try {
-                remote = fetchRemote(target);
+                remote = fetchRemote(target, rangeHeader);
             } catch (Exception e) {
                 send(ex, 502, "application/json; charset=utf-8",
                         "{\"error\":" + jsonString("fetch failed: " + e.getMessage()) +
@@ -195,10 +225,19 @@ public final class HlsPlayerServer {
             Headers outHeaders = ex.getResponseHeaders();
             outHeaders.set("Access-Control-Allow-Origin", "*");
             outHeaders.set("Access-Control-Expose-Headers",
-                    "X-Playlist-Rewritten, X-Proxy-Target, X-Playlist-Kind, X-Rewrite-Engine");
+                    "X-Playlist-Rewritten, X-Proxy-Target, X-Playlist-Kind, X-Rewrite-Engine, "
+                            + "Content-Range, Accept-Ranges");
             outHeaders.set("Cache-Control", "no-store");
             outHeaders.set("X-Proxy-Target", target);
             outHeaders.set("X-Rewrite-Engine", "open-m3u8");
+            if (remote.acceptRanges != null && remote.acceptRanges.length() > 0) {
+                outHeaders.set("Accept-Ranges", remote.acceptRanges);
+            } else {
+                outHeaders.set("Accept-Ranges", "bytes");
+            }
+            if (remote.contentRange != null && remote.contentRange.length() > 0) {
+                outHeaders.set("Content-Range", remote.contentRange);
+            }
 
             if (remote.status >= 400) {
                 outHeaders.set("Content-Type", remote.contentType != null
@@ -211,15 +250,15 @@ public final class HlsPlayerServer {
             }
 
             if (looksLikePlaylist(target, remote.contentType, remote.body)) {
+                final String proxyBase = requestProxyBase(ex);
+                UriMapper mapper = new UriMapper() {
+                    @Override
+                    public String map(String absoluteUri) {
+                        return PlaylistRewriteUtil.toProxyUrl(proxyBase, absoluteUri);
+                    }
+                };
                 try {
                     Playlist playlist = PlaylistRewriteUtil.parse(remote.body, Encoding.UTF_8);
-                    final String proxyBase = "http://" + HOST + ":" + port;
-                    UriMapper mapper = new UriMapper() {
-                        @Override
-                        public String map(String absoluteUri) {
-                            return PlaylistRewriteUtil.toProxyUrl(proxyBase, absoluteUri);
-                        }
-                    };
                     Playlist rewritten = PlaylistRewriteUtil.rewrite(
                             playlist, target, configRef.get(), mapper);
                     byte[] out = PlaylistRewriteUtil.write(rewritten, Encoding.UTF_8);
@@ -235,16 +274,36 @@ public final class HlsPlayerServer {
                     }
                     return;
                 } catch (ParseException | PlaylistException e) {
-                    // Fall through: serve original body if parse fails
-                    System.err.println("open-m3u8 parse/rewrite failed for " + target + ": " + e);
+                    // Never return a raw playlist with relative URIs — hls.js would resolve
+                    // them against /proxy and break. Fall back to line-level URI rewrite.
+                    System.err.println("open-m3u8 parse/rewrite failed for " + target + ": " + e
+                            + " — falling back to URI rewrite only");
+                    try {
+                        String text = new String(remote.body, StandardCharsets.UTF_8);
+                        String fixed = rewritePlaylistUrisText(text, target, mapper);
+                        byte[] out = fixed.getBytes(StandardCharsets.UTF_8);
+                        outHeaders.set("Content-Type", "application/vnd.apple.mpegurl; charset=utf-8");
+                        outHeaders.set("X-Playlist-Rewritten", "1");
+                        outHeaders.set("X-Playlist-Kind", "fallback");
+                        outHeaders.set("X-Rewrite-Fallback", "uri-only");
+                        ex.sendResponseHeaders(200, out.length);
+                        try (OutputStream os = ex.getResponseBody()) {
+                            os.write(out);
+                        }
+                        return;
+                    } catch (Exception fallbackEx) {
+                        System.err.println("URI fallback rewrite failed for " + target + ": " + fallbackEx);
+                    }
                 } catch (Exception e) {
                     System.err.println("rewrite error for " + target + ": " + e);
                 }
             }
 
+            // Buffered non-playlist path (rare for .m3u8 URLs that aren't playlists)
             outHeaders.set("Content-Type", remote.contentType != null
                     ? remote.contentType : "application/octet-stream");
-            ex.sendResponseHeaders(remote.status > 0 ? remote.status : 200, remote.body.length);
+            int status = remote.status > 0 ? remote.status : 200;
+            ex.sendResponseHeaders(status, remote.body.length);
             try (OutputStream os = ex.getResponseBody()) {
                 os.write(remote.body);
             }
@@ -593,33 +652,162 @@ public final class HlsPlayerServer {
         final int status;
         final String contentType;
         final byte[] body;
+        final String contentRange;
+        final String acceptRanges;
 
         FetchResult(int status, String contentType, byte[] body) {
+            this(status, contentType, body, null, null);
+        }
+
+        FetchResult(int status, String contentType, byte[] body,
+                    String contentRange, String acceptRanges) {
             this.status = status;
             this.contentType = contentType;
             this.body = body;
+            this.contentRange = contentRange;
+            this.acceptRanges = acceptRanges;
         }
     }
 
     private static FetchResult fetchRemote(String target) throws IOException {
+        return fetchRemote(target, null);
+    }
+
+    private static FetchResult fetchRemote(String target, String rangeHeader) throws IOException {
         HttpURLConnection conn = (HttpURLConnection) new URL(target).openConnection();
         conn.setInstanceFollowRedirects(true);
         conn.setConnectTimeout(15000);
-        conn.setReadTimeout(30000);
+        // Range responses are small; full-object fetches (rare for media) may need longer
+        conn.setReadTimeout(rangeHeader != null && rangeHeader.length() > 0 ? 30000 : 120000);
         conn.setRequestProperty("User-Agent", "open-m3u8-hls-player/1.0");
         conn.setRequestProperty("Accept", "*/*");
+        if (rangeHeader != null && rangeHeader.trim().length() > 0) {
+            conn.setRequestProperty("Range", rangeHeader.trim());
+        }
         int status = conn.getResponseCode();
         String ct = conn.getContentType();
+        String contentRange = conn.getHeaderField("Content-Range");
+        String acceptRanges = conn.getHeaderField("Accept-Ranges");
         InputStream in = status >= 400 ? conn.getErrorStream() : conn.getInputStream();
         if (in == null) {
-            return new FetchResult(status, ct, new byte[0]);
+            return new FetchResult(status, ct, new byte[0], contentRange, acceptRanges);
         }
         try {
-            return new FetchResult(status, ct, readAll(in));
+            return new FetchResult(status, ct, readAll(in), contentRange, acceptRanges);
         } finally {
             in.close();
             conn.disconnect();
         }
+    }
+
+    /**
+     * Stream remote media through without buffering the entire body in heap.
+     * Used for segments / init maps / anything that is not a rewriteable playlist.
+     */
+    private static void streamRemote(HttpExchange ex, String target, String rangeHeader) throws IOException {
+        HttpURLConnection conn = (HttpURLConnection) new URL(target).openConnection();
+        conn.setInstanceFollowRedirects(true);
+        conn.setConnectTimeout(15000);
+        conn.setReadTimeout(120000);
+        conn.setRequestProperty("User-Agent", "open-m3u8-hls-player/1.0");
+        conn.setRequestProperty("Accept", "*/*");
+        if (rangeHeader != null && rangeHeader.trim().length() > 0) {
+            conn.setRequestProperty("Range", rangeHeader.trim());
+        }
+
+        int status;
+        try {
+            status = conn.getResponseCode();
+        } catch (IOException e) {
+            conn.disconnect();
+            throw e;
+        }
+
+        String ct = conn.getContentType();
+        String contentRange = conn.getHeaderField("Content-Range");
+        String acceptRanges = conn.getHeaderField("Accept-Ranges");
+        long contentLength = conn.getContentLengthLong();
+
+        Headers outHeaders = ex.getResponseHeaders();
+        outHeaders.set("Access-Control-Allow-Origin", "*");
+        outHeaders.set("Access-Control-Expose-Headers",
+                "X-Proxy-Target, X-Rewrite-Engine, Content-Range, Accept-Ranges");
+        outHeaders.set("Cache-Control", "no-store");
+        outHeaders.set("X-Proxy-Target", target);
+        outHeaders.set("X-Rewrite-Engine", "open-m3u8");
+        outHeaders.set("Content-Type", ct != null ? ct : "application/octet-stream");
+        if (acceptRanges != null && acceptRanges.length() > 0) {
+            outHeaders.set("Accept-Ranges", acceptRanges);
+        } else {
+            outHeaders.set("Accept-Ranges", "bytes");
+        }
+        if (contentRange != null && contentRange.length() > 0) {
+            outHeaders.set("Content-Range", contentRange);
+        }
+
+        InputStream in = status >= 400 ? conn.getErrorStream() : conn.getInputStream();
+        long responseLen = contentLength >= 0 ? contentLength : 0;
+        // 0 means unknown length → HttpServer uses chunked transfer
+        if (contentLength < 0) {
+            responseLen = 0;
+        }
+        if (status >= 400 && in == null) {
+            ex.sendResponseHeaders(status, -1);
+            ex.close();
+            conn.disconnect();
+            return;
+        }
+        if (in == null) {
+            ex.sendResponseHeaders(status > 0 ? status : 200, -1);
+            ex.close();
+            conn.disconnect();
+            return;
+        }
+
+        try {
+            // For 206, use contentLength if known; otherwise 0 (chunked)
+            long len = (contentLength >= 0) ? contentLength : 0;
+            ex.sendResponseHeaders(status > 0 ? status : 200, len);
+            try (OutputStream os = ex.getResponseBody()) {
+                byte[] buf = new byte[64 * 1024];
+                int n;
+                while ((n = in.read(buf)) >= 0) {
+                    os.write(buf, 0, n);
+                }
+            }
+        } finally {
+            try { in.close(); } catch (IOException ignored) { }
+            conn.disconnect();
+        }
+    }
+
+    private static boolean urlLooksLikePlaylist(String url) {
+        try {
+            String path = new URI(url).getPath();
+            if (path != null) {
+                String lower = path.toLowerCase();
+                if (lower.endsWith(".m3u8") || lower.endsWith(".m3u")) {
+                    return true;
+                }
+            }
+        } catch (Exception ignored) {
+            // fall through
+        }
+        // query-only masters sometimes omit extension; treat unknown as playlist-safe
+        // only when explicitly m3u-ish in the full URL
+        String lower = url.toLowerCase();
+        return lower.contains(".m3u8") || lower.contains("mpegurl") || lower.contains("m3u8");
+    }
+
+    private static String firstHeader(Headers headers, String name) {
+        if (headers == null) return null;
+        List<String> values = headers.get(name);
+        if (values == null || values.isEmpty()) {
+            // HttpExchange may use canonical case
+            values = headers.get(name.toLowerCase());
+        }
+        if (values == null || values.isEmpty()) return null;
+        return values.get(0);
     }
 
     private static boolean looksLikePlaylist(String url, String contentType, byte[] body) {
@@ -669,7 +857,10 @@ public final class HlsPlayerServer {
         h.set("Content-Type", contentType);
         h.set("Access-Control-Allow-Origin", "*");
         h.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-        h.set("Access-Control-Allow-Headers", "Content-Type");
+        h.set("Access-Control-Allow-Headers", "Content-Type, Range");
+        h.set("Access-Control-Expose-Headers",
+                "Content-Range, Accept-Ranges, X-Playlist-Rewritten, X-Proxy-Target, "
+                        + "X-Playlist-Kind, X-Rewrite-Engine");
         h.set("Cache-Control", "no-store");
         if (body == null || body.length == 0) {
             ex.sendResponseHeaders(code, -1);
@@ -709,5 +900,82 @@ public final class HlsPlayerServer {
         if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) return "image/jpeg";
         if (lower.endsWith(".m3u8")) return "application/vnd.apple.mpegurl";
         return "application/octet-stream";
+    }
+
+    /** Public base URL for rewritten child URIs (matches how the client reached us). */
+    private String requestProxyBase(HttpExchange ex) {
+        String host = ex.getRequestHeaders().getFirst("Host");
+        if (host == null || host.trim().isEmpty()) {
+            host = "127.0.0.1:" + port;
+        }
+        // Always http for this local demo server
+        return "http://" + host.trim();
+    }
+
+    /**
+     * Line-level URI rewrite when open-m3u8 cannot parse a playlist.
+     * Rewrites bare URI lines and common URI="..." attributes through the proxy.
+     */
+    private static String rewritePlaylistUrisText(String text, String playlistUrl, UriMapper mapper) {
+        String[] lines = text.split("\n", -1);
+        StringBuilder out = new StringBuilder(text.length() + 256);
+        for (int i = 0; i < lines.length; i++) {
+            String line = lines[i];
+            // strip CR if present
+            if (line.endsWith("\r")) {
+                line = line.substring(0, line.length() - 1);
+            }
+            String trimmed = line.trim();
+            if (trimmed.length() == 0) {
+                out.append(line);
+            } else if (trimmed.startsWith("#")) {
+                out.append(rewriteAttrUrisInTag(line, playlistUrl, mapper));
+            } else {
+                // URI line (segment or child playlist)
+                out.append(PlaylistRewriteUtil.mapRef(playlistUrl, trimmed, mapper));
+            }
+            if (i < lines.length - 1) {
+                out.append('\n');
+            }
+        }
+        return out.toString();
+    }
+
+    private static String rewriteAttrUrisInTag(String line, String playlistUrl, UriMapper mapper) {
+        // Rewrite URI="...", X-ASSET-URI="...", X-ASSET-LIST="..."
+        String[] keys = new String[] { "URI=", "X-ASSET-URI=", "X-ASSET-LIST=" };
+        String result = line;
+        for (String key : keys) {
+            int from = 0;
+            StringBuilder sb = new StringBuilder();
+            int idx;
+            String upper = result.toUpperCase();
+            String keyUpper = key.toUpperCase();
+            while ((idx = upper.indexOf(keyUpper, from)) >= 0) {
+                sb.append(result, from, idx + key.length());
+                int q = idx + key.length();
+                if (q < result.length() && result.charAt(q) == '"') {
+                    int end = result.indexOf('"', q + 1);
+                    if (end > q) {
+                        String val = result.substring(q + 1, end);
+                        String mapped = PlaylistRewriteUtil.mapRef(playlistUrl, val, mapper);
+                        sb.append('"').append(mapped).append('"');
+                        from = end + 1;
+                        continue;
+                    }
+                }
+                // unquoted value until comma or end
+                int end = result.indexOf(',', q);
+                if (end < 0) end = result.length();
+                String val = result.substring(q, end).trim();
+                String mapped = PlaylistRewriteUtil.mapRef(playlistUrl, val, mapper);
+                sb.append(mapped);
+                from = end;
+            }
+            sb.append(result.substring(from));
+            result = sb.toString();
+            upper = result.toUpperCase();
+        }
+        return result;
     }
 }

@@ -38,6 +38,8 @@ task runHlsPlayer(type: JavaExec) {
     mainClass = 'com.iheartradio.m3u8.demo.HlsPlayerServer'
     args = project.hasProperty('port') ? [project.property('port')] : []
     workingDir = project.projectDir
+    // Segments are streamed; heap still needs room for concurrent playlist rewrites
+    jvmArgs = ['-Xms128m', '-Xmx768m']
 }
 
 test {

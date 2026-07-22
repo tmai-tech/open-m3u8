@@ -10,6 +10,7 @@ class ParseState implements IParseState<Playlist> {
     static final int NONE = -1;
 
     public final Encoding encoding;
+    public final ParsingMode parsingMode;
     public final List<String> unknownTags = new ArrayList<>();
 
     private MasterParseState mMasterParseState;
@@ -20,7 +21,12 @@ class ParseState implements IParseState<Playlist> {
     public StartData startData;
 
     public ParseState(Encoding encoding) {
+        this(encoding, ParsingMode.STRICT);
+    }
+
+    public ParseState(Encoding encoding, ParsingMode parsingMode) {
         this.encoding = encoding;
+        this.parsingMode = parsingMode != null ? parsingMode : ParsingMode.STRICT;
     }
 
     public boolean isMaster() {
