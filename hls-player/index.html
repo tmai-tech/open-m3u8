@@ -1,0 +1,1780 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>HLS Player</title>
+  <!-- 1.6+ has stronger HLS Interstitials (EXT-X-DATERANGE CLASS=com.apple.hls.interstitial) support -->
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@1.6.2/dist/hls.min.js"></script>
+  <style>
+    :root {
+      --bg: #0b0d12;
+      --surface: #141822;
+      --surface-2: #1c2230;
+      --border: #2a3347;
+      --text: #eef1f7;
+      --muted: #8b95a8;
+      --accent: #5b8cff;
+      --accent-hover: #7aa3ff;
+      --danger: #ff6b7a;
+      --success: #3ecf8e;
+      --ad: #f0a030;
+      --radius: 14px;
+      --shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
+      font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; min-height: 100vh; color: var(--text);
+      background:
+        radial-gradient(1200px 600px at 10% -10%, rgba(91,140,255,.18), transparent 55%),
+        radial-gradient(900px 500px at 100% 0%, rgba(240,160,48,.08), transparent 50%),
+        var(--bg);
+      display: flex; justify-content: center; padding: 28px 16px 48px;
+    }
+    .app { width: min(980px, 100%); display: flex; flex-direction: column; gap: 18px; }
+    header h1 { margin: 0 0 6px; font-size: 1.55rem; font-weight: 700; letter-spacing: -.02em; }
+    header p { margin: 0; color: var(--muted); font-size: .95rem; line-height: 1.45; }
+    code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .85em; }
+    .card {
+      background: linear-gradient(180deg, rgba(255,255,255,.03), transparent 40%), var(--surface);
+      border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden;
+    }
+    .url-bar { display: flex; gap: 10px; padding: 14px; flex-wrap: wrap; }
+    .url-bar input[type="url"], .panel input[type="url"], .panel input[type="text"],
+    .panel input[type="number"], .start-settings input[type="number"], .start-settings select,
+    .panel select {
+      background: var(--surface-2); border: 1px solid var(--border); color: var(--text);
+      border-radius: 10px; padding: 10px 12px; font-size: .92rem; outline: none; width: 100%;
+    }
+    .url-bar input[type="url"] { flex: 1 1 280px; min-width: 0; }
+    input:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(91,140,255,.2); }
+    .btn {
+      border: none; border-radius: 10px; padding: 12px 18px; font-size: .92rem; font-weight: 600;
+      cursor: pointer; white-space: nowrap; transition: background .15s, opacity .15s, transform .1s;
+    }
+    .btn:active { transform: translateY(1px); }
+    .btn:disabled { opacity: .45; cursor: not-allowed; }
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-primary:hover:not(:disabled) { background: var(--accent-hover); }
+    .btn-ghost { background: var(--surface-2); color: var(--text); border: 1px solid var(--border); }
+    .btn-ghost:hover:not(:disabled) { background: #252d40; }
+    .btn-ad { background: rgba(240,160,48,.18); color: #ffd089; border: 1px solid rgba(240,160,48,.45); }
+    .btn-ad:hover:not(:disabled) { background: rgba(240,160,48,.28); }
+    .btn-danger { background: rgba(255,107,122,.12); color: var(--danger); border: 1px solid rgba(255,107,122,.35); }
+    .btn-sm { padding: 7px 11px; font-size: .8rem; border-radius: 8px; }
+    .samples { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 14px 14px; align-items: center; }
+    .samples-label { color: var(--muted); font-size: .82rem; }
+    .chip {
+      background: var(--surface-2); border: 1px solid var(--border); color: var(--muted);
+      border-radius: 999px; padding: 6px 12px; font-size: .8rem; cursor: pointer;
+    }
+    .chip:hover { color: var(--text); border-color: var(--accent); background: rgba(91,140,255,.1); }
+
+    .section {
+      border-top: 1px solid var(--border); padding: 14px;
+    }
+    .section-title {
+      display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px;
+      margin: 0 0 12px; font-size: .95rem; font-weight: 700;
+    }
+    .section-title .badge {
+      font-size: .72rem; font-weight: 600; color: var(--ad);
+      background: rgba(240,160,48,.12); border: 1px solid rgba(240,160,48,.35);
+      border-radius: 999px; padding: 3px 8px;
+    }
+    .grid-2 {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px;
+    }
+    .field-block { display: flex; flex-direction: column; gap: 6px; }
+    .field-block > span, .lbl {
+      color: var(--muted); font-size: .75rem; text-transform: uppercase; letter-spacing: .04em;
+    }
+    .check-row { display: flex; align-items: center; gap: 8px; min-height: 40px; font-size: .9rem; color: var(--text); }
+    .check-row input { width: 16px; height: 16px; accent-color: var(--accent); }
+    .help { margin: 8px 0 0; color: var(--muted); font-size: .78rem; line-height: 1.45; }
+    .mono {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: .78rem; background: #0a0c11; border: 1px dashed var(--border);
+      border-radius: 8px; padding: 10px 12px; color: #9fb4ff; word-break: break-all;
+    }
+    .mono.muted { color: var(--muted); }
+
+    /* Start settings compact */
+    .start-settings { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+    .start-settings.is-playlist-default .override-only { opacity: .45; pointer-events: none; }
+
+    /* Timeline / ads */
+    .timeline-wrap { margin-top: 12px; }
+    .timeline {
+      position: relative; height: 44px; border-radius: 10px;
+      background: linear-gradient(180deg, #1a2030, #121722);
+      border: 1px solid var(--border); cursor: crosshair; user-select: none;
+      overflow: hidden;
+    }
+    .timeline-fill {
+      position: absolute; left: 0; top: 0; bottom: 0; width: 0;
+      background: rgba(91,140,255,.18); pointer-events: none;
+    }
+    .timeline-playhead {
+      position: absolute; top: 0; bottom: 0; width: 2px; background: var(--accent);
+      pointer-events: none; left: 0;
+    }
+    .timeline-marker {
+      position: absolute; top: 4px; bottom: 4px; width: 10px; margin-left: -5px;
+      background: var(--ad); border-radius: 3px; cursor: pointer;
+      box-shadow: 0 0 0 1px rgba(0,0,0,.4);
+    }
+    .timeline-marker:hover, .timeline-marker.selected { outline: 2px solid #fff; z-index: 2; }
+    .timeline-scale {
+      display: flex; justify-content: space-between; color: var(--muted); font-size: .72rem; margin-top: 4px;
+      font-family: ui-monospace, Menlo, Consolas, monospace;
+    }
+    .timeline-hint { color: var(--muted); font-size: .78rem; margin-top: 6px; }
+
+    .ad-list { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+    .ad-row {
+      display: grid; grid-template-columns: 28px 1fr auto; gap: 10px; align-items: start;
+      background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 10px;
+    }
+    .ad-row.selected { border-color: var(--ad); box-shadow: 0 0 0 1px rgba(240,160,48,.35); }
+    .ad-idx {
+      width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center;
+      background: rgba(240,160,48,.15); color: var(--ad); font-size: .78rem; font-weight: 700;
+    }
+    .ad-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; }
+    .ad-actions { display: flex; flex-direction: column; gap: 6px; }
+    .ad-preview {
+      grid-column: 1 / -1; font-family: ui-monospace, Menlo, Consolas, monospace;
+      font-size: .7rem; color: #c9b08a; word-break: break-all; margin-top: 2px;
+    }
+    .empty-ads { color: var(--muted); font-size: .85rem; padding: 8px 0; }
+
+    .player-wrap { position: relative; background: #000; aspect-ratio: 16/9; }
+    video { width: 100%; height: 100%; display: block; background: #000; outline: none; }
+    .overlay {
+      position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+      background: rgba(8,10,16,.72); color: var(--muted); text-align: center; padding: 24px;
+      pointer-events: none; transition: opacity .2s;
+    }
+    .overlay.hidden { opacity: 0; }
+    .overlay strong { color: var(--text); display: block; margin-bottom: 6px; }
+
+    .toolbar {
+      display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between;
+      padding: 12px 14px; border-top: 1px solid var(--border);
+    }
+    .toolbar-left, .toolbar-right { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+    label.field { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: .85rem; }
+    .status { font-size: .82rem; color: var(--muted); min-height: 1.2em; }
+    .status.ok { color: var(--success); }
+    .status.err { color: var(--danger); }
+    .status.info { color: var(--accent); }
+    .status.ad { color: var(--ad); }
+
+    .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; }
+    .stat { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; }
+    .stat .k { color: var(--muted); font-size: .72rem; text-transform: uppercase; letter-spacing: .04em; margin-bottom: 4px; }
+    .stat .v { font-size: .9rem; font-weight: 600; word-break: break-word; }
+    .hint { color: var(--muted); font-size: .82rem; line-height: 1.5; }
+    footer { color: var(--muted); font-size: .78rem; text-align: center; }
+
+    .debug-panel {
+      border-top: 1px solid var(--border);
+      padding: 14px;
+      background: #0a0c11;
+    }
+    .debug-panel summary {
+      cursor: pointer;
+      color: var(--muted);
+      font-size: .85rem;
+      font-weight: 600;
+      user-select: none;
+    }
+    .debug-panel summary:hover { color: var(--text); }
+    .debug-toolbar {
+      display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+      margin: 10px 0;
+    }
+    .debug-meta {
+      font-size: .75rem; color: var(--muted);
+      font-family: ui-monospace, Menlo, Consolas, monospace;
+      word-break: break-all;
+    }
+    .debug-pre {
+      margin: 0;
+      max-height: 320px;
+      overflow: auto;
+      padding: 12px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: #06080c;
+      color: #c8d0e0;
+      font-family: ui-monospace, Menlo, Consolas, monospace;
+      font-size: .72rem;
+      line-height: 1.45;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .debug-pre .hl-ad {
+      color: #f0a030;
+      background: rgba(240,160,48,.12);
+    }
+    .debug-pre .hl-start {
+      color: #7aa3ff;
+      background: rgba(91,140,255,.12);
+    }
+    .debug-pre .hl-pdt {
+      color: #3ecf8e;
+      background: rgba(62,207,142,.1);
+    }
+    .debug-note {
+      margin: 8px 0 0;
+      color: var(--muted);
+      font-size: .75rem;
+      line-height: 1.45;
+    }
+
+    .scrubber-panel {
+      grid-column: 1 / -1; display: none; flex-direction: column; gap: 8px;
+      padding: 10px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px;
+    }
+    .scrubber-panel.visible { display: flex; }
+    .scrubber-panel.disabled-look { opacity: .45; pointer-events: none; }
+    .scrubber-row { display: grid; grid-template-columns: 80px 1fr 80px; gap: 8px; align-items: center; }
+    .scrubber-row input[type="range"] { width: 100%; accent-color: var(--accent); }
+    .edge { font-size: .72rem; color: var(--muted); text-align: center; }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <h1>HLS Player</h1>
+      <p>
+        Paste a content <code>.m3u8</code>, mark ad points on the timeline, and inject
+        HLS Interstitials into media playlists via a <strong>local rewrite proxy</strong> (tags visible in Network).
+      </p>
+    </header>
+
+    <div class="card">
+      <form class="url-bar" id="play-form" autocomplete="off">
+        <input id="url" type="url" spellcheck="false" placeholder="https://example.com/content/master.m3u8" required />
+        <button type="submit" class="btn btn-primary" id="play-btn">Play</button>
+        <button type="button" class="btn btn-ghost" id="stop-btn" disabled>Stop</button>
+      </form>
+
+      <div class="samples">
+        <span class="samples-label">Content samples:</span>
+        <button type="button" class="chip" data-url="https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8">Mux BBB</button>
+        <button type="button" class="chip" data-url="https://devstreaming-cdn.apple.com/videos/streaming/examples/img_bipbop_adv_example_fmp4/master.m3u8">Apple BipBop</button>
+        <button type="button" class="chip" data-url="https://demo.unified-streaming.com/k8s/features/stable/video/tears-of-steel/tears-of-steel.ism/.m3u8">Tears of Steel</button>
+      </div>
+
+      <div class="section" style="border-top:1px solid var(--border);padding:14px">
+        <div class="section-title">Playback path</div>
+        <div class="grid-2">
+          <label class="field-block">
+            <span>Manifest delivery</span>
+            <select id="play-path">
+              <option value="proxy" selected>Local rewrite proxy (Network shows tags)</option>
+              <option value="direct">Direct CDN + client inject (tags only in debug panel)</option>
+            </select>
+          </label>
+          <div class="field-block">
+            <span>Proxy status</span>
+            <div class="check-row" id="proxy-status" style="color:var(--muted)">Checking…</div>
+          </div>
+        </div>
+        <p class="help">
+          Proxy mode: player POSTs ad/start config to <code>/api/rewrite-config</code>, then loads
+          <code>/proxy?url=…</code>. The proxy fetches the remote m3u8, injects tags, rewrites child
+          URIs back through itself — so DevTools Network shows the rewritten playlist body on
+          <code>localhost</code> responses (look for response header <code>X-Playlist-Rewritten: 1</code>).
+        </p>
+      </div>
+
+      <!-- START -->
+      <div class="section">
+        <div class="section-title">Playback start <span class="badge" style="color:var(--accent);background:rgba(91,140,255,.12);border-color:rgba(91,140,255,.35)">EXT-X-START</span></div>
+        <div class="start-settings" id="start-settings">
+          <label class="field-block">
+            <span>Start mode</span>
+            <select id="start-mode">
+              <option value="playlist">Use playlist EXT-X-START (if any)</option>
+              <option value="override">Override with custom EXT-X-START</option>
+            </select>
+          </label>
+          <label class="field-block override-only">
+            <span>Anchor</span>
+            <select id="start-anchor">
+              <option value="start">From playlist start (+)</option>
+              <option value="end">From end / live edge (−)</option>
+            </select>
+          </label>
+          <label class="field-block override-only">
+            <span>Offset magnitude (s)</span>
+            <input id="time-offset-mag" type="number" min="0" step="any" value="0" />
+          </label>
+          <div class="field-block override-only">
+            <span>PRECISE</span>
+            <label class="check-row"><input type="checkbox" id="precise" /> PRECISE=YES</label>
+          </div>
+          <div class="scrubber-panel override-only" id="scrubber-panel">
+            <div class="lbl">Start scrubber</div>
+            <div class="scrubber-row">
+              <div class="edge" id="scrub-left-label">0s</div>
+              <input type="range" id="start-scrubber" min="0" max="1000" value="0" step="1" disabled />
+              <div class="edge" id="scrub-right-label">—</div>
+            </div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+              <button type="button" class="btn btn-ghost btn-sm" id="scrub-apply-restart" disabled>Apply start &amp; restart</button>
+              <button type="button" class="btn btn-ghost btn-sm" id="scrub-seek-now" disabled>Seek now</button>
+              <span class="edge" id="scrubber-resolved" style="text-align:left"></span>
+            </div>
+          </div>
+          <div class="mono muted" id="tag-preview" style="grid-column:1/-1">Using playlist as-is (no injected EXT-X-START)</div>
+        </div>
+      </div>
+
+      <!-- ADS / INTERSTITIALS -->
+      <div class="section panel" id="ads-section">
+        <div class="section-title">
+          <span>Ad interstitials <span class="badge">EXT-X-DATERANGE · X-ASSET-URI</span></span>
+          <span class="edge" id="ads-count-label">0 breaks</span>
+        </div>
+
+        <div class="grid-2">
+          <label class="field-block" style="grid-column: 1 / -1">
+            <span>Default interstitial URL (ad media playlist .m3u8)</span>
+            <input id="ad-asset-url" type="url" spellcheck="false"
+              placeholder="https://example.com/ads/midroll.m3u8"
+              value="https://devstreaming-cdn.apple.com/videos/streaming/examples/img_bipbop_adv_example_fmp4/master.m3u8" />
+          </label>
+          <label class="field-block">
+            <span>Default ad duration (s)</span>
+            <input id="ad-duration" type="number" min="0" step="any" value="15" />
+          </label>
+          <label class="field-block">
+            <span>X-RESUME-OFFSET</span>
+            <input id="ad-resume-offset" type="number" step="any" value="0" />
+          </label>
+          <div class="field-block">
+            <span>Snap</span>
+            <label class="check-row"><input type="checkbox" id="ad-snap-segment" checked /> Snap to segment boundary</label>
+          </div>
+          <div class="field-block">
+            <span>Restrictions</span>
+            <label class="check-row"><input type="checkbox" id="ad-restrict-skip" /> X-RESTRICT includes SKIP</label>
+          </div>
+        </div>
+
+        <div class="timeline-wrap">
+          <div class="lbl">Manifest timeline — click to add an ad break</div>
+          <div class="timeline" id="ad-timeline" title="Click to place an ad break">
+            <div class="timeline-fill" id="timeline-fill"></div>
+            <div class="timeline-playhead" id="timeline-playhead"></div>
+          </div>
+          <div class="timeline-scale">
+            <span id="tl-left">0:00</span>
+            <span id="tl-mid">Load content to enable</span>
+            <span id="tl-right">—</span>
+          </div>
+          <p class="timeline-hint">
+            Click the bar to add a break at that time. Drag the content playhead, then use
+            <strong>Add at playhead</strong>. Interstitials are scheduled by
+            <code>START-DATE</code> (synthetic PDT if the playlist has none).
+          </p>
+        </div>
+
+        <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px">
+          <button type="button" class="btn btn-ad btn-sm" id="ad-add-playhead" disabled>Add at playhead</button>
+          <button type="button" class="btn btn-ad btn-sm" id="ad-add-offset" disabled>Add at offset…</button>
+          <button type="button" class="btn btn-ghost btn-sm" id="ad-clear" disabled>Clear all</button>
+          <button type="button" class="btn btn-primary btn-sm" id="ad-apply-reload" disabled>Apply ads &amp; reload</button>
+        </div>
+
+        <div class="ad-list" id="ad-list">
+          <div class="empty-ads" id="ad-empty">No ad breaks yet. Load a stream, then click the timeline.</div>
+        </div>
+
+        <p class="help">
+          Injected only into <strong>media</strong> playlists (not masters / audio / subtitle renditions).
+          Each break becomes something like:
+        </p>
+        <div class="mono muted" id="ad-sample-tag">#EXT-X-DATERANGE:ID="user-ad-1",CLASS="com.apple.hls.interstitial",START-DATE=…,DURATION=15,X-ASSET-URI="…"</div>
+      </div>
+
+      <div class="player-wrap">
+        <video id="video" controls playsinline></video>
+        <div class="overlay" id="overlay">
+          <div><strong>Ready to play</strong>Paste a content m3u8, optionally mark ad points, then Play.</div>
+        </div>
+      </div>
+
+      <div class="toolbar">
+        <div class="toolbar-left">
+          <label class="field">
+            Quality
+            <select id="levels" disabled><option value="-1">Auto</option></select>
+          </label>
+          <label class="field"><input type="checkbox" id="autoplay" checked /> Autoplay</label>
+        </div>
+        <div class="toolbar-right"><div class="status" id="status">Idle</div></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <details class="debug-panel" id="debug-panel" open>
+        <summary>Rewritten playlist debug (why Network tab looks clean)</summary>
+        <p class="debug-note">
+          In <strong>proxy mode</strong>, open Network and filter by <code>proxy?url=</code> — response bodies
+          are the rewritten playlists (header <code>X-Playlist-Rewritten: 1</code>).
+          In <strong>direct mode</strong>, the CDN response stays original; tags exist only after client inject
+          (this panel / download).
+        </p>
+        <div class="debug-toolbar">
+          <button type="button" class="btn btn-ghost btn-sm" id="debug-copy" disabled>Copy text</button>
+          <button type="button" class="btn btn-ghost btn-sm" id="debug-download" disabled>Download .m3u8</button>
+          <button type="button" class="btn btn-ghost btn-sm" id="debug-clear">Clear</button>
+          <label class="check-row" style="min-height:auto;font-size:.8rem">
+            <input type="checkbox" id="debug-log-console" /> Also log to console
+          </label>
+        </div>
+        <div class="debug-meta" id="debug-meta">No media playlist rewritten yet. Play with ad breaks applied.</div>
+        <pre class="debug-pre" id="debug-pre">(empty)</pre>
+      </details>
+    </div>
+
+    <div class="stats">
+      <div class="stat"><div class="k">Mode</div><div class="v" id="stat-mode">—</div></div>
+      <div class="stat"><div class="k">Levels</div><div class="v" id="stat-levels">—</div></div>
+      <div class="stat"><div class="k">Type</div><div class="v" id="stat-type">—</div></div>
+      <div class="stat"><div class="k">Start</div><div class="v" id="stat-start">—</div></div>
+      <div class="stat"><div class="k">Ads injected</div><div class="v" id="stat-ads">—</div></div>
+      <div class="stat"><div class="k">Inject ops</div><div class="v" id="stat-inject">—</div></div>
+      <div class="stat"><div class="k">Resolved start</div><div class="v" id="stat-resolved">—</div></div>
+    </div>
+
+    <p class="hint">
+      <strong>Notes:</strong> The interstitial URL should be a playable media/master playlist.
+      Playback of interstitials depends on hls.js Interstitials support and CORS on both content and ad hosts.
+      This rewrites playlists in-browser only — it does not modify your CDN.
+    </p>
+    <footer>HLS Player · local rewrite proxy · EXT-X-START · interstitial DATERANGE</footer>
+  </div>
+
+  <script>
+  (function () {
+    // ---------- DOM ----------
+    var video = document.getElementById("video");
+    var urlInput = document.getElementById("url");
+    var form = document.getElementById("play-form");
+    var stopBtn = document.getElementById("stop-btn");
+    var levelsSelect = document.getElementById("levels");
+    var autoplayCheck = document.getElementById("autoplay");
+    var statusEl = document.getElementById("status");
+    var overlay = document.getElementById("overlay");
+
+    var startModeSelect = document.getElementById("start-mode");
+    var startAnchorSelect = document.getElementById("start-anchor");
+    var timeOffsetMagInput = document.getElementById("time-offset-mag");
+    var preciseCheck = document.getElementById("precise");
+    var tagPreview = document.getElementById("tag-preview");
+    var startSettings = document.getElementById("start-settings");
+    var scrubberPanel = document.getElementById("scrubber-panel");
+    var scrubber = document.getElementById("start-scrubber");
+    var scrubLeft = document.getElementById("scrub-left-label");
+    var scrubRight = document.getElementById("scrub-right-label");
+    var scrubApplyRestart = document.getElementById("scrub-apply-restart");
+    var scrubSeekNow = document.getElementById("scrub-seek-now");
+    var scrubResolved = document.getElementById("scrubber-resolved");
+
+    var adAssetUrl = document.getElementById("ad-asset-url");
+    var adDuration = document.getElementById("ad-duration");
+    var adResumeOffset = document.getElementById("ad-resume-offset");
+    var adSnapSegment = document.getElementById("ad-snap-segment");
+    var adRestrictSkip = document.getElementById("ad-restrict-skip");
+    var adTimeline = document.getElementById("ad-timeline");
+    var timelineFill = document.getElementById("timeline-fill");
+    var timelinePlayhead = document.getElementById("timeline-playhead");
+    var tlLeft = document.getElementById("tl-left");
+    var tlMid = document.getElementById("tl-mid");
+    var tlRight = document.getElementById("tl-right");
+    var adList = document.getElementById("ad-list");
+    var adEmpty = document.getElementById("ad-empty");
+    var adsCountLabel = document.getElementById("ads-count-label");
+    var adSampleTag = document.getElementById("ad-sample-tag");
+    var adAddPlayhead = document.getElementById("ad-add-playhead");
+    var adAddOffset = document.getElementById("ad-add-offset");
+    var adClear = document.getElementById("ad-clear");
+    var adApplyReload = document.getElementById("ad-apply-reload");
+    var playPathSelect = document.getElementById("play-path");
+    var proxyStatusEl = document.getElementById("proxy-status");
+
+
+    var statMode = document.getElementById("stat-mode");
+    var statLevels = document.getElementById("stat-levels");
+    var statType = document.getElementById("stat-type");
+    var statStart = document.getElementById("stat-start");
+    var statAds = document.getElementById("stat-ads");
+    var statInject = document.getElementById("stat-inject");
+    var statResolved = document.getElementById("stat-resolved");
+
+    // ---------- state ----------
+    var hls = null;
+    var lastUrl = "";
+    var injectCount = 0;
+    var skipCount = 0;
+    var adsInjectedLast = 0;
+    var appliedStartLabel = "—";
+    var resolvedStartLabel = "—";
+    var mediaWindow = null; // { duration, live, segmentStarts: number[] }
+    var preciseSeekToken = 0;
+    var selectedAdId = null;
+    var adBreaks = []; // { id, offsetSec, durationSec, assetUri }
+    var adIdSeq = 1;
+    var playheadRaf = 0;
+    var proxyAvailable = false;
+    var PROXY_ORIGIN = window.location.origin; // same host as UI when using proxy_server.py
+
+
+    // Synthetic PDT base when playlist has no PROGRAM-DATE-TIME
+    var SYNTH_PDT_BASE = "2020-01-01T00:00:00.000Z";
+    var SYNTH_PDT_MS = Date.parse(SYNTH_PDT_BASE);
+    var USER_AD_ID_PREFIX = "user-ad-";
+
+    // ---------- utils ----------
+    function setStatus(text, kind) {
+      statusEl.textContent = text;
+      statusEl.className = "status" + (kind ? " " + kind : "");
+    }
+    function showOverlay(title, body) {
+      overlay.classList.remove("hidden");
+      overlay.innerHTML = "<div><strong>" + esc(title) + "</strong>" + esc(body || "") + "</div>";
+    }
+    function hideOverlay() { overlay.classList.add("hidden"); }
+    function esc(s) {
+      return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+    }
+    function formatOffset(n) {
+      if (!isFinite(n)) return String(n);
+      if (Number.isInteger(n)) return String(n);
+      return String(Math.round(n * 1000) / 1000);
+    }
+    function formatTime(sec) {
+      if (!isFinite(sec)) return "—";
+      var sign = sec < 0 ? "-" : "";
+      sec = Math.abs(sec);
+      var h = Math.floor(sec / 3600);
+      var m = Math.floor((sec % 3600) / 60);
+      var s = Math.floor(sec % 60);
+      var frac = Math.round((sec - Math.floor(sec)) * 10);
+      var core = (h > 0 ? h + ":" + String(m).padStart(2, "0") : m) + ":" + String(s).padStart(2, "0");
+      if (frac) core += "." + frac;
+      return sign + core;
+    }
+    function quoteAttr(s) {
+      return '"' + String(s).replace(/\\/g, "\\\\").replace(/"/g, '\\"') + '"';
+    }
+    function toIsoDate(ms) {
+      return new Date(ms).toISOString().replace(/\.(\d{3})\d*Z$/, ".$1Z");
+    }
+
+    function isMasterPlaylistText(text) {
+      return /#EXT-X-STREAM-INF\b/i.test(text) || /#EXT-X-I-FRAME-STREAM-INF\b/i.test(text);
+    }
+    function isMediaPlaylistText(text) {
+      return /#EXTINF\b/i.test(text) || /#EXT-X-TARGETDURATION\b/i.test(text) ||
+        /#EXT-X-MAP\b/i.test(text) || /#EXT-X-PART\b/i.test(text);
+    }
+    function isInjectableContext(context, playlistText) {
+      if (!context || typeof playlistText !== "string") return false;
+      if (isMasterPlaylistText(playlistText)) return false;
+      if (!isMediaPlaylistText(playlistText)) return false;
+      var t = context.type;
+      return t === "level" || t === "manifest";
+    }
+
+    // ---------- start config ----------
+    function getStartConfig() {
+      if (startModeSelect.value !== "override") {
+        return { mode: "playlist", override: false, timeOffset: null, precise: false, tag: null, magnitude: 0, anchor: "start" };
+      }
+      var mag = parseFloat(String(timeOffsetMagInput.value).trim());
+      if (Number.isNaN(mag) || mag < 0) {
+        return { mode: "override", override: false, error: "Offset magnitude must be ≥ 0", timeOffset: null, precise: preciseCheck.checked, tag: null, magnitude: 0, anchor: startAnchorSelect.value };
+      }
+      var anchor = startAnchorSelect.value;
+      var timeOffset = anchor === "end" ? -mag : mag;
+      var precise = preciseCheck.checked;
+      var tag = "#EXT-X-START:TIME-OFFSET=" + formatOffset(timeOffset) + ",PRECISE=" + (precise ? "YES" : "NO");
+      return { mode: "override", override: true, timeOffset: timeOffset, precise: precise, tag: tag, magnitude: mag, anchor: anchor };
+    }
+
+    function updateStartUi() {
+      var isOverride = startModeSelect.value === "override";
+      startSettings.classList.toggle("is-playlist-default", !isOverride);
+      var cfg = getStartConfig();
+      if (!isOverride) {
+        tagPreview.textContent = "Using playlist as-is (no injected EXT-X-START)";
+        tagPreview.classList.add("muted");
+      } else if (cfg.error) {
+        tagPreview.textContent = cfg.error;
+        tagPreview.classList.add("muted");
+      } else {
+        tagPreview.textContent = cfg.tag;
+        tagPreview.classList.remove("muted");
+      }
+      scrubberPanel.classList.add("visible");
+      scrubberPanel.classList.toggle("disabled-look", !isOverride);
+      updateScrubberLabels();
+    }
+
+    function resolveAbsoluteStart(timeOffset, duration) {
+      if (timeOffset == null || !isFinite(timeOffset)) return null;
+      if (timeOffset < 0) {
+        if (!isFinite(duration) || duration <= 0) return null;
+        return Math.max(0, duration + timeOffset);
+      }
+      return Math.max(0, timeOffset);
+    }
+
+    // ---------- segment / PDT parsing for inject ----------
+    function parseMediaTimeline(playlistText) {
+      var lines = playlistText.replace(/^\uFEFF/, "").split(/\r?\n/);
+      var segmentStarts = [0];
+      var cumulative = 0;
+      var firstPdtMs = null;
+      var pendingPdt = null;
+      var hasExtinf = false;
+
+      for (var i = 0; i < lines.length; i++) {
+        var line = lines[i];
+        var pdt = line.match(/^#EXT-X-PROGRAM-DATE-TIME:(.+)$/i);
+        if (pdt) {
+          var ms = Date.parse(pdt[1].trim());
+          if (!Number.isNaN(ms)) {
+            pendingPdt = ms;
+            if (firstPdtMs == null) firstPdtMs = ms;
+          }
+          continue;
+        }
+        var inf = line.match(/^#EXTINF:([0-9.]+)/i);
+        if (inf) {
+          hasExtinf = true;
+          var dur = parseFloat(inf[1]) || 0;
+          // next non-empty non-tag line is URI — still advance timeline after EXTINF
+          cumulative += dur;
+          segmentStarts.push(cumulative);
+          if (pendingPdt != null && firstPdtMs == null) firstPdtMs = pendingPdt;
+          pendingPdt = null;
+        }
+      }
+      // last push is end; segment starts are all but last if we pushed end
+      if (segmentStarts.length > 1 && hasExtinf) {
+        // segmentStarts includes trailing end time as last element
+      }
+      return {
+        duration: cumulative,
+        segmentStarts: segmentStarts, // includes final end
+        firstPdtMs: firstPdtMs,
+        hasProgramDateTime: firstPdtMs != null,
+      };
+    }
+
+    function snapOffset(offsetSec, segmentStarts) {
+      if (!segmentStarts || segmentStarts.length < 2) return offsetSec;
+      // snap to nearest segment start (not the final end-only entry if equal duration)
+      var best = segmentStarts[0];
+      var bestDist = Math.abs(offsetSec - best);
+      for (var i = 0; i < segmentStarts.length; i++) {
+        var s = segmentStarts[i];
+        // avoid snapping past content end as a "start" of non-existent segment
+        if (i === segmentStarts.length - 1 && s === segmentStarts[i - 1]) continue;
+        var d = Math.abs(offsetSec - s);
+        if (d < bestDist) { bestDist = d; best = s; }
+      }
+      // Prefer previous boundary if very close to end marker
+      return best;
+    }
+
+    function buildDateRangeTag(breakItem, startDateIso) {
+      var parts = [
+        "ID=" + quoteAttr(breakItem.id),
+        "CLASS=" + quoteAttr("com.apple.hls.interstitial"),
+        "START-DATE=" + startDateIso,
+      ];
+      if (breakItem.durationSec != null && isFinite(breakItem.durationSec) && breakItem.durationSec > 0) {
+        parts.push("DURATION=" + formatOffset(breakItem.durationSec));
+      }
+      parts.push("X-ASSET-URI=" + quoteAttr(breakItem.assetUri));
+      var resume = parseFloat(adResumeOffset.value);
+      if (!Number.isNaN(resume)) parts.push("X-RESUME-OFFSET=" + formatOffset(resume));
+      if (adRestrictSkip.checked) parts.push("X-RESTRICT=" + quoteAttr("SKIP"));
+      return "#EXT-X-DATERANGE:" + parts.join(",");
+    }
+
+    /**
+     * Rewrite a media playlist: optional EXT-X-START, ensure PDT base, inject interstitial DATERANGEs.
+     */
+    function rewriteMediaPlaylist(playlistText, startCfg, breaks) {
+      var text = playlistText.replace(/^\uFEFF/, "");
+      var lines = text.split(/\r?\n/);
+      var timeline = parseMediaTimeline(text);
+      var out = [];
+      var versionIndex = -1;
+      var extm3uIndex = -1;
+      var sawMapOrInf = false;
+      var injectedPdt = false;
+      var needSynthPdt = breaks && breaks.length > 0 && !timeline.hasProgramDateTime;
+      var basePdtMs = timeline.hasProgramDateTime ? timeline.firstPdtMs : SYNTH_PDT_MS;
+
+      // Strip prior user-ad dateranges and our synthetic PDT marker comments
+      for (var i = 0; i < lines.length; i++) {
+        var line = lines[i];
+        if (/^#EXT-X-DATERANGE:/i.test(line) && line.indexOf(USER_AD_ID_PREFIX) !== -1) continue;
+        if (/^#EXT-X-START\b/i.test(line) && startCfg && startCfg.override) continue;
+        // Remove previously injected synthetic PDT only (keep real ones)
+        if (needSynthPdt && /^#EXT-X-PROGRAM-DATE-TIME:/i.test(line) && line.indexOf("2020-01-01T00:00:00") !== -1) {
+          // will re-inject cleanly
+          continue;
+        }
+        if (/^#EXTM3U\b/i.test(line) && extm3uIndex === -1) extm3uIndex = out.length;
+        if (/^#EXT-X-VERSION\b/i.test(line)) versionIndex = out.length;
+        out.push(line);
+      }
+
+      // Build header inserts
+      var headerInserts = [];
+      if (startCfg && startCfg.override && startCfg.tag) headerInserts.push(startCfg.tag);
+
+      if (breaks && breaks.length) {
+        // Ensure compatibility version high enough for daterange-ish features (keep existing if higher)
+        if (versionIndex >= 0) {
+          var vm = out[versionIndex].match(/^#EXT-X-VERSION:(\d+)/i);
+          var ver = vm ? parseInt(vm[1], 10) : 1;
+          if (ver < 7) out[versionIndex] = "#EXT-X-VERSION:7";
+        } else {
+          headerInserts.unshift("#EXT-X-VERSION:7");
+        }
+
+        var sorted = breaks.slice().sort(function (a, b) { return a.offsetSec - b.offsetSec; });
+        for (var b = 0; b < sorted.length; b++) {
+          var br = sorted[b];
+          var off = br.offsetSec;
+          if (adSnapSegment.checked) off = snapOffset(off, timeline.segmentStarts);
+          var startMs = basePdtMs + Math.round(off * 1000);
+          headerInserts.push(buildDateRangeTag({
+            id: br.id,
+            durationSec: br.durationSec,
+            assetUri: br.assetUri,
+          }, toIsoDate(startMs)));
+        }
+      }
+
+      var insertAt = 0;
+      if (versionIndex >= 0) insertAt = versionIndex + 1;
+      else if (extm3uIndex >= 0) insertAt = extm3uIndex + 1;
+      for (var h = 0; h < headerInserts.length; h++) {
+        out.splice(insertAt + h, 0, headerInserts[h]);
+      }
+
+      // Inject synthetic PROGRAM-DATE-TIME before first media segment if needed
+      if (needSynthPdt) {
+        for (var j = 0; j < out.length; j++) {
+          if (/^#EXTINF:/i.test(out[j]) || /^#EXT-X-MAP:/i.test(out[j])) {
+            out.splice(j, 0, "#EXT-X-PROGRAM-DATE-TIME:" + SYNTH_PDT_BASE);
+            injectedPdt = true;
+            break;
+          }
+        }
+      }
+
+      adsInjectedLast = breaks ? breaks.length : 0;
+      return out.join("\n");
+    }
+
+    function createPlaylistLoader(startCfg, breaks) {
+      var BaseLoader = Hls.DefaultConfig.loader;
+      function Loader(config) { BaseLoader.call(this, config); }
+      Loader.prototype = Object.create(BaseLoader.prototype);
+      Loader.prototype.constructor = Loader;
+      Loader.prototype.load = function (context, config, callbacks) {
+        var onSuccess = callbacks.onSuccess;
+        callbacks.onSuccess = function (response, stats, ctx, networkDetails) {
+          try {
+            if (response && typeof response.data === "string") {
+              var data = response.data;
+              if (isInjectableContext(ctx, data)) {
+                var needStart = startCfg && startCfg.override;
+                var needAds = breaks && breaks.length > 0;
+                if (needStart || needAds) {
+                  var rewritten = rewriteMediaPlaylist(data, startCfg, breaks || []);
+                  response.data = rewritten;
+                  injectCount += 1;
+                  statInject.textContent = injectCount + " media, skipped " + skipCount;
+                  statAds.textContent = needAds ? (adsInjectedLast + " break(s) / media") : "none";
+                  recordRewrittenPlaylist(ctx, data, rewritten, needAds, needStart);
+                }
+              } else if (data.indexOf("#EXT") !== -1) {
+                if (isMasterPlaylistText(data) || ctx.type === "audioTrack" || ctx.type === "subtitleTrack") {
+                  skipCount += 1;
+                  statInject.textContent = injectCount + " media, skipped " + skipCount;
+                }
+              }
+            }
+          } catch (e) {
+            console.warn("playlist rewrite failed", e);
+          }
+          onSuccess(response, stats, ctx, networkDetails);
+        };
+        return BaseLoader.prototype.load.call(this, context, config, callbacks);
+      };
+      return Loader;
+    }
+
+    // ---------- rewritten playlist debug ----------
+    var lastRewrite = null; // { url, type, original, rewritten, at, needAds, needStart }
+
+    function highlightPlaylistHtml(text) {
+      return esc(text).split("\n").map(function (line) {
+        if (/^#EXT-X-DATERANGE/i.test(line) || line.indexOf("com.apple.hls.interstitial") !== -1) {
+          return '<span class="hl-ad">' + line + "</span>";
+        }
+        if (/^#EXT-X-START\b/i.test(line)) {
+          return '<span class="hl-start">' + line + "</span>";
+        }
+        if (/^#EXT-X-PROGRAM-DATE-TIME\b/i.test(line)) {
+          return '<span class="hl-pdt">' + line + "</span>";
+        }
+        return line;
+      }).join("\n");
+    }
+
+    function recordRewrittenPlaylist(ctx, original, rewritten, needAds, needStart) {
+      var url = (ctx && (ctx.url || ctx.src)) || "(unknown url)";
+      var type = (ctx && ctx.type) || "?";
+      lastRewrite = {
+        url: url,
+        type: type,
+        original: original,
+        rewritten: rewritten,
+        at: new Date().toISOString(),
+        needAds: !!needAds,
+        needStart: !!needStart,
+      };
+
+      var meta = document.getElementById("debug-meta");
+      var pre = document.getElementById("debug-pre");
+      var copyBtn = document.getElementById("debug-copy");
+      var dlBtn = document.getElementById("debug-download");
+      if (meta) {
+        var adLines = (rewritten.match(/^#EXT-X-DATERANGE:.*interstitial/gim) || []).length;
+        var startLines = (rewritten.match(/^#EXT-X-START\b/gim) || []).length;
+        meta.textContent =
+          lastRewrite.at +
+          " · context=" + type +
+          " · interstitial DATERANGE lines=" + adLines +
+          " · EXT-X-START lines=" + startLines +
+          " · url=" + url;
+      }
+      if (pre) pre.innerHTML = highlightPlaylistHtml(rewritten);
+      if (copyBtn) copyBtn.disabled = false;
+      if (dlBtn) dlBtn.disabled = false;
+
+      var logCb = document.getElementById("debug-log-console");
+      if (logCb && logCb.checked) {
+        console.groupCollapsed("[hls-player] rewritten media playlist (" + type + ")");
+        console.log("url:", url);
+        console.log("interstitial tags:", (rewritten.match(/^#EXT-X-DATERANGE:.*$/gim) || []));
+        console.log(rewritten);
+        console.groupEnd();
+      }
+    }
+
+    function setupDebugUi() {
+      var copyBtn = document.getElementById("debug-copy");
+      var dlBtn = document.getElementById("debug-download");
+      var clearBtn = document.getElementById("debug-clear");
+      if (copyBtn) {
+        copyBtn.addEventListener("click", function () {
+          if (!lastRewrite) return;
+          navigator.clipboard.writeText(lastRewrite.rewritten).then(function () {
+            setStatus("Rewritten playlist copied to clipboard", "ok");
+          }).catch(function () {
+            setStatus("Copy failed", "err");
+          });
+        });
+      }
+      if (dlBtn) {
+        dlBtn.addEventListener("click", function () {
+          if (!lastRewrite) return;
+          var blob = new Blob([lastRewrite.rewritten], { type: "application/vnd.apple.mpegurl" });
+          var a = document.createElement("a");
+          a.href = URL.createObjectURL(blob);
+          a.download = "rewritten-media.m3u8";
+          document.body.appendChild(a);
+          a.click();
+          setTimeout(function () {
+            URL.revokeObjectURL(a.href);
+            a.remove();
+          }, 0);
+          setStatus("Downloaded rewritten-media.m3u8", "ok");
+        });
+      }
+      if (clearBtn) {
+        clearBtn.addEventListener("click", function () {
+          lastRewrite = null;
+          var meta = document.getElementById("debug-meta");
+          var pre = document.getElementById("debug-pre");
+          if (meta) meta.textContent = "Cleared.";
+          if (pre) pre.textContent = "(empty)";
+          if (copyBtn) copyBtn.disabled = true;
+          if (dlBtn) dlBtn.disabled = true;
+        });
+      }
+    }
+
+    // ---------- ad break UI ----------
+    function defaultAssetUri() {
+      return (adAssetUrl.value || "").trim();
+    }
+    function defaultDur() {
+      var d = parseFloat(adDuration.value);
+      return !Number.isNaN(d) && d >= 0 ? d : 15;
+    }
+
+    function addAdBreak(offsetSec, opts) {
+      opts = opts || {};
+      var uri = (opts.assetUri != null ? opts.assetUri : defaultAssetUri()).trim();
+      if (!uri) {
+        setStatus("Set a default interstitial URL first", "err");
+        return null;
+      }
+      try { new URL(uri); } catch (_) {
+        setStatus("Interstitial URL is invalid", "err");
+        return null;
+      }
+      var off = Math.max(0, offsetSec || 0);
+      if (mediaWindow && isFinite(mediaWindow.duration)) {
+        off = Math.min(off, Math.max(0, mediaWindow.duration - 0.001));
+        if (adSnapSegment.checked && mediaWindow.segmentStarts) {
+          off = snapOffset(off, mediaWindow.segmentStarts);
+        }
+      }
+      var item = {
+        id: USER_AD_ID_PREFIX + (adIdSeq++),
+        offsetSec: off,
+        durationSec: opts.durationSec != null ? opts.durationSec : defaultDur(),
+        assetUri: uri,
+      };
+      adBreaks.push(item);
+      adBreaks.sort(function (a, b) { return a.offsetSec - b.offsetSec; });
+      selectedAdId = item.id;
+      renderAdList();
+      renderTimelineMarkers();
+      updateAdSample();
+      persistAds();
+      setStatus("Ad break at " + formatTime(item.offsetSec) + " — click Apply ads & reload", "ad");
+      adApplyReload.disabled = !lastUrl;
+      adClear.disabled = adBreaks.length === 0;
+      return item;
+    }
+
+    function removeAdBreak(id) {
+      adBreaks = adBreaks.filter(function (b) { return b.id !== id; });
+      if (selectedAdId === id) selectedAdId = null;
+      renderAdList();
+      renderTimelineMarkers();
+      updateAdSample();
+      persistAds();
+      adClear.disabled = adBreaks.length === 0;
+    }
+
+    function clearAdBreaks() {
+      adBreaks = [];
+      selectedAdId = null;
+      renderAdList();
+      renderTimelineMarkers();
+      updateAdSample();
+      persistAds();
+      adClear.disabled = true;
+      setStatus("Cleared ad breaks (reload to drop injected tags)", "info");
+    }
+
+    function updateAdSample() {
+      adsCountLabel.textContent = adBreaks.length + " break" + (adBreaks.length === 1 ? "" : "s");
+      if (!adBreaks.length) {
+        adSampleTag.textContent = '#EXT-X-DATERANGE:ID="user-ad-1",CLASS="com.apple.hls.interstitial",START-DATE=…,DURATION=15,X-ASSET-URI="…"';
+        adSampleTag.classList.add("muted");
+        return;
+      }
+      var b = adBreaks[0];
+      var ms = SYNTH_PDT_MS + Math.round(b.offsetSec * 1000);
+      adSampleTag.textContent = buildDateRangeTag(b, toIsoDate(ms));
+      adSampleTag.classList.remove("muted");
+    }
+
+    function renderAdList() {
+      adList.innerHTML = "";
+      if (!adBreaks.length) {
+        adEmpty.style.display = "block";
+        adList.appendChild(adEmpty);
+        return;
+      }
+      adEmpty.style.display = "none";
+      adBreaks.forEach(function (b, idx) {
+        var row = document.createElement("div");
+        row.className = "ad-row" + (b.id === selectedAdId ? " selected" : "");
+        row.dataset.id = b.id;
+
+        var fields = document.createElement("div");
+        fields.className = "ad-fields";
+
+        function field(label, el) {
+          var wrap = document.createElement("label");
+          wrap.className = "field-block";
+          var sp = document.createElement("span");
+          sp.textContent = label;
+          wrap.appendChild(sp);
+          wrap.appendChild(el);
+          fields.appendChild(wrap);
+        }
+
+        var offIn = document.createElement("input");
+        offIn.type = "number"; offIn.min = "0"; offIn.step = "any"; offIn.value = formatOffset(b.offsetSec);
+        offIn.addEventListener("change", function () {
+          var v = parseFloat(offIn.value);
+          if (Number.isNaN(v) || v < 0) return;
+          b.offsetSec = v;
+          if (mediaWindow && adSnapSegment.checked) b.offsetSec = snapOffset(v, mediaWindow.segmentStarts);
+          offIn.value = formatOffset(b.offsetSec);
+          adBreaks.sort(function (a, c) { return a.offsetSec - c.offsetSec; });
+          renderAdList();
+          renderTimelineMarkers();
+          updateAdSample();
+          persistAds();
+        });
+        field("Offset (s)", offIn);
+
+        var durIn = document.createElement("input");
+        durIn.type = "number"; durIn.min = "0"; durIn.step = "any"; durIn.value = formatOffset(b.durationSec);
+        durIn.addEventListener("change", function () {
+          var v = parseFloat(durIn.value);
+          if (Number.isNaN(v) || v < 0) return;
+          b.durationSec = v;
+          updateAdSample();
+          persistAds();
+          renderAdList();
+        });
+        field("Duration (s)", durIn);
+
+        var uriIn = document.createElement("input");
+        uriIn.type = "url"; uriIn.value = b.assetUri; uriIn.spellcheck = false;
+        uriIn.addEventListener("change", function () {
+          b.assetUri = uriIn.value.trim();
+          updateAdSample();
+          persistAds();
+          renderAdList();
+        });
+        field("X-ASSET-URI", uriIn);
+
+        var preview = document.createElement("div");
+        preview.className = "ad-preview";
+        var ms = SYNTH_PDT_MS + Math.round(b.offsetSec * 1000);
+        preview.textContent = buildDateRangeTag(b, toIsoDate(ms));
+        fields.appendChild(preview);
+
+        var actions = document.createElement("div");
+        actions.className = "ad-actions";
+        var seekBtn = document.createElement("button");
+        seekBtn.type = "button";
+        seekBtn.className = "btn btn-ghost btn-sm";
+        seekBtn.textContent = "Seek";
+        seekBtn.addEventListener("click", function (e) {
+          e.stopPropagation();
+          selectedAdId = b.id;
+          try { video.currentTime = b.offsetSec; } catch (_) {}
+          renderAdList();
+          renderTimelineMarkers();
+        });
+        var delBtn = document.createElement("button");
+        delBtn.type = "button";
+        delBtn.className = "btn btn-danger btn-sm";
+        delBtn.textContent = "Remove";
+        delBtn.addEventListener("click", function (e) {
+          e.stopPropagation();
+          removeAdBreak(b.id);
+        });
+        actions.appendChild(seekBtn);
+        actions.appendChild(delBtn);
+
+        var idxEl = document.createElement("div");
+        idxEl.className = "ad-idx";
+        idxEl.textContent = String(idx + 1);
+
+        row.appendChild(idxEl);
+        row.appendChild(fields);
+        row.appendChild(actions);
+        row.addEventListener("click", function () {
+          selectedAdId = b.id;
+          renderAdList();
+          renderTimelineMarkers();
+        });
+        adList.appendChild(row);
+      });
+    }
+
+    function renderTimelineMarkers() {
+      // remove old markers
+      adTimeline.querySelectorAll(".timeline-marker").forEach(function (n) { n.remove(); });
+      if (!mediaWindow || !mediaWindow.duration) return;
+      adBreaks.forEach(function (b) {
+        var pct = (b.offsetSec / mediaWindow.duration) * 100;
+        pct = Math.min(100, Math.max(0, pct));
+        var m = document.createElement("div");
+        m.className = "timeline-marker" + (b.id === selectedAdId ? " selected" : "");
+        m.style.left = pct + "%";
+        m.title = b.id + " @ " + formatTime(b.offsetSec);
+        m.addEventListener("click", function (e) {
+          e.stopPropagation();
+          selectedAdId = b.id;
+          renderAdList();
+          renderTimelineMarkers();
+        });
+        adTimeline.appendChild(m);
+      });
+    }
+
+    function configureTimeline(duration, live, segmentStarts) {
+      mediaWindow = { duration: duration, live: !!live, segmentStarts: segmentStarts || [0, duration] };
+      tlLeft.textContent = "0:00";
+      tlRight.textContent = formatTime(duration);
+      tlMid.textContent = live ? ("Live window ~" + formatOffset(duration) + "s") : ("Duration " + formatTime(duration));
+      adAddPlayhead.disabled = false;
+      adAddOffset.disabled = false;
+      adApplyReload.disabled = !lastUrl;
+      adClear.disabled = adBreaks.length === 0;
+      renderTimelineMarkers();
+      configureScrubberFromDuration(duration, live);
+    }
+
+    function timelineClick(ev) {
+      if (!mediaWindow || !mediaWindow.duration) {
+        setStatus("Load content first so the timeline has a duration", "info");
+        return;
+      }
+      var rect = adTimeline.getBoundingClientRect();
+      var x = (ev.clientX - rect.left) / rect.width;
+      x = Math.min(1, Math.max(0, x));
+      addAdBreak(x * mediaWindow.duration);
+    }
+
+    function updatePlayheadUi() {
+      if (!mediaWindow || !mediaWindow.duration) {
+        timelinePlayhead.style.left = "0%";
+        timelineFill.style.width = "0%";
+        return;
+      }
+      var t = video.currentTime || 0;
+      // For live, currentTime may not be 0..duration; clamp for display
+      var pct = (t / mediaWindow.duration) * 100;
+      if (!isFinite(pct)) pct = 0;
+      pct = Math.min(100, Math.max(0, pct));
+      timelinePlayhead.style.left = pct + "%";
+      timelineFill.style.width = pct + "%";
+    }
+
+    function tickPlayhead() {
+      updatePlayheadUi();
+      playheadRaf = requestAnimationFrame(tickPlayhead);
+    }
+
+    // ---------- scrubber (start) ----------
+    function resetScrubber() {
+      scrubber.disabled = true;
+      scrubApplyRestart.disabled = true;
+      scrubSeekNow.disabled = true;
+      scrubber.value = "0";
+      scrubLeft.textContent = "0s";
+      scrubRight.textContent = "—";
+      scrubResolved.textContent = "";
+    }
+    function configureScrubberFromDuration(duration, live) {
+      if (!isFinite(duration) || duration <= 0) return;
+      scrubber.disabled = false;
+      scrubApplyRestart.disabled = false;
+      scrubSeekNow.disabled = false;
+      var maxUnits = Math.max(1, Math.round(duration * 10));
+      scrubber.min = "0"; scrubber.max = String(maxUnits); scrubber.step = "1";
+      syncScrubberFromInputs();
+      updateScrubberLabels();
+    }
+    function syncScrubberFromInputs() {
+      if (!mediaWindow || scrubber.disabled) return;
+      var cfg = getStartConfig();
+      var duration = mediaWindow.duration;
+      var mag = cfg.magnitude || 0;
+      mag = Math.min(Math.max(0, mag), duration);
+      scrubber.value = String(Math.round(mag * 10));
+      updateScrubberResolved();
+    }
+    function updateScrubberLabels() {
+      if (!mediaWindow) { scrubLeft.textContent = "0s"; scrubRight.textContent = "—"; return; }
+      if (mediaWindow.live || startAnchorSelect.value === "end") {
+        scrubLeft.textContent = "live edge";
+        scrubRight.textContent = "−" + formatOffset(mediaWindow.duration) + "s";
+      } else {
+        scrubLeft.textContent = "0:00";
+        scrubRight.textContent = formatTime(mediaWindow.duration);
+      }
+      updateScrubberResolved();
+    }
+    function updateScrubberResolved() {
+      var cfg = getStartConfig();
+      if (!mediaWindow || startModeSelect.value !== "override" || !cfg.override) {
+        scrubResolved.textContent = "";
+        return;
+      }
+      var abs = resolveAbsoluteStart(cfg.timeOffset, mediaWindow.duration);
+      scrubResolved.textContent = cfg.tag + (abs != null ? " → ~" + formatTime(abs) : "");
+    }
+    function applyScrubberToInputs() {
+      if (!mediaWindow) return;
+      var mag = (parseInt(scrubber.value, 10) || 0) / 10;
+      if (mediaWindow.live) startAnchorSelect.value = "end";
+      timeOffsetMagInput.value = String(formatOffset(mag));
+      updateStartUi();
+    }
+
+    // ---------- player ----------
+    function formatLevel(level, index) {
+      var h = level.height || 0;
+      var bw = level.bitrate || level.bandwidth || 0;
+      var mbps = bw ? (bw / 1e6).toFixed(2) + " Mbps" : "";
+      return [(h ? h + "p" : "L" + index), mbps].filter(Boolean).join(" · ");
+    }
+    function resetLevels() {
+      levelsSelect.innerHTML = '<option value="-1">Auto</option>';
+      levelsSelect.disabled = true;
+    }
+    function destroyPlayer() {
+      preciseSeekToken += 1;
+      if (hls) { hls.destroy(); hls = null; }
+      video.removeAttribute("src");
+      video.load();
+      resetLevels();
+      resetScrubber();
+      stopBtn.disabled = true;
+      injectCount = 0; skipCount = 0; adsInjectedLast = 0;
+      appliedStartLabel = "—"; resolvedStartLabel = "—";
+      statMode.textContent = statLevels.textContent = statType.textContent = "—";
+      statStart.textContent = statAds.textContent = statInject.textContent = statResolved.textContent = "—";
+      // keep ad breaks & mediaWindow duration for editing offline; clear live playhead window only if stopping hard
+    }
+
+    function stopPlayback() {
+      destroyPlayer();
+      mediaWindow = null;
+      tlMid.textContent = "Load content to enable";
+      tlRight.textContent = "—";
+      adAddPlayhead.disabled = true;
+      adAddOffset.disabled = true;
+      adApplyReload.disabled = true;
+      renderTimelineMarkers();
+      setStatus("Stopped", "info");
+      showOverlay("Stopped", "Paste a URL and hit Play to start again.");
+    }
+
+    function schedulePreciseSeek(target, token) {
+      if (target == null || !isFinite(target)) return;
+      function trySeek(reason) {
+        if (token !== preciseSeekToken) return;
+        try {
+          if (Math.abs(video.currentTime - target) > 0.05) video.currentTime = target;
+          resolvedStartLabel = "~" + formatTime(target) + " (" + reason + ")";
+          statResolved.textContent = resolvedStartLabel;
+        } catch (_) {}
+      }
+      if (video.readyState >= 1) trySeek("precise");
+      else video.addEventListener("loadedmetadata", function () { trySeek("precise/meta"); }, { once: true });
+      var onProgress = function () {
+        if (token !== preciseSeekToken) { video.removeEventListener("progress", onProgress); return; }
+        if (video.buffered.length > 0) { trySeek("precise/reassert"); video.removeEventListener("progress", onProgress); }
+      };
+      video.addEventListener("progress", onProgress);
+    }
+
+    function loadWithHls(url, startCfg, useClientInject) {
+      if (useClientInject === undefined) useClientInject = true;
+      injectCount = 0; skipCount = 0;
+      var breaks = adBreaks.slice();
+      var needLoader = !!useClientInject && ((startCfg && startCfg.override) || breaks.length > 0);
+
+      var hlsConfig = {
+        enableWorker: true,
+        lowLatencyMode: true,
+        backBufferLength: 90,
+        startPosition: -1,
+        enableDateRangeMetadataTrack: true,
+      };
+      // hls.js 1.6 interstitial-related flags when present
+      if (typeof Hls.DefaultConfig !== "undefined") {
+        if ("enableInterstitialPlayback" in Hls.DefaultConfig) {
+          hlsConfig.enableInterstitialPlayback = true;
+        }
+        if ("interstitialAppendInPlace" in Hls.DefaultConfig) {
+          hlsConfig.interstitialAppendInPlace = false;
+        }
+      }
+
+      if (needLoader) hlsConfig.pLoader = createPlaylistLoader(startCfg, breaks);
+
+      appliedStartLabel = startCfg.override ? startCfg.tag.replace(/^#/, "") + " (media)" : "Playlist default";
+      statStart.textContent = appliedStartLabel;
+      statAds.textContent = breaks.length ? ("pending " + breaks.length) : "none";
+      statInject.textContent = needLoader ? "0 media" : "off";
+
+      hls = new Hls(hlsConfig);
+      hls.loadSource(url);
+      hls.attachMedia(video);
+
+      hls.on(Hls.Events.MANIFEST_PARSED, function (_e, data) {
+        var levels = data.levels || hls.levels || [];
+        levelsSelect.innerHTML = '<option value="-1">Auto</option>';
+        levels.forEach(function (level, i) {
+          var opt = document.createElement("option");
+          opt.value = String(i);
+          opt.textContent = formatLevel(level, i);
+          levelsSelect.appendChild(opt);
+        });
+        levelsSelect.disabled = levels.length <= 1;
+        statMode.textContent = "hls.js " + (Hls.version || "");
+        statLevels.textContent = String(levels.length);
+        setStatus("Manifest loaded · " + levels.length + " level(s)" + (breaks.length ? " · " + breaks.length + " ad break(s)" : ""), breaks.length ? "ad" : "ok");
+        hideOverlay();
+        if (autoplayCheck.checked) {
+          video.play().catch(function (err) {
+            setStatus("Ready — click play (" + err.message + ")", "info");
+          });
+        }
+      });
+
+      hls.on(Hls.Events.LEVEL_LOADED, function (_e, data) {
+        if (!data || !data.details) return;
+        var details = data.details;
+        var duration = details.totalduration || 0;
+        var segmentStarts = [0];
+        if (details.fragments && details.fragments.length) {
+          var base = details.fragments[0].start || 0;
+          segmentStarts = details.fragments.map(function (f) {
+            return (f.start || 0) - base;
+          });
+          var last = details.fragments[details.fragments.length - 1];
+          duration = ((last.start || 0) - base) + (last.duration || 0);
+          if (!isFinite(duration) || duration <= 0) duration = details.totalduration || 0;
+          segmentStarts.push(duration);
+        }
+        configureTimeline(duration, !!details.live, segmentStarts);
+
+        var offset = null;
+        if (typeof details.startTimeOffset === "number" && !Number.isNaN(details.startTimeOffset)) {
+          offset = details.startTimeOffset;
+          appliedStartLabel = "TIME-OFFSET=" + formatOffset(offset) + (startCfg.override ? " (injected)" : " (playlist)");
+          statStart.textContent = appliedStartLabel;
+        } else if (startCfg.override) offset = startCfg.timeOffset;
+
+        var abs = resolveAbsoluteStart(offset, duration);
+        if (abs != null) {
+          resolvedStartLabel = "~" + formatTime(abs);
+          statResolved.textContent = resolvedStartLabel;
+        }
+        if (startCfg.override && startCfg.precise && abs != null) {
+          schedulePreciseSeek(abs, preciseSeekToken);
+        }
+        if (breaks.length) {
+          statAds.textContent = breaks.length + " DATERANGE(s)";
+        }
+      });
+
+      // Interstitial lifecycle (when supported)
+      if (Hls.Events.INTERSTITIAL_STARTED) {
+        hls.on(Hls.Events.INTERSTITIAL_STARTED, function () {
+          setStatus("Interstitial playing…", "ad");
+        });
+      }
+      if (Hls.Events.INTERSTITIAL_ENDED) {
+        hls.on(Hls.Events.INTERSTITIAL_ENDED, function () {
+          setStatus("Interstitial ended — back to content", "ok");
+        });
+      }
+      if (Hls.Events.INTERSTITIALS_PRIMARY_RESUMED) {
+        hls.on(Hls.Events.INTERSTITIALS_PRIMARY_RESUMED, function () {
+          setStatus("Primary content resumed", "ok");
+        });
+      }
+
+      hls.on(Hls.Events.ERROR, function (_e, data) {
+        if (!data.fatal) {
+          if (data.details) setStatus("Non-fatal: " + data.details, "info");
+          return;
+        }
+        var msg = data.type + (data.details ? " · " + data.details : "");
+        if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+          hls.startLoad();
+          setStatus("Network error — retrying…", "err");
+          showOverlay("Network error", "Check URL / CORS on content and ad hosts.");
+          return;
+        }
+        if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+          hls.recoverMediaError();
+          setStatus("Media error — recovering…", "err");
+          return;
+        }
+        setStatus("Fatal: " + msg, "err");
+        showOverlay("Playback failed", msg);
+        destroyPlayer();
+      });
+    }
+
+    function loadNative(url, startCfg) {
+      statMode.textContent = "Native HLS";
+      statLevels.textContent = "n/a";
+      statAds.textContent = adBreaks.length ? "not injected (native)" : "none";
+      appliedStartLabel = startCfg.override ? "seek best-effort" : "native/playlist";
+      statStart.textContent = appliedStartLabel;
+      video.src = url;
+      video.addEventListener("loadedmetadata", function () {
+        hideOverlay();
+        var duration = video.duration;
+        if (isFinite(duration) && duration > 0) {
+          configureTimeline(duration, false, [0, duration]);
+        }
+        if (startCfg.override) {
+          var pos = resolveAbsoluteStart(startCfg.timeOffset, duration);
+          if (pos != null) schedulePreciseSeek(pos, preciseSeekToken);
+        }
+        if (adBreaks.length) {
+          setStatus("Native HLS: ad tags are not injected — use Chrome/Firefox with hls.js", "ad");
+        } else {
+          setStatus("Native HLS loaded", "ok");
+        }
+        if (autoplayCheck.checked) video.play().catch(function (e) {
+          setStatus("Ready — click play (" + e.message + ")", "info");
+        });
+      }, { once: true });
+    }
+
+    // ---------- local rewrite proxy ----------
+    function isProxyMode() {
+      return playPathSelect && playPathSelect.value === "proxy";
+    }
+
+    function buildProxyPlayUrl(contentUrl) {
+      return PROXY_ORIGIN + "/proxy?url=" + encodeURIComponent(contentUrl);
+    }
+
+    function getStartConfigForProxy() {
+      var cfg = getStartConfig();
+      if (!cfg.override) {
+        return { override: false, timeOffset: 0, precise: false };
+      }
+      return {
+        override: true,
+        timeOffset: cfg.timeOffset,
+        precise: !!cfg.precise,
+      };
+    }
+
+    function buildRewriteConfigPayload() {
+      return {
+        start: getStartConfigForProxy(),
+        ads: adBreaks.map(function (b) {
+          return {
+            id: b.id,
+            offsetSec: b.offsetSec,
+            durationSec: b.durationSec,
+            assetUri: b.assetUri,
+          };
+        }),
+        snapSegment: !!(adSnapSegment && adSnapSegment.checked),
+        resumeOffset: parseFloat(adResumeOffset && adResumeOffset.value) || 0,
+        restrictSkip: !!(adRestrictSkip && adRestrictSkip.checked),
+      };
+    }
+
+    function pushRewriteConfig() {
+      return fetch(PROXY_ORIGIN + "/api/rewrite-config", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(buildRewriteConfigPayload()),
+      }).then(function (r) {
+        if (!r.ok) throw new Error("config POST failed: HTTP " + r.status);
+        return r.json();
+      });
+    }
+
+    function checkProxyHealth() {
+      return fetch(PROXY_ORIGIN + "/api/health", { cache: "no-store" })
+        .then(function (r) { return r.ok ? r.json() : Promise.reject(); })
+        .then(function (j) {
+          proxyAvailable = !!(j && j.proxy);
+          if (proxyStatusEl) {
+            proxyStatusEl.textContent = proxyAvailable
+              ? "Online · rewrite proxy ready"
+              : "Not a rewrite proxy (static server only)";
+            proxyStatusEl.style.color = proxyAvailable ? "var(--success)" : "var(--danger)";
+          }
+          if (!proxyAvailable && playPathSelect) {
+            // fall back UI hint
+            playPathSelect.value = "direct";
+          }
+          return proxyAvailable;
+        })
+        .catch(function () {
+          proxyAvailable = false;
+          if (proxyStatusEl) {
+            proxyStatusEl.textContent = "Offline — run: python3 proxy_server.py";
+            proxyStatusEl.style.color = "var(--danger)";
+          }
+          if (playPathSelect) playPathSelect.value = "direct";
+          return false;
+        });
+    }
+
+    function playUrl(url) {
+
+      url = (url || "").trim();
+      if (!url) { setStatus("Enter a URL", "err"); return; }
+      try { new URL(url); } catch (_) {
+        setStatus("Invalid content URL", "err"); return;
+      }
+      var startCfg = getStartConfig();
+      if (startCfg.error) { setStatus(startCfg.error, "err"); return; }
+
+      lastUrl = url;
+      urlInput.value = url;
+      destroyPlayer();
+      stopBtn.disabled = false;
+
+      function startPlayback(loadUrl, useClientInject) {
+        setStatus(useClientInject ? "Loading (client inject)…" : "Loading via local proxy…", "info");
+        showOverlay("Loading", useClientInject ? "Fetching playlist…" : "Proxy fetching + rewriting playlist…");
+        if (window.Hls && Hls.isSupported()) loadWithHls(loadUrl, startCfg, useClientInject);
+        else if (video.canPlayType("application/vnd.apple.mpegurl")) loadNative(loadUrl, startCfg);
+        else {
+          setStatus("HLS not supported", "err");
+          showOverlay("Unsupported browser", "Use Chrome, Firefox, Edge, or Safari.");
+        }
+      }
+
+      if (isProxyMode()) {
+        if (!proxyAvailable) {
+          setStatus("Proxy offline — start python3 proxy_server.py (or switch to Direct)", "err");
+          showOverlay("Proxy offline", "Run: python3 proxy_server.py");
+          return;
+        }
+        pushRewriteConfig()
+          .then(function () {
+            var proxied = buildProxyPlayUrl(url);
+            // Fetch once into debug panel so user can inspect without hunting Network
+            fetch(proxied, { cache: "no-store" })
+              .then(function (r) {
+                var rewrittenHdr = r.headers.get("X-Playlist-Rewritten");
+                return r.text().then(function (body) {
+                  recordRewrittenPlaylist(
+                    { url: proxied, type: "proxy-entry" },
+                    "(original is on the remote CDN; this is the proxy response)",
+                    body,
+                    (adBreaks || []).length > 0,
+                    !!(startCfg && startCfg.override)
+                  );
+                  var meta = document.getElementById("debug-meta");
+                  if (meta) {
+                    meta.textContent =
+                      "Proxy entry playlist · X-Playlist-Rewritten=" +
+                      (rewrittenHdr || "0") +
+                      " · " +
+                      proxied;
+                  }
+                });
+              })
+              .catch(function () { /* non-fatal */ });
+            startPlayback(proxied, false);
+          })
+          .catch(function (err) {
+            setStatus("Failed to push rewrite config: " + err.message, "err");
+          });
+        return;
+      }
+
+      // Direct mode: CDN + optional client-side inject
+      startPlayback(url, true);
+    }
+
+    // ---------- persist ----------
+    function persistAds() {
+      try {
+        localStorage.setItem("hls-player-ads", JSON.stringify({
+          breaks: adBreaks,
+          assetUrl: adAssetUrl.value,
+          duration: adDuration.value,
+          resume: adResumeOffset.value,
+          snap: adSnapSegment.checked,
+          restrictSkip: adRestrictSkip.checked,
+          adIdSeq: adIdSeq,
+        }));
+      } catch (_) {}
+    }
+    function restoreAds() {
+      try {
+        var raw = localStorage.getItem("hls-player-ads");
+        if (!raw) return;
+        var s = JSON.parse(raw);
+        if (s.assetUrl) adAssetUrl.value = s.assetUrl;
+        if (s.duration != null) adDuration.value = s.duration;
+        if (s.resume != null) adResumeOffset.value = s.resume;
+        if (typeof s.snap === "boolean") adSnapSegment.checked = s.snap;
+        if (typeof s.restrictSkip === "boolean") adRestrictSkip.checked = s.restrictSkip;
+        if (Array.isArray(s.breaks)) adBreaks = s.breaks;
+        if (s.adIdSeq) adIdSeq = s.adIdSeq;
+        renderAdList();
+        updateAdSample();
+        adClear.disabled = adBreaks.length === 0;
+      } catch (_) {}
+    }
+
+    // ---------- events ----------
+    form.addEventListener("submit", function (e) {
+      e.preventDefault();
+      playUrl(urlInput.value);
+    });
+    stopBtn.addEventListener("click", stopPlayback);
+    levelsSelect.addEventListener("change", function () {
+      if (!hls) return;
+      hls.currentLevel = parseInt(levelsSelect.value, 10);
+    });
+    document.querySelectorAll(".chip[data-url]").forEach(function (chip) {
+      chip.addEventListener("click", function () { playUrl(chip.getAttribute("data-url")); });
+    });
+
+    startModeSelect.addEventListener("change", updateStartUi);
+    startAnchorSelect.addEventListener("change", function () { updateStartUi(); syncScrubberFromInputs(); updateScrubberLabels(); });
+    timeOffsetMagInput.addEventListener("input", function () { updateStartUi(); syncScrubberFromInputs(); });
+    preciseCheck.addEventListener("change", updateStartUi);
+    scrubber.addEventListener("input", applyScrubberToInputs);
+    scrubApplyRestart.addEventListener("click", function () {
+      applyScrubberToInputs();
+      startModeSelect.value = "override";
+      updateStartUi();
+      if (lastUrl) playUrl(lastUrl);
+    });
+    scrubSeekNow.addEventListener("click", function () {
+      applyScrubberToInputs();
+      if (!mediaWindow) return;
+      var cfg = getStartConfig();
+      if (!cfg.override) { setStatus("Enable start override first", "info"); return; }
+      var abs = resolveAbsoluteStart(cfg.timeOffset, mediaWindow.duration);
+      if (abs == null) return;
+      schedulePreciseSeek(abs, preciseSeekToken);
+      setStatus("Seeked to ~" + formatTime(abs), "ok");
+    });
+
+    adTimeline.addEventListener("click", timelineClick);
+    adAddPlayhead.addEventListener("click", function () {
+      addAdBreak(video.currentTime || 0);
+    });
+    adAddOffset.addEventListener("click", function () {
+      var raw = window.prompt("Ad break offset in seconds:", "30");
+      if (raw == null) return;
+      var v = parseFloat(raw);
+      if (Number.isNaN(v) || v < 0) { setStatus("Invalid offset", "err"); return; }
+      addAdBreak(v);
+    });
+    adClear.addEventListener("click", clearAdBreaks);
+    adApplyReload.addEventListener("click", function () {
+      if (!lastUrl && !urlInput.value) {
+        setStatus("Load/play content first", "err");
+        return;
+      }
+      if (!adBreaks.length) {
+        setStatus("No ad breaks to apply — adding none and reloading", "info");
+      }
+      playUrl(lastUrl || urlInput.value);
+    });
+    [adAssetUrl, adDuration, adResumeOffset, adSnapSegment, adRestrictSkip].forEach(function (el) {
+      el.addEventListener("change", function () { updateAdSample(); persistAds(); });
+    });
+
+    updateStartUi();
+    restoreAds();
+    updateAdSample();
+    setupDebugUi();
+    checkProxyHealth();
+    if (playPathSelect) {
+      playPathSelect.addEventListener("change", function () {
+        if (playPathSelect.value === "proxy" && !proxyAvailable) {
+          setStatus("Proxy not detected — run python3 proxy_server.py", "err");
+        } else if (playPathSelect.value === "proxy") {
+          setStatus("Proxy mode: tags appear on localhost Network responses", "ok");
+        } else {
+          setStatus("Direct mode: tags injected in-browser only", "info");
+        }
+      });
+    }
+    playheadRaf = requestAnimationFrame(tickPlayhead);
+
+    // query params
+    var params = new URLSearchParams(window.location.search);
+    var qUrl = params.get("url");
+    if (params.has("offset")) {
+      startModeSelect.value = "override";
+      var off = parseFloat(params.get("offset"));
+      if (!Number.isNaN(off)) {
+        startAnchorSelect.value = (off < 0 || params.get("from") === "end") ? "end" : "start";
+        timeOffsetMagInput.value = String(Math.abs(off));
+      }
+    }
+    if (params.get("precise") === "1" || params.get("precise") === "YES") {
+      startModeSelect.value = "override";
+      preciseCheck.checked = true;
+    }
+    if (params.get("ad")) {
+      adAssetUrl.value = params.get("ad");
+    }
+    updateStartUi();
+    if (qUrl) playUrl(qUrl);
+
+    try {
+      var saved = localStorage.getItem("hls-player-last-url");
+      if (!qUrl && saved) urlInput.value = saved;
+      var savedStart = localStorage.getItem("hls-player-start");
+      if (savedStart && !params.has("offset")) {
+        var s = JSON.parse(savedStart);
+        if (s.mode) startModeSelect.value = s.mode;
+        if (s.anchor) startAnchorSelect.value = s.anchor;
+        if (s.magnitude != null) timeOffsetMagInput.value = s.magnitude;
+        if (typeof s.precise === "boolean") preciseCheck.checked = s.precise;
+        updateStartUi();
+      }
+      function persistStart() {
+        localStorage.setItem("hls-player-start", JSON.stringify({
+          mode: startModeSelect.value,
+          anchor: startAnchorSelect.value,
+          magnitude: timeOffsetMagInput.value,
+          precise: preciseCheck.checked,
+        }));
+      }
+      [startModeSelect, startAnchorSelect, timeOffsetMagInput, preciseCheck].forEach(function (el) {
+        el.addEventListener("change", persistStart);
+      });
+      form.addEventListener("submit", function () {
+        localStorage.setItem("hls-player-last-url", urlInput.value.trim());
+        persistStart();
+        persistAds();
+      });
+    } catch (_) {}
+  })();
+  </script>
+</body>
+</html>
