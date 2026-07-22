@@ -370,15 +370,27 @@ abstract class MediaPlaylistTagWriter extends ExtTagWriter {
                     return WriteUtil.writeQuotedString(attributes.getAssetUri(), getTag());
                 }
             });
-            HANDLERS.put(Constants.X_RESTRICTIONS, new AttributeWriter<DateRangeData>() {
+            HANDLERS.put(Constants.X_ASSET_LIST, new AttributeWriter<DateRangeData>() {
                 @Override
                 public boolean containsAttribute(DateRangeData attributes) {
-                    return attributes.hasRestrictions();
+                    return attributes.hasAssetList();
                 }
 
                 @Override
                 public String write(DateRangeData attributes) throws ParseException {
-                    return WriteUtil.writeQuotedString(attributes.getRestrictions(), getTag());
+                    return WriteUtil.writeQuotedString(attributes.getAssetList(), getTag());
+                }
+            });
+            // Write Apple-standard X-RESTRICT (not legacy X-RESTRICTIONS)
+            HANDLERS.put(Constants.X_RESTRICT, new AttributeWriter<DateRangeData>() {
+                @Override
+                public boolean containsAttribute(DateRangeData attributes) {
+                    return attributes.hasRestrict();
+                }
+
+                @Override
+                public String write(DateRangeData attributes) throws ParseException {
+                    return WriteUtil.writeQuotedString(attributes.getRestrict(), getTag());
                 }
             });
             HANDLERS.put(Constants.X_RESUME_OFFSET, new AttributeWriter<DateRangeData>() {
@@ -390,6 +402,61 @@ abstract class MediaPlaylistTagWriter extends ExtTagWriter {
                 @Override
                 public String write(DateRangeData attributes) {
                     return Float.toString(attributes.getResumeOffset());
+                }
+            });
+            HANDLERS.put(Constants.X_PLAYOUT_LIMIT, new AttributeWriter<DateRangeData>() {
+                @Override
+                public boolean containsAttribute(DateRangeData attributes) {
+                    return attributes.hasPlayoutLimit();
+                }
+
+                @Override
+                public String write(DateRangeData attributes) {
+                    return Float.toString(attributes.getPlayoutLimit());
+                }
+            });
+            HANDLERS.put(Constants.X_SNAP, new AttributeWriter<DateRangeData>() {
+                @Override
+                public boolean containsAttribute(DateRangeData attributes) {
+                    return attributes.hasSnap();
+                }
+
+                @Override
+                public String write(DateRangeData attributes) throws ParseException {
+                    return WriteUtil.writeQuotedString(attributes.getSnap(), getTag());
+                }
+            });
+            HANDLERS.put(Constants.X_CONTENT_MAY_VARY, new AttributeWriter<DateRangeData>() {
+                @Override
+                public boolean containsAttribute(DateRangeData attributes) {
+                    return attributes.hasContentMayVary();
+                }
+
+                @Override
+                public String write(DateRangeData attributes) {
+                    return attributes.getContentMayVary() ? Constants.YES : Constants.NO;
+                }
+            });
+            HANDLERS.put(Constants.X_TIMELINE_OCCUPIES, new AttributeWriter<DateRangeData>() {
+                @Override
+                public boolean containsAttribute(DateRangeData attributes) {
+                    return attributes.hasTimelineOccupies();
+                }
+
+                @Override
+                public String write(DateRangeData attributes) throws ParseException {
+                    return WriteUtil.writeQuotedString(attributes.getTimelineOccupies(), getTag());
+                }
+            });
+            HANDLERS.put(Constants.X_TIMELINE_STYLE, new AttributeWriter<DateRangeData>() {
+                @Override
+                public boolean containsAttribute(DateRangeData attributes) {
+                    return attributes.hasTimelineStyle();
+                }
+
+                @Override
+                public String write(DateRangeData attributes) throws ParseException {
+                    return WriteUtil.writeQuotedString(attributes.getTimelineStyle(), getTag());
                 }
             });
         }
@@ -588,6 +655,10 @@ abstract class MediaPlaylistTagWriter extends ExtTagWriter {
 
                     keyWriter.writeTrackData(tagWriter, playlist, trackData);
                     mapInfoWriter.writeTrackData(tagWriter, playlist, trackData);
+
+                    if (trackData.hasProgramDateTime()) {
+                        tagWriter.writeTag(Constants.EXT_X_PROGRAM_DATE_TIME_TAG, trackData.getProgramDateTime());
+                    }
 
                     if (trackData.hasByteRange()) {
                         writeByteRange(tagWriter, trackData.getByteRange());

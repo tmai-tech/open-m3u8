@@ -51,6 +51,35 @@ Playlist merged = PlaylistDeltaUtil.merge(previous, delta);
 
 Full tag/feature matrix and annotated samples: [docs/SUPPORTED_FEATURES.md](docs/SUPPORTED_FEATURES.md).
 
+HLS Interstitial `EXT-X-DATERANGE` attributes include `X-ASSET-URI`, `X-ASSET-LIST`, `X-RESTRICT`,
+`X-RESUME-OFFSET`, `X-PLAYOUT-LIMIT`, `X-SNAP`, `X-CONTENT-MAY-VARY`, `X-TIMELINE-OCCUPIES`,
+`X-TIMELINE-STYLE`.
+
+### Inject / rewrite helpers
+
+```java
+Playlist rewritten = PlaylistRewriteUtil.rewrite(
+    playlist,
+    playlistUrl,
+    PlaylistRewriteUtil.InjectConfig.builder()
+        .withStartOverride(new StartData(10f, true))
+        .addBreak(new PlaylistRewriteUtil.InterstitialBreak(
+            "user-ad-1", /* offsetSec */ 30f, /* durationSec */ 15f, adAssetUri))
+        .build(),
+    absoluteUri -> "http://127.0.0.1:8765/proxy?url=" + URLEncoder.encode(absoluteUri, "UTF-8"));
+```
+
+### Demo HLS player
+
+Local browser player that rewrites manifests with this library (not string templates):
+
+```bash
+./gradlew runHlsPlayer
+# open http://127.0.0.1:8765/
+```
+
+See [hls-player/README.md](hls-player/README.md).
+
 ## Code coverage
 
 Measured with **JaCoCo 0.8.7** over the full unit-test suite (**68 tests, all passing**).

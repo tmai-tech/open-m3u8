@@ -111,8 +111,22 @@ final class Constants {
     public static final String SCTE35_IN = "SCTE35-IN";
     public static final String SCTE35_CMD = "SCTE35-CMD";
     public static final String X_ASSET_URI = "X-ASSET-URI";
+    /** Apple HLS Interstitial attribute (preferred). */
+    public static final String X_ASSET_LIST = "X-ASSET-LIST";
+    /** Apple HLS Interstitial attribute (SKIP / JUMP). Preferred write name. */
+    public static final String X_RESTRICT = "X-RESTRICT";
+    /**
+     * Legacy / non-Apple alias accepted on parse only.
+     * @deprecated Prefer {@link #X_RESTRICT}
+     */
+    @Deprecated
     public static final String X_RESTRICTIONS = "X-RESTRICTIONS";
     public static final String X_RESUME_OFFSET = "X-RESUME-OFFSET";
+    public static final String X_PLAYOUT_LIMIT = "X-PLAYOUT-LIMIT";
+    public static final String X_SNAP = "X-SNAP";
+    public static final String X_CONTENT_MAY_VARY = "X-CONTENT-MAY-VARY";
+    public static final String X_TIMELINE_OCCUPIES = "X-TIMELINE-OCCUPIES";
+    public static final String X_TIMELINE_STYLE = "X-TIMELINE-STYLE";
     public static final String INTERSTITIAL_CLASS = "com.apple.hls.interstitial";
 
     // EXT-X-CUE-OUT-CONT attributes

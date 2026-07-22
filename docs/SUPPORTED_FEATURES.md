@@ -66,7 +66,7 @@ Public entry points: `PlaylistParser`, `PlaylistWriter`, model `Builder` / `buil
 
 **`EXT-X-DEFINE`:** `NAME`+`VALUE`, or `IMPORT`, or `QUERYPARAM` (exactly one mode)
 
-**`EXT-X-DATERANGE`:** `ID`, `CLASS`, `START-DATE`, `END-DATE`, `DURATION`, `PLANNED-DURATION`, `SCTE35-OUT` / `IN` / `CMD`, `X-ASSET-URI`, `X-RESTRICTIONS`, `X-RESUME-OFFSET`
+**`EXT-X-DATERANGE`:** `ID`, `CLASS`, `START-DATE`, `END-DATE`, `DURATION`, `PLANNED-DURATION`, `SCTE35-OUT` / `IN` / `CMD`, plus Apple interstitial attrs: `X-ASSET-URI`, `X-ASSET-LIST`, `X-RESTRICT` (legacy `X-RESTRICTIONS` accepted on parse), `X-RESUME-OFFSET`, `X-PLAYOUT-LIMIT`, `X-SNAP`, `X-CONTENT-MAY-VARY`, `X-TIMELINE-OCCUPIES`, `X-TIMELINE-STYLE`
 
 ### Media segment tags
 
@@ -78,7 +78,7 @@ Public entry points: `PlaylistParser`, `PlaylistWriter`, model `Builder` / `buil
 | `EXT-X-MAP` | yes | yes | Init section (fMP4) |
 | `EXT-X-BYTERANGE` | yes | yes | Sub-range of resource |
 | `EXT-X-DISCONTINUITY` | yes | yes | |
-| `EXT-X-PROGRAM-DATE-TIME` | yes | limited | Parsed onto next track; not always re-emitted as standalone history |
+| `EXT-X-PROGRAM-DATE-TIME` | yes | yes | Stored on the following track; re-emitted before that segment on write |
 | `EXT-X-CUE-OUT` | yes | yes | SSAI ad break start (+ optional duration) |
 | `EXT-X-CUE-OUT-CONT` | yes | yes | Slash form or attribute form |
 | `EXT-X-CUE-IN` | yes | yes | SSAI ad break end |
@@ -106,6 +106,8 @@ These appear in modern HLS / LL-HLS but are **not** first-class tags in this lib
 | Delta request URI | `PlaylistDeltaUtil.appendSkipDirective(uri, skipDateRanges)` |
 | Model validation | `PlaylistValidation.from(playlist)` |
 | Build / copy | `*.Builder`, `buildUpon()` on data classes |
+| Inject interstitials / rewrite URIs | `PlaylistRewriteUtil.injectMediaTags`, `rewriteUris`, `rewrite` |
+| Demo player proxy | `./gradlew runHlsPlayer` (`com.iheartradio.m3u8.demo.HlsPlayerServer`) |
 
 ---
 
@@ -238,7 +240,7 @@ http://example.com/content/seg1.ts
 #EXT-X-MEDIA-SEQUENCE:0
 #EXT-X-DEFINE:NAME="userId",VALUE="user-12345"
 #EXT-X-DEFINE:NAME="sessionToken",VALUE="tok-abc-xyz"
-#EXT-X-DATERANGE:ID="adbreak-1",CLASS="com.apple.hls.interstitial",START-DATE=2024-06-15T12:00:00.000Z,DURATION=30.0,X-ASSET-URI="https://ads.example.com/vast?user={$userId}&session={$sessionToken}",X-RESTRICTIONS="SKIP,JUMP",X-RESUME-OFFSET=0.0
+#EXT-X-DATERANGE:ID="adbreak-1",CLASS="com.apple.hls.interstitial",START-DATE=2024-06-15T12:00:00.000Z,DURATION=30.0,X-ASSET-URI="https://ads.example.com/vast?user={$userId}&session={$sessionToken}",X-RESTRICT="SKIP,JUMP",X-RESUME-OFFSET=0.0
 #EXTINF:10.0,
 http://example.com/content/seg0.ts
 #EXTINF:10.0,

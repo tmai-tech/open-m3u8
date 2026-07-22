@@ -652,6 +652,20 @@ class MediaPlaylistLineParser implements LineParser {
                     builder.withAssetUri(ParseUtil.decodeUri(ParseUtil.parseQuotedString(attribute.value, getTag()), state.encoding));
                 }
             });
+            HANDLERS.put(Constants.X_ASSET_LIST, new AttributeParser<DateRangeData.Builder>() {
+                @Override
+                public void parse(Attribute attribute, DateRangeData.Builder builder, ParseState state) throws ParseException {
+                    builder.withAssetList(ParseUtil.decodeUri(ParseUtil.parseQuotedString(attribute.value, getTag()), state.encoding));
+                }
+            });
+            // Apple HLS Interstitial attribute name
+            HANDLERS.put(Constants.X_RESTRICT, new AttributeParser<DateRangeData.Builder>() {
+                @Override
+                public void parse(Attribute attribute, DateRangeData.Builder builder, ParseState state) throws ParseException {
+                    builder.withRestrict(ParseUtil.parseQuotedString(attribute.value, getTag()));
+                }
+            });
+            // Legacy alias accepted for compatibility with earlier open-m3u8 builds / samples
             HANDLERS.put(Constants.X_RESTRICTIONS, new AttributeParser<DateRangeData.Builder>() {
                 @Override
                 public void parse(Attribute attribute, DateRangeData.Builder builder, ParseState state) throws ParseException {
@@ -662,6 +676,36 @@ class MediaPlaylistLineParser implements LineParser {
                 @Override
                 public void parse(Attribute attribute, DateRangeData.Builder builder, ParseState state) throws ParseException {
                     builder.withResumeOffset(ParseUtil.parseFloat(attribute.value, getTag()));
+                }
+            });
+            HANDLERS.put(Constants.X_PLAYOUT_LIMIT, new AttributeParser<DateRangeData.Builder>() {
+                @Override
+                public void parse(Attribute attribute, DateRangeData.Builder builder, ParseState state) throws ParseException {
+                    builder.withPlayoutLimit(ParseUtil.parseFloat(attribute.value, getTag()));
+                }
+            });
+            HANDLERS.put(Constants.X_SNAP, new AttributeParser<DateRangeData.Builder>() {
+                @Override
+                public void parse(Attribute attribute, DateRangeData.Builder builder, ParseState state) throws ParseException {
+                    builder.withSnap(ParseUtil.parseQuotedString(attribute.value, getTag()));
+                }
+            });
+            HANDLERS.put(Constants.X_CONTENT_MAY_VARY, new AttributeParser<DateRangeData.Builder>() {
+                @Override
+                public void parse(Attribute attribute, DateRangeData.Builder builder, ParseState state) throws ParseException {
+                    builder.withContentMayVary(ParseUtil.parseYesNo(attribute, getTag()));
+                }
+            });
+            HANDLERS.put(Constants.X_TIMELINE_OCCUPIES, new AttributeParser<DateRangeData.Builder>() {
+                @Override
+                public void parse(Attribute attribute, DateRangeData.Builder builder, ParseState state) throws ParseException {
+                    builder.withTimelineOccupies(ParseUtil.parseQuotedString(attribute.value, getTag()));
+                }
+            });
+            HANDLERS.put(Constants.X_TIMELINE_STYLE, new AttributeParser<DateRangeData.Builder>() {
+                @Override
+                public void parse(Attribute attribute, DateRangeData.Builder builder, ParseState state) throws ParseException {
+                    builder.withTimelineStyle(ParseUtil.parseQuotedString(attribute.value, getTag()));
                 }
             });
         }

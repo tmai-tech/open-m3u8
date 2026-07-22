@@ -111,7 +111,7 @@ public class SgaiPlaylistTest {
         assertTrue(written.contains("START-DATE=2025-01-01T00:00:00.000Z"));
         assertTrue(written.contains("DURATION=15.5"));
         assertTrue(written.contains("X-ASSET-URI="));
-        assertTrue(written.contains("X-RESTRICTIONS=\"SKIP\""));
+        assertTrue(written.contains("X-RESTRICT=\"SKIP\""));
         assertTrue(written.contains("X-RESUME-OFFSET=0.0") || written.contains("X-RESUME-OFFSET=0"));
         assertTrue(written.contains("#EXT-X-DISCONTINUITY"));
 
