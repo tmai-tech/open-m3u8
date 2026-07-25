@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Generate SSAI Manifest — open-m3u8</title>
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js"></script>
+  <style>
+    :root {
+      --bg: #0b0d12; --surface: #141822; --surface-2: #1c2230; --border: #2a3347;
+      --text: #eef1f7; --muted: #8b95a8; --accent: #5b8cff; --accent-hover: #7aa3ff;
+      --ad: #f0a030; --success: #3ecf8e; --danger: #ff6b7a; --radius: 14px;
+      font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; min-height: 100vh; color: var(--text);
+      background:
+        radial-gradient(1200px 600px at 10% -10%, rgba(91,140,255,.18), transparent 55%),
+        radial-gradient(900px 500px at 100% 0%, rgba(240,160,48,.1), transparent 50%),
+        var(--bg);
+      display: flex; justify-content: center; padding: 28px 16px 48px;
+    }
+    .app { width: min(920px, 100%); display: flex; flex-direction: column; gap: 16px; }
+    header h1 { margin: 0 0 6px; font-size: 1.5rem; font-weight: 700; letter-spacing: -.02em; }
+    header p { margin: 0; color: var(--muted); font-size: .94rem; line-height: 1.45; }
+    code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .84em; }
+    .card {
+      background: linear-gradient(180deg, rgba(255,255,255,.03), transparent 40%), var(--surface);
+      border: 1px solid var(--border); border-radius: var(--radius);
+      box-shadow: 0 18px 50px rgba(0,0,0,.45); overflow: hidden;
+    }
+    .section { padding: 16px; border-top: 1px solid var(--border); }
+    .section:first-child { border-top: none; }
+    .section-title {
+      margin: 0 0 12px; font-size: .95rem; font-weight: 700;
+      display: flex; align-items: center; gap: 8px;
+    }
+    label { display: block; font-size: .82rem; color: var(--muted); margin-bottom: 6px; font-weight: 600; }
+    input[type="url"], input[type="text"], input[type="number"] {
+      width: 100%; background: var(--surface-2); border: 1px solid var(--border); color: var(--text);
+      border-radius: 10px; padding: 11px 12px; font-size: .92rem; outline: none; margin-bottom: 12px;
+    }
+    input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(91,140,255,.2); }
+    input[readonly] { opacity: .95; cursor: text; }
+    .hint { color: var(--muted); font-size: .8rem; margin: -6px 0 12px; line-height: 1.4; }
+    .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+    .btn {
+      border: none; border-radius: 10px; padding: 12px 18px; font-size: .92rem; font-weight: 600;
+      cursor: pointer; transition: background .15s, opacity .15s;
+    }
+    .btn:disabled { opacity: .45; cursor: not-allowed; }
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-primary:hover:not(:disabled) { background: var(--accent-hover); }
+    .btn-ghost { background: var(--surface-2); color: var(--text); border: 1px solid var(--border); }
+    .btn-ad { background: rgba(240,160,48,.18); color: #ffd089; border: 1px solid rgba(240,160,48,.45); }
+    .btn-success { background: rgba(62,207,142,.18); color: var(--success); border: 1px solid rgba(62,207,142,.4); }
+    .btn-sm { padding: 8px 12px; font-size: .82rem; }
+    video { width: 100%; aspect-ratio: 16/9; background: #000; display: block; }
+    .status {
+      padding: 10px 16px; font-size: .85rem; color: var(--muted); border-top: 1px solid var(--border);
+      word-break: break-all;
+    }
+    .status.ok { color: var(--success); }
+    .status.err { color: var(--danger); }
+    .manifest-box {
+      max-height: 320px; overflow: auto; background: #0a0c10; padding: 12px 14px;
+      font-size: .75rem; line-height: 1.4; white-space: pre-wrap; color: #c8d0e0;
+      border-top: 1px solid var(--border); margin: 0;
+    }
+    .tag { color: #7aa3ff; }
+    .cue { color: #f0a030; font-weight: 600; }
+    .disc { color: #ff6b7a; }
+    .samples { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+    .chip {
+      background: var(--surface-2); border: 1px solid var(--border); color: var(--muted);
+      border-radius: 999px; padding: 6px 12px; font-size: .78rem; cursor: pointer;
+    }
+    .chip:hover { color: var(--text); border-color: var(--accent); }
+    .badge {
+      display: inline-block; font-size: .72rem; font-weight: 700; letter-spacing: .04em;
+      padding: 3px 8px; border-radius: 6px; background: rgba(240,160,48,.15); color: var(--ad);
+      vertical-align: middle; margin-left: 8px;
+    }
+    .output-box {
+      background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px;
+      padding: 12px; margin-top: 4px;
+    }
+    .output-box .url-row { display: flex; gap: 8px; align-items: stretch; }
+    .output-box input { margin-bottom: 0; flex: 1; }
+    .meta { font-size: .8rem; color: var(--muted); margin-top: 8px; line-height: 1.45; }
+    .meta strong { color: var(--text); }
+    .step { color: var(--ad); font-size: .75rem; font-weight: 700; letter-spacing: .06em; }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <h1>Generate SSAI Manifest <span class="badge">VOD STITCH</span></h1>
+      <p>
+        Enter a <strong>content</strong> URL, an <strong>ad</strong> URL, and <strong>splice points</strong>.
+        The proxy stitches the same ad into the content at those times and returns a playable HLS manifest.
+      </p>
+    </header>
+
+    <div class="card">
+      <!-- INPUTS -->
+      <div class="section">
+        <div class="section-title"><span class="step">1 · INPUTS</span></div>
+
+        <label for="contentUrl">Content URL (VOD master or media .m3u8)</label>
+        <input id="contentUrl" type="url" placeholder="https://example.com/content/index.m3u8" autocomplete="off" />
+
+        <label for="adUrl">Ad URL (media .m3u8 preferred; master → first variant)</label>
+        <input id="adUrl" type="url" placeholder="https://example.com/ads/pod.m3u8" autocomplete="off" />
+
+        <label for="splices">Splice points (seconds from content start, comma-separated)</label>
+        <input id="splices" type="text" placeholder="0, 30, 90" value="30" autocomplete="off" />
+        <p class="hint">
+          <code>0</code> = pre-roll. Mid-rolls snap to the nearest segment boundary.
+          The <em>same</em> ad creative is inserted at every point.
+        </p>
+
+        <label for="maxAdDurationSec">Max ad length (seconds)</label>
+        <input id="maxAdDurationSec" type="number" min="0" step="1" value="30" autocomplete="off" />
+        <p class="hint">
+          Default <strong>30</strong>. Longer ad playlists are trimmed to whole segments so the pod
+          is at most this long. Use <code>0</code> for no trim (full ad creative).
+        </p>
+
+        <div class="samples">
+          <button type="button" class="chip" id="sampleFill">Fill demo sample URLs</button>
+        </div>
+
+        <div class="row">
+          <button class="btn btn-primary" id="btnGenerate">Generate SSAI manifest</button>
+          <button class="btn btn-ad" id="btnGeneratePlay">Generate &amp; play</button>
+          <button class="btn btn-ghost" id="btnStop">Stop player</button>
+        </div>
+      </div>
+
+      <!-- OUTPUT -->
+      <div class="section">
+        <div class="section-title"><span class="step">2 · SSAI MANIFEST URL</span></div>
+        <p class="hint" style="margin-top:0">
+          Use this URL in any HLS player (Safari, hls.js, ExoPlayer, AVPlayer, VLC).
+          CORS is enabled for cross-origin players. Prefer loading from an
+          <strong>http://</strong> page (or this UI) — a public <strong>https://</strong> demo
+          page may still block private WSL/LAN IPs or mixed content.
+        </p>
+        <div class="output-box">
+          <div class="url-row">
+            <input id="manifestUrl" type="text" readonly placeholder="Generate to get a playable manifest URL…" />
+            <button class="btn btn-success btn-sm" id="btnCopy" disabled>Copy</button>
+            <button class="btn btn-ghost btn-sm" id="btnOpen" disabled>Open</button>
+          </div>
+          <div class="meta" id="sessionMeta">No session yet.</div>
+        </div>
+      </div>
+
+      <!-- PREVIEW + PLAYER -->
+      <div class="section" style="padding-bottom:0">
+        <div class="section-title"><span class="step">3 · PREVIEW</span></div>
+      </div>
+      <video id="video" controls playsinline></video>
+      <div class="status" id="status">Ready — enter content URL, ad URL, and splice points.</div>
+      <pre class="manifest-box" id="manifestPreview">// stitched playlist body appears here after generate</pre>
+    </div>
+  </div>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const statusEl = $("status");
+    const preview = $("manifestPreview");
+    const video = $("video");
+    const manifestInput = $("manifestUrl");
+    let hls = null;
+    let lastSession = null;
+
+    function setStatus(msg, kind) {
+      statusEl.textContent = msg;
+      statusEl.className = "status" + (kind ? " " + kind : "");
+    }
+
+    function highlightManifest(text) {
+      return text
+        .replace(/&/g, "&amp;").replace(/</g, "&lt;")
+        .replace(/#(EXT-X-CUE-OUT(?:-CONT)?|EXT-X-CUE-IN)[^\n]*/g, '<span class="cue">$&</span>')
+        .replace(/#EXT-X-DISCONTINUITY/g, '<span class="disc">#EXT-X-DISCONTINUITY</span>')
+        .replace(/#(EXTM3U|EXT-X-VERSION|EXT-X-TARGETDURATION|EXT-X-MEDIA-SEQUENCE|EXT-X-PLAYLIST-TYPE|EXT-X-ENDLIST|EXTINF|EXT-X-KEY|EXT-X-MAP|EXT-X-DATERANGE|EXT-X-STREAM-INF|EXT-X-MEDIA)[^\n]*/g,
+          '<span class="tag">$&</span>');
+    }
+
+    function parseSplices(raw) {
+      if (!raw || !raw.trim()) return [];
+      const parts = raw.split(/[,\s]+/).filter(Boolean).map(Number);
+      if (parts.some((n) => Number.isNaN(n))) {
+        throw new Error("Invalid splice points — use numbers like 0, 30, 90");
+      }
+      return parts;
+    }
+
+    async function createSession() {
+      const contentUrl = $("contentUrl").value.trim();
+      const adUrl = $("adUrl").value.trim();
+      const splices = parseSplices($("splices").value);
+      const maxAdRaw = $("maxAdDurationSec").value.trim();
+      const maxAdDurationSec = maxAdRaw === "" ? 30 : Number(maxAdRaw);
+      if (!contentUrl) throw new Error("Content URL is required");
+      if (!adUrl) throw new Error("Ad URL is required");
+      if (Number.isNaN(maxAdDurationSec) || maxAdDurationSec < 0) {
+        throw new Error("Max ad length must be a number ≥ 0 (0 = no trim)");
+      }
+
+      const res = await fetch("/api/session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ contentUrl, adUrl, splices, maxAdDurationSec }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || ("HTTP " + res.status));
+      return data.session;
+    }
+
+    async function loadManifestText(url) {
+      const res = await fetch(url);
+      const text = await res.text();
+      if (!res.ok) {
+        let msg = text;
+        try { msg = JSON.parse(text).error || text; } catch (_) {}
+        throw new Error(msg || ("HTTP " + res.status));
+      }
+      preview.innerHTML = highlightManifest(text);
+      return text;
+    }
+
+    function setManifestOutput(session) {
+      lastSession = session;
+      manifestInput.value = session.manifestUrl;
+      $("btnCopy").disabled = false;
+      $("btnOpen").disabled = false;
+      const maxAd = session.maxAdDurationSec != null ? session.maxAdDurationSec : 30;
+      $("sessionMeta").innerHTML =
+        "<strong>Session:</strong> " + session.id +
+        " &nbsp;·&nbsp; <strong>Splices:</strong> [" + (session.splices || []).join(", ") + "]s" +
+        " &nbsp;·&nbsp; <strong>Max ad:</strong> " +
+        (maxAd <= 0 ? "no trim" : maxAd + "s") +
+        " &nbsp;·&nbsp; point any HLS player at the URL above";
+    }
+
+    function destroyPlayer() {
+      if (hls) {
+        hls.destroy();
+        hls = null;
+      }
+      video.removeAttribute("src");
+      video.load();
+    }
+
+    function playUrl(manifestUrl) {
+      destroyPlayer();
+      if (window.Hls && Hls.isSupported()) {
+        hls = new Hls({ enableWorker: true, lowLatencyMode: false });
+        hls.loadSource(manifestUrl);
+        hls.attachMedia(video);
+        hls.on(Hls.Events.MANIFEST_PARSED, () => {
+          video.play().catch(() => {});
+          setStatus("Playing via hls.js — " + manifestUrl, "ok");
+        });
+        hls.on(Hls.Events.ERROR, (_, data) => {
+          if (data.fatal) {
+            setStatus("Player error: " + data.type + " / " + data.details, "err");
+          }
+        });
+        return;
+      }
+      // Safari / native HLS
+      video.src = manifestUrl;
+      video.play().catch(() => {});
+      setStatus("Playing via native HLS — " + manifestUrl, "ok");
+    }
+
+    async function generate(andPlay) {
+      try {
+        $("btnGenerate").disabled = true;
+        $("btnGeneratePlay").disabled = true;
+        setStatus("Creating session and stitching ads…");
+        const session = await createSession();
+        setManifestOutput(session);
+        setStatus("Fetching stitched manifest…");
+        await loadManifestText(session.manifestUrl);
+        setStatus(
+          "SSAI manifest ready. " +
+            (andPlay ? "Starting playback…" : "Copy the URL or open in a player."),
+          "ok"
+        );
+        if (andPlay) playUrl(session.manifestUrl);
+      } catch (e) {
+        setStatus(String(e.message || e), "err");
+      } finally {
+        $("btnGenerate").disabled = false;
+        $("btnGeneratePlay").disabled = false;
+      }
+    }
+
+    $("btnGenerate").onclick = () => generate(false);
+    $("btnGeneratePlay").onclick = () => generate(true);
+    $("btnStop").onclick = () => {
+      destroyPlayer();
+      setStatus("Player stopped.");
+    };
+
+    $("btnCopy").onclick = async () => {
+      const url = manifestInput.value;
+      if (!url) return;
+      try {
+        await navigator.clipboard.writeText(url);
+        setStatus("Copied manifest URL to clipboard.", "ok");
+      } catch (_) {
+        manifestInput.select();
+        document.execCommand("copy");
+        setStatus("Copied manifest URL.", "ok");
+      }
+    };
+
+    $("btnOpen").onclick = () => {
+      const url = manifestInput.value;
+      if (url) window.open(url, "_blank");
+    };
+
+    $("sampleFill").onclick = () => {
+      // Public demo streams (Mux test streams). Ad may be multi-variant; proxy uses first variant.
+      $("contentUrl").value = "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8";
+      $("adUrl").value = "https://test-streams.mux.dev/test_001/stream.m3u8";
+      $("splices").value = "30, 90";
+      setStatus("Demo URLs filled. Click “Generate SSAI manifest”.", "ok");
+    };
+  </script>
+</body>
+</html>

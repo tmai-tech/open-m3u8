@@ -168,6 +168,10 @@ final class ParseUtil {
         for (Attribute attribute : parseAttributeList(line, tag)) {
             if (handlers.containsKey(attribute.name)) {
                 handlers.get(attribute.name).parse(attribute, builder, state);
+            } else if (state != null && state.parsingMode != null && state.parsingMode.allowUnknownTags) {
+                // Lenient: ignore unrecognized attributes (e.g. STREAM-INF NAME=) so real-world
+                // playlists still parse. STRICT keeps throwing INVALID_ATTRIBUTE_NAME.
+                continue;
             } else {
                 throw ParseException.create(ParseExceptionType.INVALID_ATTRIBUTE_NAME, tag, line);
             }

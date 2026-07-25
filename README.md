@@ -51,6 +51,65 @@ Playlist merged = PlaylistDeltaUtil.merge(previous, delta);
 
 Full tag/feature matrix and annotated samples: [docs/SUPPORTED_FEATURES.md](docs/SUPPORTED_FEATURES.md).
 
+HLS Interstitial `EXT-X-DATERANGE` attributes include `X-ASSET-URI`, `X-ASSET-LIST`, `X-RESTRICT`,
+`X-RESUME-OFFSET`, `X-PLAYOUT-LIMIT`, `X-SNAP`, `X-CONTENT-MAY-VARY`, `X-TIMELINE-OCCUPIES`,
+`X-TIMELINE-STYLE`.
+
+### Inject / rewrite helpers
+
+```java
+Playlist rewritten = PlaylistRewriteUtil.rewrite(
+    playlist,
+    playlistUrl,
+    PlaylistRewriteUtil.InjectConfig.builder()
+        .withStartOverride(new StartData(10f, true))
+        .addBreak(new PlaylistRewriteUtil.InterstitialBreak(
+            "user-ad-1", /* offsetSec */ 30f, /* durationSec */ 15f, adAssetUri))
+        .build(),
+    absoluteUri -> "http://127.0.0.1:8765/proxy?url=" + URLEncoder.encode(absoluteUri, "UTF-8"));
+```
+
+### Classic SSAI (stitch ads into the media playlist)
+
+Inline ad segments with `EXT-X-CUE-OUT` / `CUE-OUT-CONT` / `CUE-IN` and discontinuities
+(MediaTailor-style manifest stitching — not HLS Interstitials):
+
+```java
+PlaylistSsaiUtil.AdBreak mid = PlaylistSsaiUtil.AdBreak.builder()
+    .withId("mid-1")
+    .atOffsetSec(30f)              // or afterTrackIndex / preRoll / postRoll
+    .withAdPlaylist(adMediaPlaylist) // or addAdSegment(uri, duration)
+    .build();
+
+Playlist stitched = PlaylistSsaiUtil.stitch(contentMediaPlaylist, Arrays.asList(mid));
+```
+
+### Demo HLS player (interstitials)
+
+Local browser player that rewrites manifests with this library (not string templates):
+
+```bash
+./gradlew runHlsPlayer
+# open http://127.0.0.1:8765/
+```
+
+See [hls-player/README.md](hls-player/README.md).
+
+### SSAI VOD proxy (classic stitch)
+
+One content URL + one ad URL + splice points (seconds). Stitches the same ad at each
+point and serves a playable HLS manifest (Safari / hls.js / any native player):
+
+```bash
+./gradlew runSsaiProxy
+# open http://127.0.0.1:8766/
+
+# or one-shot:
+# /play?content=<content.m3u8>&ad=<ad.m3u8>&splices=0,30,90
+```
+
+See [ssai-player/README.md](ssai-player/README.md).
+
 ## Code coverage
 
 Measured with **JaCoCo 0.8.7** over the full unit-test suite (**68 tests, all passing**).

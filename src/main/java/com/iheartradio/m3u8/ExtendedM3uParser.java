@@ -49,14 +49,16 @@ class ExtendedM3uParser extends BaseM3uParser {
     public Playlist parse() throws IOException, ParseException, PlaylistException {
         validateAvailable();
 
-        final ParseState state = new ParseState(mEncoding);
+        final ParseState state = new ParseState(mEncoding, mParsingMode);
         final LineParser playlistParser = new PlaylistLineParser();
         final LineParser trackLineParser = new TrackLineParser();
 
         try {
             while (mScanner.hasNext()) {
-                final String line = mScanner.next();
-                checkWhitespace(line);
+                final String rawLine = mScanner.next();
+                checkWhitespace(rawLine);
+                // Trim EXT tags only (URI lines must stay exact after checkWhitespace)
+                final String line = isExtTag(rawLine) ? rawLine.trim() : rawLine;
 
                 if (line.length() == 0 || isComment(line)) {
                     continue;
@@ -114,7 +116,10 @@ class ExtendedM3uParser extends BaseM3uParser {
     }
 
     private void checkWhitespace(final String line) throws ParseException {
-        if (!isComment(line)) {
+        // Only enforce no surrounding whitespace on URI / track lines.
+        // Real-world playlists (e.g. Apple demo) often have trailing spaces on EXT tags
+        // such as "#EXTINF:6.00000, ".
+        if (!isComment(line) && !isExtTag(line)) {
             if (line.length() != line.trim().length()) {
                 throw ParseException.create(ParseExceptionType.WHITESPACE_IN_TRACK, line);
             }
