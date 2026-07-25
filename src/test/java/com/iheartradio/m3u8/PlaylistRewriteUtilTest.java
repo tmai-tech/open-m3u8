@@ -174,4 +174,75 @@ public class PlaylistRewriteUtilTest {
         assertEquals("2024-06-15T12:00:00.000Z",
                 again.getMediaPlaylist().getTracks().get(0).getProgramDateTime());
     }
+
+    @Test
+    public void absolutizeUrisResolvesRelativeSegments() {
+        TrackData rel = new TrackData.Builder()
+                .withUri("stream_000.ts")
+                .withTrackInfo(new TrackInfo(10f, null))
+                .build();
+        MediaPlaylist media = new MediaPlaylist.Builder()
+                .withTargetDuration(10)
+                .withMediaSequenceNumber(0)
+                .withIsOngoing(false)
+                .withTracks(Arrays.asList(rel))
+                .build();
+        Playlist ad = new Playlist.Builder()
+                .withExtended(true)
+                .withCompatibilityVersion(3)
+                .withMediaPlaylist(media)
+                .build();
+
+        Playlist abs = PlaylistRewriteUtil.absolutizeUris(ad,
+                "https://ads.example.com/pod/stream.m3u8");
+        assertEquals("https://ads.example.com/pod/stream_000.ts",
+                abs.getMediaPlaylist().getTracks().get(0).getUri());
+    }
+
+    @Test
+    public void stitchAfterAbsolutizeKeepsAdBaseWhenRewritingAgainstContent() {
+        // Relative ad segs must not resolve under content path after stitch+rewrite
+        Playlist content = new Playlist.Builder()
+                .withExtended(true)
+                .withCompatibilityVersion(3)
+                .withMediaPlaylist(new MediaPlaylist.Builder()
+                        .withTargetDuration(10)
+                        .withMediaSequenceNumber(0)
+                        .withIsOngoing(false)
+                        .withTracks(Arrays.asList(
+                                new TrackData.Builder().withUri("c0.ts").withTrackInfo(new TrackInfo(10f, null)).build(),
+                                new TrackData.Builder().withUri("c1.ts").withTrackInfo(new TrackInfo(10f, null)).build()
+                        ))
+                        .build())
+                .build();
+        Playlist adRel = new Playlist.Builder()
+                .withExtended(true)
+                .withCompatibilityVersion(3)
+                .withMediaPlaylist(new MediaPlaylist.Builder()
+                        .withTargetDuration(10)
+                        .withMediaSequenceNumber(0)
+                        .withIsOngoing(false)
+                        .withTracks(Arrays.asList(
+                                new TrackData.Builder().withUri("ad0.ts").withTrackInfo(new TrackInfo(5f, null)).build()
+                        ))
+                        .build())
+                .build();
+
+        Playlist adAbs = PlaylistRewriteUtil.absolutizeUris(adRel, "https://ads.example/pod/ad.m3u8");
+        Playlist stitched = PlaylistSsaiUtil.stitch(content, Arrays.asList(
+                PlaylistSsaiUtil.AdBreak.builder().afterTrackIndex(0).withAdPlaylist(adAbs).build()));
+        Playlist rewritten = PlaylistRewriteUtil.rewriteUris(
+                stitched,
+                "https://cdn.example/content/prog.m3u8",
+                new PlaylistRewriteUtil.UriMapper() {
+                    @Override
+                    public String map(String absoluteUri) {
+                        return absoluteUri; // identity — inspect absolute targets
+                    }
+                });
+
+        String adUri = rewritten.getMediaPlaylist().getTracks().get(1).getUri();
+        assertEquals("https://ads.example/pod/ad0.ts", adUri);
+        assertFalse(adUri.contains("cdn.example/content"));
+    }
 }

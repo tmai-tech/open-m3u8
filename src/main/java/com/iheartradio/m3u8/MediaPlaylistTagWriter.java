@@ -757,7 +757,8 @@ abstract class MediaPlaylistTagWriter extends ExtTagWriter {
             HANDLERS.put(Constants.URI, new AttributeWriter<EncryptionData>() {
                 @Override
                 public boolean containsAttribute(EncryptionData attributes) {
-                    return true;
+                    // METHOD=NONE has no URI; required for SSAI clear ads inside encrypted content.
+                    return attributes.hasUri();
                 }
                 
                 @Override
@@ -781,7 +782,7 @@ abstract class MediaPlaylistTagWriter extends ExtTagWriter {
             HANDLERS.put(Constants.KEY_FORMAT, new AttributeWriter<EncryptionData>() {
                 @Override
                 public boolean containsAttribute(EncryptionData attributes) {
-                    return true;
+                    return attributes.hasKeyFormat();
                 }
                 
                 @Override
@@ -794,7 +795,7 @@ abstract class MediaPlaylistTagWriter extends ExtTagWriter {
             HANDLERS.put(Constants.KEY_FORMAT_VERSIONS, new AttributeWriter<EncryptionData>() {
                 @Override
                 public boolean containsAttribute(EncryptionData attributes) {
-                    return true;
+                    return attributes.hasKeyFormatVersions();
                 }
                 
                 @Override

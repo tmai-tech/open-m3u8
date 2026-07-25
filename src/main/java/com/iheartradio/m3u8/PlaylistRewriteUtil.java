@@ -357,6 +357,27 @@ public final class PlaylistRewriteUtil {
     }
 
     /**
+     * Resolve every relative URI in a playlist to an absolute URL against {@code playlistUrl}.
+     * Identity mapper — no proxy rewriting.
+     * <p>
+     * Critical for SSAI: ad creatives often use relative segment paths. After stitching into a
+     * content media playlist, those relatives would otherwise resolve against the <em>content</em>
+     * playlist base and 404. Call this on the ad playlist (using the ad playlist URL as base)
+     * before {@link PlaylistSsaiUtil#stitch}.
+     */
+    public static Playlist absolutizeUris(Playlist playlist, String playlistUrl) {
+        if (playlist == null || playlistUrl == null || playlistUrl.length() == 0) {
+            return playlist;
+        }
+        return rewriteUris(playlist, playlistUrl, new UriMapper() {
+            @Override
+            public String map(String absoluteUri) {
+                return absoluteUri;
+            }
+        });
+    }
+
+    /**
      * Full media rewrite: inject tags (if media) then rewrite URIs.
      * Master playlists only get URI rewriting.
      */

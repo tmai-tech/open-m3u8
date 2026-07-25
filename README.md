@@ -69,7 +69,22 @@ Playlist rewritten = PlaylistRewriteUtil.rewrite(
     absoluteUri -> "http://127.0.0.1:8765/proxy?url=" + URLEncoder.encode(absoluteUri, "UTF-8"));
 ```
 
-### Demo HLS player
+### Classic SSAI (stitch ads into the media playlist)
+
+Inline ad segments with `EXT-X-CUE-OUT` / `CUE-OUT-CONT` / `CUE-IN` and discontinuities
+(MediaTailor-style manifest stitching — not HLS Interstitials):
+
+```java
+PlaylistSsaiUtil.AdBreak mid = PlaylistSsaiUtil.AdBreak.builder()
+    .withId("mid-1")
+    .atOffsetSec(30f)              // or afterTrackIndex / preRoll / postRoll
+    .withAdPlaylist(adMediaPlaylist) // or addAdSegment(uri, duration)
+    .build();
+
+Playlist stitched = PlaylistSsaiUtil.stitch(contentMediaPlaylist, Arrays.asList(mid));
+```
+
+### Demo HLS player (interstitials)
 
 Local browser player that rewrites manifests with this library (not string templates):
 
@@ -79,6 +94,21 @@ Local browser player that rewrites manifests with this library (not string templ
 ```
 
 See [hls-player/README.md](hls-player/README.md).
+
+### SSAI VOD proxy (classic stitch)
+
+One content URL + one ad URL + splice points (seconds). Stitches the same ad at each
+point and serves a playable HLS manifest (Safari / hls.js / any native player):
+
+```bash
+./gradlew runSsaiProxy
+# open http://127.0.0.1:8766/
+
+# or one-shot:
+# /play?content=<content.m3u8>&ad=<ad.m3u8>&splices=0,30,90
+```
+
+See [ssai-player/README.md](ssai-player/README.md).
 
 ## Code coverage
 

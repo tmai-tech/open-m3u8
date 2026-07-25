@@ -107,7 +107,39 @@ These appear in modern HLS / LL-HLS but are **not** first-class tags in this lib
 | Model validation | `PlaylistValidation.from(playlist)` |
 | Build / copy | `*.Builder`, `buildUpon()` on data classes |
 | Inject interstitials / rewrite URIs | `PlaylistRewriteUtil.injectMediaTags`, `rewriteUris`, `rewrite` |
+| **Classic SSAI segment stitch** | `PlaylistSsaiUtil.stitch(content, breaks)` — inline ad segments + CUE-OUT/CONT/IN + DISCONTINUITY |
 | Demo player proxy | `./gradlew runHlsPlayer` (`com.iheartradio.m3u8.demo.HlsPlayerServer`) |
+
+### Classic SSAI vs HLS Interstitials
+
+| Approach | API | What the player sees |
+|----------|-----|----------------------|
+| **Classic SSAI stitch** | `PlaylistSsaiUtil` | Ad **segment URIs inside** the media playlist between content segments, with cue tags |
+| **HLS Interstitials (SGAI)** | `PlaylistRewriteUtil` | Content playlist only; ads via `EXT-X-DATERANGE` + `X-ASSET-URI` (player loads separately) |
+
+```java
+// Content media playlist + ad creatives (already fetched / parsed)
+Playlist content = new PlaylistParser(contentIn, Format.EXT_M3U, Encoding.UTF_8).parse();
+Playlist adPod = new PlaylistParser(adIn, Format.EXT_M3U, Encoding.UTF_8).parse();
+
+PlaylistSsaiUtil.AdBreak midRoll = PlaylistSsaiUtil.AdBreak.builder()
+        .withId("mid-1")
+        .atOffsetSec(30f)                 // or .afterTrackIndex(2) / .preRoll() / .postRoll()
+        .withAdPlaylist(adPod)            // or .addAdSegment(uri, duration)
+        .withScte35Out(optionalScte35)
+        .build();
+
+Playlist stitched = PlaylistSsaiUtil.stitch(
+        content,
+        Collections.singletonList(midRoll),
+        PlaylistSsaiUtil.StitchOptions.defaults());
+
+// Optional: proxy all URIs through your edge
+Playlist proxied = PlaylistRewriteUtil.rewriteUris(stitched, contentUrl, absoluteUri ->
+        "http://proxy/proxy?url=" + URLEncoder.encode(absoluteUri, "UTF-8"));
+
+new PlaylistWriter(out, Format.EXT_M3U, Encoding.UTF_8).write(proxied);
+```
 
 ---
 

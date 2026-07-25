@@ -42,6 +42,17 @@ task runHlsPlayer(type: JavaExec) {
     jvmArgs = ['-Xms128m', '-Xmx768m']
 }
 
+// Classic SSAI VOD proxy: content + ad + splice points → stitched playable m3u8
+task runSsaiProxy(type: JavaExec) {
+    group = 'application'
+    description = 'Run the SSAI VOD proxy (PlaylistSsaiUtil segment stitch)'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'com.iheartradio.m3u8.demo.SsaiProxyServer'
+    args = project.hasProperty('port') ? [project.property('port')] : []
+    workingDir = project.projectDir
+    jvmArgs = ['-Xms128m', '-Xmx768m']
+}
+
 test {
     useJUnit()
 }
