@@ -61,6 +61,7 @@ public class PlaylistRewriteUtilTest {
         assertTrue(dr.isInterstitial());
         assertEquals("user-ad-1", dr.getId());
         assertEquals(15f, dr.getDuration(), 1e-4);
+        assertEquals(15f, dr.getPlayoutLimit(), 1e-4);
         assertEquals("https://ads.example.com/ad.m3u8", dr.getAssetUri());
         assertEquals("SKIP", dr.getRestrict());
         assertEquals(0f, dr.getResumeOffset(), 1e-4);
@@ -77,8 +78,38 @@ public class PlaylistRewriteUtilTest {
         assertTrue(text.contains("X-ASSET-URI=\"https://ads.example.com/ad.m3u8\""));
         assertTrue(text.contains("X-RESTRICT=\"SKIP\""));
         assertTrue(text.contains("X-RESUME-OFFSET="));
+        assertTrue(text.contains("X-PLAYOUT-LIMIT=15"));
         assertTrue(text.contains("#EXT-X-PROGRAM-DATE-TIME:"));
         assertFalse(text.contains("X-RESTRICTIONS="));
+    }
+
+    @Test
+    public void injectUsesExplicitPlayoutLimitOverDuration() throws Exception {
+        TrackData t0 = new TrackData.Builder()
+                .withUri("seg0.ts")
+                .withTrackInfo(new TrackInfo(10f, null))
+                .build();
+        Playlist original = new Playlist.Builder()
+                .withCompatibilityVersion(7)
+                .withExtended(true)
+                .withMediaPlaylist(new MediaPlaylist.Builder()
+                        .withTargetDuration(10)
+                        .withMediaSequenceNumber(0)
+                        .withIsOngoing(false)
+                        .withTracks(Arrays.asList(t0))
+                        .build())
+                .build();
+        PlaylistRewriteUtil.InterstitialBreak br = new PlaylistRewriteUtil.InterstitialBreak(
+                "user-ad-1", 0f, 15f, "https://ads.example.com/ad.m3u8",
+                null, 0f, null, null, 8f, null, null, null);
+        Playlist rewritten = PlaylistRewriteUtil.injectMediaTags(
+                original,
+                PlaylistRewriteUtil.InjectConfig.builder().addBreak(br).build());
+        DateRangeData dr = rewritten.getMediaPlaylist().getDateRanges().get(0);
+        assertEquals(15f, dr.getDuration(), 1e-4);
+        assertEquals(8f, dr.getPlayoutLimit(), 1e-4);
+        assertTrue(PlaylistRewriteUtil.writeToString(rewritten, Encoding.UTF_8)
+                .contains("X-PLAYOUT-LIMIT=8"));
     }
 
     @Test

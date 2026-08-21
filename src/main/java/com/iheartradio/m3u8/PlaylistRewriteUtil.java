@@ -292,8 +292,15 @@ public final class PlaylistRewriteUtil {
             if (snap != null && snap.length() > 0) {
                 b.withSnap(snap);
             }
-            if (br.playoutLimit != null) {
-                b.withPlayoutLimit(br.playoutLimit);
+            // DURATION describes the date range. Players play the full X-ASSET-URI unless
+            // X-PLAYOUT-LIMIT is set (Apple HLS Interstitials). Default it to the break
+            // duration so a 15s ad does not run an 8-minute creative to completion.
+            Float playout = br.playoutLimit;
+            if (playout == null && br.durationSec > 0) {
+                playout = br.durationSec;
+            }
+            if (playout != null) {
+                b.withPlayoutLimit(playout);
             }
             if (br.contentMayVary != null) {
                 b.withContentMayVary(br.contentMayVary);

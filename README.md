@@ -84,31 +84,30 @@ PlaylistSsaiUtil.AdBreak mid = PlaylistSsaiUtil.AdBreak.builder()
 Playlist stitched = PlaylistSsaiUtil.stitch(contentMediaPlaylist, Arrays.asList(mid));
 ```
 
-### Demo HLS player (interstitials)
+### Demo player (SSAI or SGAI)
 
-Local browser player that rewrites manifests with this library (not string templates):
+One local UI. Pick **classic SSAI stitch** or **SGAI interstitials**; both go through
+`DemoPlaylistPipeline` (parse → apply strategy → rewrite URIs → write).
+
+Live demo (static GitHub Pages — ads rewritten in the browser):
+**https://tmai-tech.github.io/open-m3u8/**
 
 ```bash
-./gradlew runHlsPlayer
+./gradlew runDemo
 # open http://127.0.0.1:8765/
 ```
 
-See [hls-player/README.md](hls-player/README.md).
+| Strategy | Library call | What the player sees |
+|----------|--------------|----------------------|
+| **SSAI** (default) | `PlaylistSsaiUtil.stitch` | Ad segments inlined with CUE-OUT / CUE-IN |
+| **SGAI** | `PlaylistRewriteUtil.injectMediaTags` | `EXT-X-DATERANGE` + `X-ASSET-URI` |
 
-### SSAI VOD proxy (classic stitch)
-
-One content URL + one ad URL + splice points (seconds). Stitches the same ad at each
-point and serves a playable HLS manifest (Safari / hls.js / any native player):
-
-```bash
-./gradlew runSsaiProxy
-# open http://127.0.0.1:8766/
-
-# or one-shot:
-# /play?content=<content.m3u8>&ad=<ad.m3u8>&splices=0,30,90
+```
+# one-shot playable manifest
+# /play?strategy=ssai&content=<content.m3u8>&ad=<ad.m3u8>&splices=0,30,90
 ```
 
-See [ssai-player/README.md](ssai-player/README.md).
+See [demo/README.md](demo/README.md).
 
 ## Code coverage
 
