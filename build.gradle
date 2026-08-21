@@ -30,27 +30,28 @@ idea {
     }
 }
 
-// Demo HLS player HTTP server (uses JDK HttpServer + this library)
-task runHlsPlayer(type: JavaExec) {
-    group = 'application'
-    description = 'Run the HLS demo player (open-m3u8 rewrite proxy)'
-    classpath = sourceSets.main.runtimeClasspath
-    mainClass = 'com.iheartradio.m3u8.demo.HlsPlayerServer'
-    args = project.hasProperty('port') ? [project.property('port')] : []
-    workingDir = project.projectDir
-    // Segments are streamed; heap still needs room for concurrent playlist rewrites
-    jvmArgs = ['-Xms128m', '-Xmx768m']
+def demoJvm = {
+    it.group = 'application'
+    it.classpath = sourceSets.main.runtimeClasspath
+    it.mainClass = 'com.iheartradio.m3u8.demo.DemoPlayerServer'
+    it.args = project.hasProperty('port') ? [project.property('port')] : []
+    it.workingDir = project.projectDir
+    it.jvmArgs = ['-Xms128m', '-Xmx768m']
 }
 
-// Classic SSAI VOD proxy: content + ad + splice points → stitched playable m3u8
+task runDemo(type: JavaExec) {
+    description = 'Run the HLS demo player (SSAI / SGAI strategy switch)'
+    demoJvm(it)
+}
+
+task runHlsPlayer(type: JavaExec) {
+    description = 'Alias for runDemo'
+    demoJvm(it)
+}
+
 task runSsaiProxy(type: JavaExec) {
-    group = 'application'
-    description = 'Run the SSAI VOD proxy (PlaylistSsaiUtil segment stitch)'
-    classpath = sourceSets.main.runtimeClasspath
-    mainClass = 'com.iheartradio.m3u8.demo.SsaiProxyServer'
-    args = project.hasProperty('port') ? [project.property('port')] : []
-    workingDir = project.projectDir
-    jvmArgs = ['-Xms128m', '-Xmx768m']
+    description = 'Alias for runDemo'
+    demoJvm(it)
 }
 
 test {
