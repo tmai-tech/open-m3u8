@@ -96,6 +96,14 @@
     .url-row input { margin-bottom: 0; flex: 1; }
     .check-row { display: flex; align-items: center; gap: 8px; color: var(--text); font-size: .88rem; margin-bottom: 10px; }
     .hidden { display: none !important; }
+    .player-wrap { position: relative; background: #000; }
+    .ad-badge {
+      position: absolute; top: 12px; left: 12px; z-index: 20;
+      background: var(--ad); color: #1a1204; font-weight: 800; font-size: .85rem;
+      letter-spacing: .1em; padding: 6px 12px; border-radius: 6px;
+      pointer-events: none; box-shadow: 0 6px 18px rgba(0,0,0,.45);
+    }
+    .ad-badge[hidden] { display: none !important; }
   </style>
 </head>
 <body>
@@ -180,7 +188,10 @@
         <div class="hint" id="sessionMeta" style="margin-top:8px">No session yet.</div>
       </div>
 
-      <video id="video" controls playsinline></video>
+      <div class="player-wrap">
+        <video id="video" controls playsinline></video>
+        <div id="adBadge" class="ad-badge" hidden>AD <span id="adCount">0s</span></div>
+      </div>
       <div class="status" id="status">Ready — pick a strategy, then Apply &amp; play.</div>
       <pre class="manifest-box" id="preview">// rewritten playlist appears here</pre>
     </div>
@@ -200,13 +211,16 @@
     let lastSession = null;
     let mediaDuration = 0;
     let useProxy = false;
+    let adWindows = [];
+    let adPollTimer = null;
+    let watchingAds = false;
 
     const HINTS = {
       ssai: "Stitches the ad into the media playlist (CUE-OUT / CUE-IN + DISCONTINUITY). Any HLS player can play the result.",
       sgai: "Leaves content as content and injects EXT-X-DATERANGE CLASS=com.apple.hls.interstitial. hls.js 1.6+ loads the ad separately.",
     };
     const LENGTH_HINTS = {
-      ssai: "Maximum stitched ad pod length. 0 = use the full ad creative.",
+      ssai: "Max pod length, whole segments only. Mux ads are ~10s each: 15 → one segment (10s), 20 → two (20s). 0 = no trim.",
       sgai: "How long each interstitial plays (DURATION + X-PLAYOUT-LIMIT).",
     };
 
@@ -314,11 +328,135 @@
       return data.session;
     }
 
+    function formatRemain(sec) {
+      const s = Math.max(0, Math.ceil(sec));
+      if (s < 60) return s + "s";
+      const m = Math.floor(s / 60);
+      return m + ":" + String(s % 60).padStart(2, "0");
+    }
+
+    function configuredAdLength() {
+      const n = Number($("adLength") && $("adLength").value);
+      return isFinite(n) && n > 0 ? n : 15;
+    }
+
+    function sgaiRemaining() {
+      const im = hls && hls.interstitialsManager;
+      if (!im) return configuredAdLength();
+      const ev = im.playingItem && (im.playingItem.event || im.playingItem.interstitial);
+      const cap = (ev && (ev.playoutLimit || ev.duration)) || configuredAdLength();
+      const q = im.playerQueue || [];
+      for (let i = 0; i < q.length; i++) {
+        const media = q[i] && q[i].media;
+        if (!media || media.paused || media.ended) continue;
+        return Math.max(0, cap - (media.currentTime || 0));
+      }
+      return Math.max(0, cap);
+    }
+
+    function ssaiRemaining() {
+      const t = $("video").currentTime || 0;
+      const w = adWindows.find((x) => t >= x.start && t < x.end + 0.2);
+      if (!w) return 0;
+      return Math.max(0, w.end - t);
+    }
+
+    function setAdLabel(on, remainSec) {
+      const badge = $("adBadge");
+      const count = $("adCount");
+      if (badge) badge.hidden = !on;
+      if (count) count.textContent = on ? formatRemain(remainSec || 0) : "";
+    }
+
+    function parseCueWindows(playlistText) {
+      const windows = [];
+      if (!playlistText) return windows;
+      let t = 0;
+      let adStart = null;
+      let adEnd = null;
+      String(playlistText).replace(/\r/g, "").split("\n").forEach((raw) => {
+        const line = raw.trim();
+        if (/^#EXT-X-CUE-OUT(?!-CONT)/i.test(line)) {
+          if (adStart == null) adStart = t;
+          const dm = line.match(/:([0-9.]+)/) || line.match(/DURATION=([0-9.]+)/i);
+          if (dm) adEnd = t + (Number(dm[1]) || 0);
+          return;
+        }
+        if (/^#EXT-X-CUE-IN/i.test(line)) {
+          if (adStart != null) {
+            windows.push({ start: adStart, end: Math.max(adStart, t, adEnd || t) });
+            adStart = null;
+            adEnd = null;
+          }
+          return;
+        }
+        const m = line.match(/^#EXTINF\s*:\s*([0-9.]+)/i);
+        if (m) t += Number(m[1]) || 0;
+      });
+      if (adStart != null) {
+        windows.push({ start: adStart, end: Math.max(adStart, adEnd != null ? adEnd : t) });
+      }
+      return windows;
+    }
+
+    function rememberPlaylist(text) {
+      const wins = parseCueWindows(text);
+      if (wins.length) adWindows = wins;
+    }
+
+    function isSgaiAdPlaying() {
+      const im = hls && hls.interstitialsManager;
+      if (!im) return false;
+      if (im.playingAsset) return true;
+      const item = im.playingItem;
+      if (item && (item.event || item.interstitial)) return true;
+      const q = im.playerQueue || [];
+      for (let i = 0; i < q.length; i++) {
+        const p = q[i];
+        if (p && p.media && !p.media.paused && !p.media.ended && p.media.currentTime > 0) return true;
+      }
+      return false;
+    }
+
+    function isSsaiAdPlaying() {
+      if (!adWindows.length) return false;
+      const t = $("video").currentTime || 0;
+      return adWindows.some((w) => t >= w.start && t < w.end + 0.2);
+    }
+
+    function refreshAdLabel() {
+      if (!watchingAds) {
+        setAdLabel(false);
+        return;
+      }
+      if (strategy === "sgai") {
+        const on = isSgaiAdPlaying();
+        setAdLabel(on, on ? sgaiRemaining() : 0);
+      } else {
+        const on = isSsaiAdPlaying();
+        setAdLabel(on, on ? ssaiRemaining() : 0);
+      }
+    }
+
+    function startAdWatch() {
+      watchingAds = true;
+      if (adPollTimer) clearInterval(adPollTimer);
+      adPollTimer = setInterval(refreshAdLabel, 200);
+      $("video").addEventListener("timeupdate", refreshAdLabel);
+    }
+
     function destroyPlayer() {
+      watchingAds = false;
+      if (adPollTimer) {
+        clearInterval(adPollTimer);
+        adPollTimer = null;
+      }
       if (hls) { hls.destroy(); hls = null; }
       const v = $("video");
+      v.removeEventListener("timeupdate", refreshAdLabel);
       v.removeAttribute("src");
       v.load();
+      setAdLabel(false);
     }
 
     function playUrl(manifestUrl, enableInterstitials, staticSession) {
@@ -329,14 +467,21 @@
         if ("enableInterstitialPlayback" in Hls.DefaultConfig) {
           cfg.enableInterstitialPlayback = !!enableInterstitials;
         }
+        if ("interstitialAppendInPlace" in Hls.DefaultConfig) {
+          cfg.interstitialAppendInPlace = false;
+        }
         if (staticSession && window.HlsDemoRewrite) {
           cfg.pLoader = window.HlsDemoRewrite.createLoader(Hls, staticSession, {
-            onRewritten: (text) => { $("preview").innerHTML = highlight(text); },
+            onRewritten: (text) => {
+              $("preview").innerHTML = highlight(text);
+              rememberPlaylist(text);
+            },
           });
         }
         hls = new Hls(cfg);
         hls.loadSource(manifestUrl);
         hls.attachMedia(video);
+        startAdWatch();
         hls.on(Hls.Events.MANIFEST_PARSED, () => {
           video.play().catch(() => {});
           setStatus("Playing " + strategy.toUpperCase() + " — " + manifestUrl, "ok");
@@ -347,12 +492,24 @@
             $("tlHint").textContent = "Duration " + Math.round(mediaDuration) + "s — click to add a break.";
             renderTimeline();
           }
+          if (!enableInterstitials && data && data.details) {
+            rememberPlaylist(data.details.m3u8 || "");
+            const levelUrl = data.details.url;
+            if (levelUrl && useProxy) {
+              fetch(levelUrl, { cache: "no-store" })
+                .then((r) => r.text())
+                .then(rememberPlaylist)
+                .catch(() => {});
+            }
+          }
+          refreshAdLabel();
         });
         hls.on(Hls.Events.ERROR, (_, data) => {
           if (data.fatal) setStatus("Player error: " + data.type + " / " + data.details, "err");
         });
         return;
       }
+      startAdWatch();
       video.src = manifestUrl;
       video.play().catch(() => {});
       setStatus("Playing via native HLS — " + manifestUrl, "ok");
@@ -383,6 +540,7 @@
             ? await window.HlsDemoRewrite.previewMedia(session, session.contentUrl)
             : "// static rewrite unavailable";
           $("preview").innerHTML = highlight(preview);
+          adWindows = parseCueWindows(preview);
           $("manifestUrl").value = session.contentUrl;
           $("btnCopy").disabled = false;
           $("sessionMeta").innerHTML =
@@ -402,6 +560,7 @@
         const text = await res.text();
         if (!res.ok) throw new Error(text);
         $("preview").innerHTML = highlight(text);
+        adWindows = parseCueWindows(text);
         setStatus(strategy.toUpperCase() + " manifest ready.", "ok");
         if (andPlay) playUrl(session.manifestUrl, strategy === "sgai");
       } catch (e) {
@@ -414,7 +573,7 @@
     $("strategy").onchange = () => setStrategy($("strategy").value, true);
     $("btnApply").onclick = () => apply(true);
     $("btnGenerate").onclick = () => apply(false);
-    $("btnStop").onclick = () => { destroyPlayer(); setStatus("Player stopped."); };
+    $("btnStop").onclick = () => { destroyPlayer(); setAdLabel(false); setStatus("Player stopped."); };
     $("splices").addEventListener("input", renderTimeline);
     $("btnCopy").onclick = async () => {
       const url = $("manifestUrl").value;

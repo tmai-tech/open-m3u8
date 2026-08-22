@@ -52,12 +52,12 @@ public class PlaylistSsaiUtilTest {
         assertTrue(a1.hasCueOutCont());
         assertEquals(5f, a1.getCueOutCont().getElapsedTime(), 1e-4);
         assertEquals(10f, a1.getCueOutCont().getDuration(), 1e-4);
-        assertTrue(a1.hasCueIn());
+        assertFalse(a1.hasCueIn());
 
         TrackData c1 = tracks.get(3);
         assertEquals("http://cdn/c1.ts", c1.getUri());
         assertTrue(c1.hasDiscontinuity());
-        assertFalse(c1.hasCueIn());
+        assertTrue(c1.hasCueIn());
 
         assertTrue(stitched.getMediaPlaylist().hasDateRanges());
         assertEquals("mid-1", stitched.getMediaPlaylist().getDateRanges().get(0).getId());
@@ -86,13 +86,15 @@ public class PlaylistSsaiUtilTest {
         assertEquals(4, tracks.size());
         assertEquals("http://ads/pre.ts", tracks.get(0).getUri());
         assertTrue(tracks.get(0).hasCueOut());
-        assertTrue(tracks.get(0).hasCueIn());
+        assertFalse(tracks.get(0).hasCueIn());
         assertEquals("http://cdn/c0.ts", tracks.get(1).getUri());
         assertTrue(tracks.get(1).hasDiscontinuity());
+        assertTrue(tracks.get(1).hasCueIn());
         assertEquals("http://cdn/c1.ts", tracks.get(2).getUri());
         assertEquals("http://ads/post.ts", tracks.get(3).getUri());
         assertTrue(tracks.get(3).hasDiscontinuity());
         assertTrue(tracks.get(3).hasCueOut());
+        assertTrue(tracks.get(3).hasCueIn());
     }
 
     @Test
@@ -225,12 +227,25 @@ public class PlaylistSsaiUtilTest {
                 Format.EXT_M3U,
                 Encoding.UTF_8).parse();
 
+        String text = os.toString(Encoding.UTF_8.value);
+        int lastAd = text.lastIndexOf("http://ads/a1.ts");
+        int cueIn = text.indexOf("#EXT-X-CUE-IN");
+        int resumeDisc = text.indexOf("#EXT-X-DISCONTINUITY", text.indexOf("http://ads/a0.ts"));
+        int contentUri = text.indexOf("http://cdn/c1.ts");
+        assertTrue(lastAd >= 0 && cueIn > lastAd);
+        assertTrue(resumeDisc > cueIn);
+        assertTrue(contentUri > resumeDisc);
+        int firstDisc = text.indexOf("#EXT-X-DISCONTINUITY");
+        int cueOut = text.indexOf("#EXT-X-CUE-OUT:");
+        assertTrue(firstDisc >= 0 && firstDisc < cueOut);
+
         List<TrackData> tracks = reparsed.getMediaPlaylist().getTracks();
         assertEquals(4, tracks.size());
         assertTrue(tracks.get(1).hasCueOut());
         assertTrue(tracks.get(2).hasCueOutCont());
-        assertTrue(tracks.get(2).hasCueIn());
+        assertFalse(tracks.get(2).hasCueIn());
         assertTrue(tracks.get(3).hasDiscontinuity());
+        assertTrue(tracks.get(3).hasCueIn());
         assertTrue(reparsed.getMediaPlaylist().hasDateRanges());
         assertEquals("break-1", reparsed.getMediaPlaylist().getDateRanges().get(0).getId());
     }
