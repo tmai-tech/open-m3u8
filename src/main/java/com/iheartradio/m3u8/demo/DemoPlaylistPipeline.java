@@ -57,8 +57,15 @@ public final class DemoPlaylistPipeline {
         if (session.strategy == DemoSession.Strategy.SGAI) {
             return PlaylistRewriteUtil.injectMediaTags(playlist, session.toInjectConfig());
         }
-        Playlist ad = loadAdMediaPlaylist(session);
-        List<PlaylistSsaiUtil.AdBreak> breaks = session.toSsaiBreaks(ad);
+        java.util.Map<String, Playlist> ads = new java.util.HashMap<String, Playlist>();
+        for (DemoSession.Break br : session.breaks) {
+            String url = session.resolveAdUrl(br);
+            if (url == null || url.length() == 0 || ads.containsKey(url)) {
+                continue;
+            }
+            ads.put(url, loadAdMediaPlaylist(session, url));
+        }
+        List<PlaylistSsaiUtil.AdBreak> breaks = session.toSsaiBreaks(ads);
         if (breaks.isEmpty()) {
             return playlist;
         }
@@ -116,39 +123,46 @@ public final class DemoPlaylistPipeline {
     }
 
     Playlist loadAdMediaPlaylist(DemoSession session) throws Exception {
-        if (session.getCachedAdMedia() != null) {
-            return session.getCachedAdMedia();
+        return loadAdMediaPlaylist(session, session.adUrl);
+    }
+
+    Playlist loadAdMediaPlaylist(DemoSession session, String adUrl) throws Exception {
+        if (adUrl == null || adUrl.length() == 0) {
+            throw new DemoHttp.HttpException(400, "ad URL is required for ssai");
+        }
+        Playlist cached = session.getCachedAd(adUrl);
+        if (cached != null) {
+            return cached;
         }
         synchronized (session.adLock()) {
-            if (session.getCachedAdMedia() != null) {
-                return session.getCachedAdMedia();
+            cached = session.getCachedAd(adUrl);
+            if (cached != null) {
+                return cached;
             }
             if (session.getAdLoadError() != null) {
                 throw new DemoHttp.HttpException(502, session.getAdLoadError());
             }
-            if (session.adUrl == null || session.adUrl.length() == 0) {
-                throw new DemoHttp.HttpException(400, "adUrl is required for ssai");
-            }
             try {
-                Playlist ad = fetchAndParse(session.adUrl);
+                Playlist ad = fetchAndParse(adUrl);
+                Playlist resolved;
                 if (ad.hasMediaPlaylist()) {
-                    session.setCachedAdMedia(PlaylistRewriteUtil.absolutizeUris(ad, session.adUrl));
-                    return session.getCachedAdMedia();
-                }
-                if (ad.hasMasterPlaylist()) {
+                    resolved = PlaylistRewriteUtil.absolutizeUris(ad, adUrl);
+                } else if (ad.hasMasterPlaylist()) {
                     List<PlaylistData> variants = ad.getMasterPlaylist().getPlaylists();
                     if (variants == null || variants.isEmpty()) {
                         throw new IllegalStateException("ad master playlist has no variants");
                     }
-                    String child = PlaylistRewriteUtil.resolveUri(session.adUrl, variants.get(0).getUri());
+                    String child = PlaylistRewriteUtil.resolveUri(adUrl, variants.get(0).getUri());
                     Playlist media = fetchAndParse(child);
                     if (!media.hasMediaPlaylist()) {
                         throw new IllegalStateException("ad variant is not a media playlist: " + child);
                     }
-                    session.setCachedAdMedia(PlaylistRewriteUtil.absolutizeUris(media, child));
-                    return session.getCachedAdMedia();
+                    resolved = PlaylistRewriteUtil.absolutizeUris(media, child);
+                } else {
+                    throw new IllegalStateException("ad URL is neither master nor media playlist");
                 }
-                throw new IllegalStateException("ad URL is neither master nor media playlist");
+                session.putCachedAd(adUrl, resolved);
+                return resolved;
             } catch (DemoHttp.HttpException e) {
                 session.setAdLoadError(e.getMessage());
                 throw e;

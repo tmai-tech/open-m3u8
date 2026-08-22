@@ -69,6 +69,8 @@ public final class DemoSession {
     private volatile Playlist cachedAdMedia;
     private volatile String adLoadError;
     private final Object adLock = new Object();
+    private final java.util.Map<String, Playlist> adCache =
+            new java.util.concurrent.ConcurrentHashMap<String, Playlist>();
 
     public DemoSession(String id, Strategy strategy, String contentUrl, String adUrl,
                        List<Break> breaks, float maxAdDurationSec, StartData startOverride,
@@ -100,6 +102,23 @@ public final class DemoSession {
 
     public void setCachedAdMedia(Playlist playlist) {
         this.cachedAdMedia = playlist;
+        if (adUrl != null && playlist != null) {
+            adCache.put(adUrl, playlist);
+        }
+    }
+
+    public Playlist getCachedAd(String url) {
+        if (url == null) {
+            return cachedAdMedia;
+        }
+        Playlist hit = adCache.get(url);
+        return hit != null ? hit : (url.equals(adUrl) ? cachedAdMedia : null);
+    }
+
+    public void putCachedAd(String url, Playlist playlist) {
+        if (url != null && playlist != null) {
+            adCache.put(url, playlist);
+        }
     }
 
     public String getAdLoadError() {
@@ -144,16 +163,33 @@ public final class DemoSession {
     }
 
     public List<PlaylistSsaiUtil.AdBreak> toSsaiBreaks(Playlist adMedia) {
+        java.util.Map<String, Playlist> one = new java.util.HashMap<String, Playlist>();
+        if (adMedia != null && adUrl != null) {
+            one.put(adUrl, adMedia);
+        }
+        return toSsaiBreaks(one);
+    }
+
+    public List<PlaylistSsaiUtil.AdBreak> toSsaiBreaks(java.util.Map<String, Playlist> adsByUrl) {
         List<PlaylistSsaiUtil.AdBreak> out = new ArrayList<PlaylistSsaiUtil.AdBreak>();
-        if (adMedia == null || breaks.isEmpty()) {
+        if (breaks.isEmpty()) {
             return out;
         }
         int i = 0;
         for (Break br : breaks) {
             i++;
+            String uri = br.assetUri != null && br.assetUri.length() > 0 ? br.assetUri : adUrl;
+            Playlist ad = adsByUrl != null ? adsByUrl.get(uri) : null;
+            if (ad == null) {
+                ad = getCachedAd(uri);
+            }
+            if (ad == null) {
+                continue;
+            }
+            float maxDur = br.durationSec > 0f ? br.durationSec : maxAdDurationSec;
             PlaylistSsaiUtil.AdBreak.Builder b = PlaylistSsaiUtil.AdBreak.builder()
                     .withId(br.id != null && br.id.length() > 0 ? br.id : ("ssai-" + i))
-                    .withAdPlaylist(adMedia, maxAdDurationSec)
+                    .withAdPlaylist(ad, maxDur)
                     .withEmitDateRange(true);
             if (br.offsetSec <= 0f) {
                 b.preRoll();
@@ -163,6 +199,13 @@ public final class DemoSession {
             out.add(b.build());
         }
         return out;
+    }
+
+    public String resolveAdUrl(Break br) {
+        if (br != null && br.assetUri != null && br.assetUri.length() > 0) {
+            return br.assetUri;
+        }
+        return adUrl;
     }
 
     public float[] spliceOffsets() {
@@ -236,8 +279,15 @@ public final class DemoSession {
         }
 
         List<Break> breaks = parseBreaks(json, ad);
-        if (strategy == Strategy.SSAI && (ad == null || ad.isEmpty())) {
-            throw new IllegalArgumentException("adUrl is required for ssai");
+        if (strategy == Strategy.SSAI) {
+            boolean hasAd = ad != null && ad.length() > 0;
+            for (int i = 0; !hasAd && i < breaks.size(); i++) {
+                String u = breaks.get(i).assetUri;
+                hasAd = u != null && u.length() > 0;
+            }
+            if (!hasAd) {
+                throw new IllegalArgumentException("each SSAI break needs an ad URL");
+            }
         }
 
         float maxAd = (float) DemoHttp.jsonNumber(json, "maxAdDurationSec", Double.NaN);
@@ -318,6 +368,9 @@ public final class DemoSession {
                 }
                 if (uri == null || uri.isEmpty()) {
                     uri = defaultAd;
+                }
+                if (uri != null && uri.length() > 0) {
+                    DemoHttp.requireHttpUrl(uri);
                 }
                 String bid = DemoHttp.jsonStringValue(item, "id");
                 if (bid == null || bid.isEmpty()) {

@@ -138,14 +138,19 @@
     var header = bumpVersion(parsed.header, 7);
     var starts = trackStarts(parsed.tracks);
     var snap = session.snapToSegment !== false;
-    var dur = session.adLength > 0 ? session.adLength : 15;
-    var asset = session.adUrl;
     var ranges = [];
-    var offsets = session.offsets || [];
-    for (var i = 0; i < offsets.length; i++) {
-      var off = snap ? snapOffset(offsets[i], starts) : offsets[i];
+    var breakList = session.breaks && session.breaks.length
+      ? session.breaks
+      : (session.offsets || []).map(function (off) {
+          return { offsetSec: off, durationSec: session.adLength || 15, assetUri: session.adUrl };
+        });
+    for (var i = 0; i < breakList.length; i++) {
+      var br = breakList[i];
+      var off = snap ? snapOffset(br.offsetSec, starts) : br.offsetSec;
+      var dur = br.durationSec > 0 ? br.durationSec : 15;
+      var asset = br.assetUri || session.adUrl;
       var startDate = toIso(SYNTH_MS + Math.round(off * 1000));
-      var id = "user-ad-" + (i + 1);
+      var id = br.id || ("user-ad-" + (i + 1));
       var parts = [
         "ID=\"" + id + "\"",
         "CLASS=\"com.apple.hls.interstitial\"",
@@ -201,13 +206,16 @@
     var content = parsed.tracks;
     var starts = trackStarts(content);
     var snap = session.snapToSegment !== false;
-    var ads = trimTracks(adTracks, session.adLength);
-    var adDur = ads.reduce(function (s, t) { return s + (t.duration || 0); }, 0);
-    var offsets = (session.offsets || []).slice().sort(function (a, b) { return a - b; });
+    var breakList = session.breaks && session.breaks.length
+      ? session.breaks.slice()
+      : (session.offsets || []).map(function (off) {
+          return { offsetSec: off, durationSec: session.adLength || 0, assetUri: session.adUrl };
+        });
+    breakList.sort(function (a, b) { return a.offsetSec - b.offsetSec; });
 
     var insertAfter = {};
-    for (var i = 0; i < offsets.length; i++) {
-      var off = snap ? snapOffset(offsets[i], starts) : offsets[i];
+    for (var i = 0; i < breakList.length; i++) {
+      var off = snap ? snapOffset(breakList[i].offsetSec, starts) : breakList[i].offsetSec;
       var idx = -1;
       if (off <= 0) idx = -1;
       else {
@@ -225,7 +233,15 @@
       insertAfter[idx].push(i);
     }
 
-    function emitAd(lines, breakId) {
+    function tracksForBreak(br) {
+      var url = (br && br.assetUri) || session.adUrl;
+      var raw = (session._adsByUrl && url && session._adsByUrl[url]) || adTracks || [];
+      return trimTracks(raw, br && br.durationSec > 0 ? br.durationSec : session.adLength);
+    }
+
+    function emitAd(lines, breakIdx) {
+      var ads = tracksForBreak(breakList[breakIdx]);
+      var adDur = ads.reduce(function (s, t) { return s + (t.duration || 0); }, 0);
       lines.push("#EXT-X-DISCONTINUITY");
       lines.push("#EXT-X-CUE-OUT:" + adDur.toFixed(1));
       var elapsed = 0;
@@ -312,7 +328,7 @@
           var out = data;
           if (session.strategy === "sgai") {
             out = injectSgai(data, url, session);
-          } else if (session._adTracks) {
+          } else if (session._adsByUrl || session._adTracks) {
             out = stitchSsai(data, url, session._adTracks, session);
           }
           if (hooks && hooks.onRewritten) hooks.onRewritten(out, url);
@@ -327,23 +343,44 @@
     return Loader;
   }
 
-  async function loadAdTracks(session) {
-    if (session._adTracks) return session._adTracks;
-    var res = await fetch(session.adUrl, { cache: "no-store" });
-    if (!res.ok) throw new Error("Ad playlist HTTP " + res.status);
+  async function loadAdTracksForUrl(session, url) {
+    if (!url) throw new Error("Ad URL is required");
+    session._adsByUrl = session._adsByUrl || {};
+    if (session._adsByUrl[url]) return session._adsByUrl[url];
+    var res = await fetch(url, { cache: "no-store" });
+    if (!res.ok) throw new Error("Ad playlist HTTP " + res.status + " for " + url);
     var text = await res.text();
-    var adUrl = session.adUrl;
+    var adUrl = url;
     if (isMaster(text) && !isMedia(text)) {
-      var child = firstVariantUrl(text, session.adUrl);
+      var child = firstVariantUrl(text, url);
       if (!child) throw new Error("Ad master has no variants");
       res = await fetch(child, { cache: "no-store" });
       if (!res.ok) throw new Error("Ad variant HTTP " + res.status);
       text = await res.text();
       adUrl = child;
     }
-    session._adTracks = parseTracks(text, adUrl).tracks;
-    if (!session._adTracks.length) throw new Error("Ad playlist has no segments");
-    return session._adTracks;
+    var tracks = parseTracks(text, adUrl).tracks;
+    if (!tracks.length) throw new Error("Ad playlist has no segments");
+    session._adsByUrl[url] = tracks;
+    return tracks;
+  }
+
+  async function loadAdTracks(session) {
+    var urls = [];
+    if (session.breaks) {
+      session.breaks.forEach(function (b) {
+        var u = b.assetUri || session.adUrl;
+        if (u && urls.indexOf(u) < 0) urls.push(u);
+      });
+    }
+    if (!urls.length && session.adUrl) urls.push(session.adUrl);
+    var first = null;
+    for (var i = 0; i < urls.length; i++) {
+      var tracks = await loadAdTracksForUrl(session, urls[i]);
+      if (!first) first = tracks;
+    }
+    session._adTracks = first;
+    return first;
   }
 
   async function previewMedia(session, contentUrl) {

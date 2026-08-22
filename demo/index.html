@@ -94,6 +94,20 @@
     }
     .url-row { display: flex; gap: 8px; align-items: stretch; }
     .url-row input { margin-bottom: 0; flex: 1; }
+    .breaks-toolbar {
+      display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 4px 0 8px;
+    }
+    .breaks-toolbar label { margin: 0; }
+    .break-row {
+      display: grid; grid-template-columns: 76px 1fr 76px 36px; gap: 8px; align-items: center;
+      margin-bottom: 8px;
+    }
+    .break-row input { margin-bottom: 0; }
+    .break-row .btn-icon {
+      padding: 8px 0; min-width: 36px; background: transparent; color: var(--danger);
+      border: 1px solid rgba(255,107,122,.35);
+    }
+    .col-label { font-size: .72rem; color: var(--muted); font-weight: 600; }
     .check-row { display: flex; align-items: center; gap: 8px; color: var(--text); font-size: .88rem; margin-bottom: 10px; }
     .hidden { display: none !important; }
     .player-wrap { position: relative; background: #000; }
@@ -135,28 +149,29 @@
           <button type="button" class="chip" id="sampleFill">Fill content + ad demo</button>
         </div>
 
-        <label for="adUrl">Ad URL (media .m3u8 preferred)</label>
-        <input id="adUrl" type="url" placeholder="https://example.com/ads/pod.m3u8"
-          value="https://demo.unified-streaming.com/k8s/features/stable/video/tears-of-steel/tears-of-steel.ism/.m3u8" />
-
-        <label for="splices">Ad points (seconds from start)</label>
-        <input id="splices" type="text" value="30, 90" />
-        <p class="hint">Comma-separated. <code>0</code> is pre-roll. Click the timeline after play to add points.</p>
+        <div class="breaks-toolbar">
+          <label>Ad breaks</label>
+          <button type="button" class="btn btn-ad btn-sm" id="btnAddBreak">+ Add break</button>
+        </div>
+        <div class="break-row" style="margin-bottom:4px">
+          <span class="col-label">Offset (s)</span>
+          <span class="col-label">Ad URL (.m3u8)</span>
+          <span class="col-label">Duration (s)</span>
+          <span></span>
+        </div>
+        <div id="breakList"></div>
+        <p class="hint" id="adLengthHint">Each row is its own creative, start time, and max length. Click the timeline to add a row.</p>
         <div class="timeline" id="timeline" title="Click to place an ad">
           <div class="timeline-fill" id="timelineFill"></div>
           <div class="timeline-playhead" id="timelinePlayhead"></div>
         </div>
-        <p class="hint" id="tlHint">Play once to enable the timeline, or type offsets above.</p>
-
-        <label for="adLength">Ad length (seconds)</label>
-        <input id="adLength" type="number" min="0" step="any" value="15" />
-        <p class="hint" id="adLengthHint"></p>
+        <p class="hint" id="tlHint">Play once to enable the timeline, or add rows above.</p>
 
         <details class="extras">
           <summary>Extra properties</summary>
           <div class="extras-body">
             <div class="ssai-only">
-              <p class="hint">SSAI trims the stitched ad pod to <strong>Ad length</strong> (whole segments). Use <code>0</code> for no trim.</p>
+              <p class="hint">SSAI trims each row’s ad to its <strong>Duration</strong> using whole segments. <code>0</code> = no trim.</p>
             </div>
             <div class="sgai-only">
               <label class="check-row"><input type="checkbox" id="restrictSkip" /> X-RESTRICT includes SKIP</label>
@@ -166,7 +181,7 @@
                 <option value="proxy" selected>Local rewrite (Network shows tags)</option>
                 <option value="direct">Direct CDN + client inject</option>
               </select>
-              <p class="hint">Ad length is written as <code>DURATION</code> and <code>X-PLAYOUT-LIMIT</code>.</p>
+              <p class="hint">Each row’s duration is <code>DURATION</code> and <code>X-PLAYOUT-LIMIT</code>.</p>
             </div>
           </div>
         </details>
@@ -230,9 +245,10 @@
       sgai: "Leaves content as content and injects EXT-X-DATERANGE CLASS=com.apple.hls.interstitial. hls.js 1.6+ loads the ad separately.",
     };
     const LENGTH_HINTS = {
-      ssai: "Max pod length, whole segments only. Tears of Steel ads are ~4s each: 12 → three segments. 0 = no trim.",
-      sgai: "How long each interstitial plays (DURATION + X-PLAYOUT-LIMIT).",
+      ssai: "Each row is offset + ad URL + max duration (whole segments). Tears of Steel ≈ 4s/seg.",
+      sgai: "Each row’s duration is DURATION + X-PLAYOUT-LIMIT for that interstitial.",
     };
+    const DEFAULT_AD = SAMPLES.ad;
 
     function setStrategy(next, announce) {
       strategy = next === "sgai" ? "sgai" : "ssai";
@@ -273,46 +289,79 @@
           '<span class="tag">$&</span>');
     }
 
+    function readBreaksFromDom() {
+      const rows = document.querySelectorAll("#breakList .break-row");
+      const out = [];
+      rows.forEach((row, i) => {
+        const offsetSec = Number(row.querySelector(".brk-off").value);
+        const assetUri = (row.querySelector(".brk-url").value || "").trim();
+        const durationSec = Number(row.querySelector(".brk-dur").value);
+        if (!assetUri) return;
+        if (Number.isNaN(offsetSec) || offsetSec < 0) throw new Error("Break " + (i + 1) + ": offset must be ≥ 0");
+        if (Number.isNaN(durationSec) || durationSec < 0) throw new Error("Break " + (i + 1) + ": duration must be ≥ 0");
+        out.push({
+          id: (strategy === "sgai" ? "user-ad-" : "ssai-") + (i + 1),
+          offsetSec,
+          durationSec,
+          assetUri,
+        });
+      });
+      return out;
+    }
+
+    function addBreakRow(offsetSec, assetUri, durationSec) {
+      const list = $("breakList");
+      const last = list.querySelector(".break-row:last-child");
+      const inheritUrl = last ? last.querySelector(".brk-url").value : DEFAULT_AD;
+      const inheritDur = last ? last.querySelector(".brk-dur").value : "12";
+      const row = document.createElement("div");
+      row.className = "break-row";
+      row.innerHTML =
+        '<input class="brk-off" type="number" min="0" step="any" />' +
+        '<input class="brk-url" type="url" placeholder="https://…/ad.m3u8" />' +
+        '<input class="brk-dur" type="number" min="0" step="any" />' +
+        '<button type="button" class="btn btn-icon" title="Remove">×</button>';
+      row.querySelector(".brk-off").value = offsetSec != null ? offsetSec : 0;
+      row.querySelector(".brk-url").value = assetUri || inheritUrl || DEFAULT_AD;
+      row.querySelector(".brk-dur").value = durationSec != null ? durationSec : inheritDur;
+      row.querySelector(".btn-icon").onclick = () => {
+        row.remove();
+        renderTimeline();
+      };
+      row.querySelector(".brk-off").addEventListener("input", renderTimeline);
+      list.appendChild(row);
+      renderTimeline();
+    }
+
     function renderTimeline() {
       const tl = $("timeline");
       tl.querySelectorAll(".tl-mark").forEach((n) => n.remove());
       if (!mediaDuration) return;
-      try {
-        parseSplices($("splices").value).forEach((sec) => {
-          const mark = document.createElement("div");
-          mark.className = "tl-mark";
-          mark.style.left = Math.max(0, Math.min(100, (sec / mediaDuration) * 100)) + "%";
-          tl.appendChild(mark);
-        });
-      } catch (_) {}
+      document.querySelectorAll("#breakList .brk-off").forEach((input) => {
+        const sec = Number(input.value);
+        if (Number.isNaN(sec) || sec < 0) return;
+        const mark = document.createElement("div");
+        mark.className = "tl-mark";
+        mark.style.left = Math.max(0, Math.min(100, (sec / mediaDuration) * 100)) + "%";
+        tl.appendChild(mark);
+      });
     }
 
     function buildLocalSession() {
       const contentUrl = $("contentUrl").value.trim();
-      const adUrl = $("adUrl").value.trim();
-      const splices = parseSplices($("splices").value);
       if (!contentUrl) throw new Error("Content URL is required");
-      if (!adUrl) throw new Error("Ad URL is required");
-      const adLength = Number($("adLength").value);
-      if (Number.isNaN(adLength) || adLength < 0) {
-        throw new Error("Ad length must be ≥ 0");
-      }
-      const durationSec = adLength > 0 ? adLength : 15;
-      const breaks = splices.map((offsetSec, i) => ({
-        id: (strategy === "sgai" ? "user-ad-" : "ssai-") + (i + 1),
-        offsetSec,
-        durationSec,
-        assetUri: adUrl,
-      }));
+      const breaks = readBreaksFromDom();
+      if (!breaks.length) throw new Error("Add at least one ad break (offset, URL, duration)");
+      const splices = breaks.map((b) => b.offsetSec);
       return {
         strategy,
         contentUrl,
-        adUrl,
+        adUrl: breaks[0].assetUri,
         breaks,
         splices,
         offsets: splices,
-        adLength,
-        maxAdDurationSec: adLength,
+        adLength: breaks[0].durationSec,
+        maxAdDurationSec: breaks[0].durationSec,
         snapToSegment: $("snapSegment").checked,
         restrictSkip: $("restrictSkip").checked,
         sgai: {
@@ -346,8 +395,14 @@
     }
 
     function configuredAdLength() {
-      const n = Number($("adLength") && $("adLength").value);
-      return isFinite(n) && n > 0 ? n : 15;
+      const first = document.querySelector("#breakList .brk-dur");
+      const n = first ? Number(first.value) : NaN;
+      if (isFinite(n) && n > 0) return n;
+      if (lastSession && lastSession.breaks && lastSession.breaks[0]) {
+        const d = Number(lastSession.breaks[0].durationSec);
+        if (isFinite(d) && d > 0) return d;
+      }
+      return 12;
     }
 
     function sgaiRemaining() {
@@ -635,28 +690,26 @@
       try { await navigator.clipboard.writeText(url); setStatus("Copied manifest URL.", "ok"); }
       catch (_) { $("manifestUrl").select(); document.execCommand("copy"); }
     };
+    $("btnAddBreak").onclick = () => addBreakRow();
     $("timeline").onclick = (ev) => {
       if (!mediaDuration) {
-        setStatus("Play once so the timeline has a duration, or type offsets.", "err");
+        addBreakRow(0);
+        setStatus("Added a break at 0s. Play to place on the timeline.", "ok");
         return;
       }
       const rect = ev.currentTarget.getBoundingClientRect();
       const sec = Math.max(0, ((ev.clientX - rect.left) / rect.width) * mediaDuration);
-      const rounded = Math.round(sec * 10) / 10;
-      const cur = (() => { try { return parseSplices($("splices").value); } catch (_) { return []; } })();
-      cur.push(rounded);
-      cur.sort((a, b) => a - b);
-      $("splices").value = cur.join(", ");
-      renderTimeline();
+      addBreakRow(Math.round(sec * 10) / 10);
     };
     document.querySelectorAll("[data-sample]").forEach((btn) => {
       btn.onclick = () => { $("contentUrl").value = SAMPLES[btn.dataset.sample]; };
     });
     $("sampleFill").onclick = () => {
       $("contentUrl").value = SAMPLES.mux;
-      $("adUrl").value = SAMPLES.ad;
-      $("splices").value = "30, 90";
-      setStatus("Demo URLs filled. Click Apply & play.", "ok");
+      $("breakList").innerHTML = "";
+      addBreakRow(30, DEFAULT_AD, 12);
+      addBreakRow(90, DEFAULT_AD, 12);
+      setStatus("Demo content + two 12s Tears of Steel breaks. Click Apply & play.", "ok");
     };
 
     function applyHealth(j) {
@@ -688,6 +741,10 @@
     setInterval(() => pollHealth(false), 4000);
 
     setStrategy(strategy, false);
+    if (!$("breakList").children.length) {
+      addBreakRow(30, DEFAULT_AD, 12);
+      addBreakRow(90, DEFAULT_AD, 12);
+    }
   </script>
 </body>
 </html>
