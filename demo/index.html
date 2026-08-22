@@ -635,11 +635,16 @@
       }
     }
 
-    $("strategy").onchange = () => setStrategy($("strategy").value, true);
-    $("btnApply").onclick = () => apply(true);
-    $("btnGenerate").onclick = () => apply(false);
-    $("btnStop").onclick = () => { destroyPlayer(); setAdLabel(false); setStatus("Player stopped."); };
-    $("splices").addEventListener("input", renderTimeline);
+    function bind(id, ev, fn) {
+      const el = $(id);
+      if (!el) return;
+      el.addEventListener(ev, fn);
+    }
+
+    bind("strategy", "change", () => setStrategy($("strategy").value, true));
+    bind("btnApply", "click", () => apply(true));
+    bind("btnGenerate", "click", () => apply(false));
+    bind("btnStop", "click", () => { destroyPlayer(); setAdLabel(false); setStatus("Player stopped."); });
     function setManifestButtons(enabled) {
       $("btnCopy").disabled = !enabled;
       const w = $("btnWatch");
@@ -673,25 +678,25 @@
         if (btn) btn.disabled = true;
       }
     }
-    $("btnWatch").onclick = () => {
+    bind("btnWatch", "click", () => {
       const url = $("manifestUrl").value;
       if (!url) return;
       window.open("watch.html?url=" + encodeURIComponent(url), "_blank");
-    };
-    $("btnCopyPublic").onclick = async () => {
+    });
+    bind("btnCopyPublic", "click", async () => {
       const url = $("publicManifestUrl").value;
       if (!url) return;
       try { await navigator.clipboard.writeText(url); setStatus("Copied HTTPS URL for hlsjs.video-dev.org.", "ok"); }
       catch (_) { $("publicManifestUrl").select(); document.execCommand("copy"); }
-    };
-    $("btnCopy").onclick = async () => {
+    });
+    bind("btnCopy", "click", async () => {
       const url = $("manifestUrl").value;
       if (!url) return;
       try { await navigator.clipboard.writeText(url); setStatus("Copied manifest URL.", "ok"); }
       catch (_) { $("manifestUrl").select(); document.execCommand("copy"); }
-    };
-    $("btnAddBreak").onclick = () => addBreakRow();
-    $("timeline").onclick = (ev) => {
+    });
+    bind("btnAddBreak", "click", () => addBreakRow());
+    bind("timeline", "click", (ev) => {
       if (!mediaDuration) {
         addBreakRow(0);
         setStatus("Added a break at 0s. Play to place on the timeline.", "ok");
@@ -700,17 +705,17 @@
       const rect = ev.currentTarget.getBoundingClientRect();
       const sec = Math.max(0, ((ev.clientX - rect.left) / rect.width) * mediaDuration);
       addBreakRow(Math.round(sec * 10) / 10);
-    };
+    });
     document.querySelectorAll("[data-sample]").forEach((btn) => {
       btn.onclick = () => { $("contentUrl").value = SAMPLES[btn.dataset.sample]; };
     });
-    $("sampleFill").onclick = () => {
+    bind("sampleFill", "click", () => {
       $("contentUrl").value = SAMPLES.mux;
       $("breakList").innerHTML = "";
       addBreakRow(30, DEFAULT_AD, 12);
       addBreakRow(90, DEFAULT_AD, 12);
       setStatus("Demo content + two 12s Tears of Steel breaks. Click Apply & play.", "ok");
-    };
+    });
 
     function applyHealth(j) {
       useProxy = !!(j && j.proxy);
