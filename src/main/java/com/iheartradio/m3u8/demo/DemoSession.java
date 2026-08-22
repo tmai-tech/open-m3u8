@@ -202,7 +202,13 @@ public final class DemoSession {
         }
         sb.append("],");
         sb.append("\"maxAdDurationSec\":").append(maxAdDurationSec).append(',');
-        sb.append("\"manifestUrl\":").append(DemoHttp.jsonString(publicBase + "/s/" + id + "/manifest"));
+        String localManifest = publicBase + "/s/" + id + "/manifest";
+        sb.append("\"manifestUrl\":").append(DemoHttp.jsonString(localManifest));
+        String advertised = DemoHttp.advertisedPublicBase();
+        if (advertised != null && advertised.length() > 0) {
+            sb.append(",\"publicManifestUrl\":")
+                    .append(DemoHttp.jsonString(advertised + "/s/" + id + "/manifest"));
+        }
         sb.append('}');
         return sb.toString();
     }
