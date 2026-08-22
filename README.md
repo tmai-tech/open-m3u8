@@ -1,137 +1,147 @@
 # open-m3u8
 
-Java library for parsing and writing HLS M3U8 playlists (MIT).
+Java library for **parsing and writing HLS `.m3u8` playlists**, plus a local demo that inserts ads two ways:
 
-Targets [HLS](https://datatracker.ietf.org/doc/html/draft-pantos-http-live-streaming-16). Public API may change until 1.0.
+- **SSAI** — classic server-side stitch (MediaTailor-style `CUE-OUT` / `CUE-IN` + `DISCONTINUITY`)
+- **SGAI** — HLS Interstitials (`EXT-X-DATERANGE` + `X-ASSET-URI`)
 
-## Install
+Fork of [iheartradio/open-m3u8](https://github.com/iheartradio/open-m3u8). This repo adds SSAI stitch, SGAI inject, playlist delta updates, and the demo player.
+
+Library scope is **playlist text ↔ Java models**. It does not transcode, decrypt, or host a production CDN.
+
+- **Repo:** [tmai-tech/open-m3u8](https://github.com/tmai-tech/open-m3u8)
+- **Static UI (GitHub Pages):** https://tmai-tech.github.io/open-m3u8/  
+  Pages is static: ads are rewritten in the browser. Network will not show generated tags. For real `/s/{id}/manifest` URLs, run the local demo.
+
+---
+
+## Architecture
+
+```
+                    POST /api/session  { strategy, contentUrl, adUrl, breaks }
+                                      │
+                                      ▼
+                               DemoSession
+                          strategy = SSAI | SGAI
+                                      │
+         GET /s/{id}/manifest  ───────┴───────  GET /s/{id}/proxy?url=
+                                      │
+                          DemoPlaylistPipeline
+              fetch origin → parse → apply(strategy) → rewrite URIs → write
+                                      │
+                 SSAI: PlaylistSsaiUtil.stitch
+                 SGAI: PlaylistRewriteUtil.injectMediaTags
+```
+
+| | SSAI | SGAI |
+|--|--|--|
+| Library | `PlaylistSsaiUtil.stitch` | `PlaylistRewriteUtil.injectMediaTags` |
+| Player sees | Ad **segments inlined** in the media playlist | Content playlist + **DATERANGE**; player loads the ad |
+| Tags | `DISCONTINUITY`, `CUE-OUT` / `CUE-OUT-CONT`, `CUE-IN` (MediaTailor order) | `EXT-X-DATERANGE` `CLASS=com.apple.hls.interstitial`, `X-PLAYOUT-LIMIT` |
+| Ad length | Whole-segment trim (4s ads + max 12 → three segments) | Player stops the creative at `X-PLAYOUT-LIMIT` |
+
+Master playlists are not stitched/injected. Child media playlists are transformed when fetched through `/s/{id}/proxy`.
+
+**Local Java demo** (`DemoPlayerServer` on `:8765`) serves rewritten manifests so DevTools Network shows the tags. Optional Cloudflare Quick Tunnel exposes the same process as **https** so [hlsjs.video-dev.org](https://hlsjs.video-dev.org/demo/) can load it (a public HTTPS page cannot load `http://127.0.0.1`).
+
+**GitHub Pages** has no Java process. `demo/rewrite.js` patches playlists inside hls.js (`pLoader`).
+
+---
+
+## How to use the demo
+
+Needs **JDK 8+** (17 is fine).
+
+```bash
+git clone https://github.com/tmai-tech/open-m3u8.git
+cd open-m3u8
+./gradlew runDemo
+# open http://127.0.0.1:8765/
+```
+
+`runHlsPlayer` and `runSsaiProxy` start the same server.
+
+1. Choose **SSAI** or **SGAI**.
+2. Content defaults can use Mux BBB; default ad is **Tears of Steel** (~4s segments).
+3. Set **ad points** (`30, 90` or click the timeline) and **ad length**.
+4. **Apply & play** creates a session and starts the player. **Generate only** writes the playlist without playing.
+5. **AD 12s** on the video is a client overlay (cue windows for SSAI, `interstitialsManager` for SGAI).
+
+| Button | Effect |
+|--|--|
+| Apply & play | Session + rewrite + start hls.js |
+| Generate only | Session + rewrite, no playback |
+| Copy | Local `http://127.0.0.1:8765/s/{id}/manifest` (VLC / this origin) |
+| Copy HTTPS | Public `https://…trycloudflare.com/s/{id}/manifest` when a tunnel is up |
+| Open in hls.js | Same-origin player (`/watch.html`) — no CORS/mixed-content |
+
+### Official hls.js website
+
+`https://hlsjs.video-dev.org` is HTTPS. It can play Mux (`https://test-streams.mux.dev/…`) but **not** `http://127.0.0.1`. That shows up as CORS / HTTP 0.
+
+While the local demo is running:
+
+```bash
+# Windows / from this repo
+build/tools/cloudflared.exe tunnel --url http://127.0.0.1:8765
+```
+
+Open the printed `https://….trycloudflare.com/` UI (or Generate on localhost and use **Copy HTTPS**). Paste that `https://…/s/{id}/manifest` into the official demo.
+
+One-shot (no UI):
+
+```
+http://127.0.0.1:8765/play?strategy=ssai&content=<content.m3u8>&ad=<ad.m3u8>&splices=0,30&maxAd=12
+```
+
+---
+
+## Library
+
+Published artifact is still `0.2.4`. This tree is `0.2.7-SNAPSHOT`.
 
 ```gradle
 implementation 'com.iheartradio.m3u8:open-m3u8:0.2.4'
 ```
 
-```xml
-<dependency>
-  <groupId>com.iheartradio.m3u8</groupId>
-  <artifactId>open-m3u8</artifactId>
-  <version>0.2.4</version>
-</dependency>
+```java
+Playlist p = new PlaylistParser(in, Format.EXT_M3U, Encoding.UTF_8).parse();
+new PlaylistWriter(out, Format.EXT_M3U, Encoding.UTF_8).write(p);
 ```
 
-## Parse
+**SSAI stitch**
 
 ```java
-PlaylistParser parser = new PlaylistParser(inputStream, Format.EXT_M3U, Encoding.UTF_8);
-Playlist playlist = parser.parse();
+Playlist stitched = PlaylistSsaiUtil.stitch(contentMedia, Arrays.asList(
+    PlaylistSsaiUtil.AdBreak.builder()
+        .withId("mid-1")
+        .atOffsetSec(30f)
+        .withAdPlaylist(adMedia, /* maxAdDurationSec */ 12f)
+        .build()));
 ```
 
-## Write
+**SGAI inject**
 
 ```java
-PlaylistWriter writer = new PlaylistWriter(outputStream, Format.EXT_M3U, Encoding.UTF_8);
-writer.write(playlist);
-```
-
-Build playlists with `Builder` / `buildUpon()` on `Playlist`, `MediaPlaylist`, `TrackData`, etc.
-
-## Playlist Delta Updates
-
-Parse/write `EXT-X-SERVER-CONTROL` and `EXT-X-SKIP`. Merge a delta refresh with a previous playlist:
-
-```java
-// Request only changes (client networking is out of scope)
-String deltaUri = PlaylistDeltaUtil.appendSkipDirective(playlistUri, /* skipDateRanges */ false);
-
-Playlist previous = /* last full media playlist */;
-Playlist delta = new PlaylistParser(deltaStream, Format.EXT_M3U, Encoding.UTF_8).parse();
-Playlist merged = PlaylistDeltaUtil.merge(previous, delta);
-```
-
-## Supported tags
-
-Full tag/feature matrix and annotated samples: [docs/SUPPORTED_FEATURES.md](docs/SUPPORTED_FEATURES.md).
-
-HLS Interstitial `EXT-X-DATERANGE` attributes include `X-ASSET-URI`, `X-ASSET-LIST`, `X-RESTRICT`,
-`X-RESUME-OFFSET`, `X-PLAYOUT-LIMIT`, `X-SNAP`, `X-CONTENT-MAY-VARY`, `X-TIMELINE-OCCUPIES`,
-`X-TIMELINE-STYLE`.
-
-### Inject / rewrite helpers
-
-```java
-Playlist rewritten = PlaylistRewriteUtil.rewrite(
-    playlist,
-    playlistUrl,
+Playlist rewritten = PlaylistRewriteUtil.injectMediaTags(
+    media,
     PlaylistRewriteUtil.InjectConfig.builder()
-        .withStartOverride(new StartData(10f, true))
         .addBreak(new PlaylistRewriteUtil.InterstitialBreak(
-            "user-ad-1", /* offsetSec */ 30f, /* durationSec */ 15f, adAssetUri))
-        .build(),
-    absoluteUri -> "http://127.0.0.1:8765/proxy?url=" + URLEncoder.encode(absoluteUri, "UTF-8"));
+            "user-ad-1", 30f, 15f, adAssetUri))
+        .build());
 ```
 
-### Classic SSAI (stitch ads into the media playlist)
+**Delta updates:** `PlaylistDeltaUtil.merge(previous, delta)`.
 
-Inline ad segments with `EXT-X-CUE-OUT` / `CUE-OUT-CONT` / `CUE-IN` and discontinuities
-(MediaTailor-style manifest stitching — not HLS Interstitials):
-
-```java
-PlaylistSsaiUtil.AdBreak mid = PlaylistSsaiUtil.AdBreak.builder()
-    .withId("mid-1")
-    .atOffsetSec(30f)              // or afterTrackIndex / preRoll / postRoll
-    .withAdPlaylist(adMediaPlaylist) // or addAdSegment(uri, duration)
-    .build();
-
-Playlist stitched = PlaylistSsaiUtil.stitch(contentMediaPlaylist, Arrays.asList(mid));
-```
-
-### Demo player (SSAI or SGAI)
-
-One local UI. Pick **classic SSAI stitch** or **SGAI interstitials**; both go through
-`DemoPlaylistPipeline` (parse → apply strategy → rewrite URIs → write).
-
-Live demo (static GitHub Pages — ads rewritten in the browser):
-**https://tmai-tech.github.io/open-m3u8/**
+Tag matrix: [docs/SUPPORTED_FEATURES.md](docs/SUPPORTED_FEATURES.md). Demo details: [demo/README.md](demo/README.md).
 
 ```bash
-./gradlew runDemo
-# open http://127.0.0.1:8765/
+./gradlew test
 ```
 
-| Strategy | Library call | What the player sees |
-|----------|--------------|----------------------|
-| **SSAI** (default) | `PlaylistSsaiUtil.stitch` | Ad segments inlined with CUE-OUT / CUE-IN |
-| **SGAI** | `PlaylistRewriteUtil.injectMediaTags` | `EXT-X-DATERANGE` + `X-ASSET-URI` |
-
-```
-# one-shot playable manifest
-# /play?strategy=ssai&content=<content.m3u8>&ad=<ad.m3u8>&splices=0,30,90
-```
-
-See [demo/README.md](demo/README.md).
-
-## Code coverage
-
-Measured with **JaCoCo 0.8.7** over the full unit-test suite (**68 tests, all passing**).
-
-| Metric | Coverage |
-|--------|----------|
-| **Line** | **74.0%** (2131 / 2881) |
-| **Branch** | **55.9%** (617 / 1104) |
-| **Method** | **78.5%** (852 / 1085) |
-| **Instruction** | **71.7%** (10633 / 14829) |
-| **Class** | **98.8%** (238 / 241) |
-
-### By package
-
-| Package | Line | Branch |
-|---------|-----:|-------:|
-| `com.iheartradio.m3u8` | 80.4% | 64.1% |
-| `com.iheartradio.m3u8.data` | 61.5% | 43.0% |
-
-Gaps are mostly data-model builders/`equals`/`toString`, simple M3U write path (`M3uWriter`), and some master/media attribute edge cases. After a local test run, HTML report path: `build/reports/jacoco/test/html/index.html`.
+---
 
 ## Docs
 
-- Spec: [draft-pantos-hls-rfc8216bis](https://datatracker.ietf.org/doc/html/draft-pantos-hls-rfc8216bis) (Playlist Delta Updates)
+- Spec: [draft-pantos-hls-rfc8216bis](https://datatracker.ietf.org/doc/html/draft-pantos-hls-rfc8216bis)
 - Supported tags: [docs/SUPPORTED_FEATURES.md](docs/SUPPORTED_FEATURES.md)
-- Issues / PRs welcome

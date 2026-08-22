@@ -640,17 +640,28 @@ abstract class MediaPlaylistTagWriter extends ExtTagWriter {
                 MapInfoWriter mapInfoWriter = new MapInfoWriter();
 
                 for (TrackData trackData : playlist.getMediaPlaylist().getTracks()) {
+                    // MediaTailor:
+                    //   ad.ts
+                    //   #EXT-X-CUE-IN          (parsed onto the following content track)
+                    //   #EXT-X-DISCONTINUITY
+                    //   #EXTINF:...
+                    //   content.ts
+                    // Post-roll has no following content: CUE-IN is stored on the last ad and
+                    // written after that URI.
+                    boolean cueInOnFollowingContent = trackData.hasCueIn()
+                            && !trackData.hasCueOut()
+                            && !trackData.hasCueOutCont();
+                    if (cueInOnFollowingContent) {
+                        tagWriter.writeTag(Constants.EXT_X_CUE_IN_TAG);
+                    }
+                    if (trackData.hasDiscontinuity()) {
+                        tagWriter.writeTag(Constants.EXT_X_DISCONTINUITY_TAG);
+                    }
                     if (trackData.hasCueOut()) {
                         writeCueOut(tagWriter, trackData.getCueOut());
                     }
                     if (trackData.hasCueOutCont()) {
                         writeCueOutCont(tagWriter, trackData.getCueOutCont());
-                    }
-                    if (trackData.hasCueIn()) {
-                        tagWriter.writeTag(Constants.EXT_X_CUE_IN_TAG);
-                    }
-                    if (trackData.hasDiscontinuity()) {
-                        tagWriter.writeTag(Constants.EXT_X_DISCONTINUITY_TAG);
                     }
 
                     keyWriter.writeTrackData(tagWriter, playlist, trackData);
@@ -666,6 +677,10 @@ abstract class MediaPlaylistTagWriter extends ExtTagWriter {
 
                     writeExtinf(tagWriter, playlist, trackData);
                     tagWriter.writeLine(trackData.getUri());
+
+                    if (trackData.hasCueIn() && !cueInOnFollowingContent) {
+                        tagWriter.writeTag(Constants.EXT_X_CUE_IN_TAG);
+                    }
                 }
             }
         }

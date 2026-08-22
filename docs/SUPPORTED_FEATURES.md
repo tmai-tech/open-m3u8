@@ -245,6 +245,7 @@ https://cdn.example.com/seg106.ts
 #EXT-X-DATERANGE:ID="break-1",START-DATE=2024-06-15T12:00:00.000Z,PLANNED-DURATION=30.0,SCTE35-OUT="/DAlAAAAAAAAAP/wFAUAAAABf+//wpiWkjAACgAIAAAAAAD8AEw="
 #EXTINF:10.0,
 http://example.com/content/seg0.ts
+#EXT-X-DISCONTINUITY
 #EXT-X-CUE-OUT:30.0
 #EXTINF:10.0,
 http://example.com/ads/ad0.ts

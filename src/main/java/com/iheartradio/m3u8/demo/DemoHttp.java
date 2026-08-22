@@ -131,7 +131,7 @@ public final class DemoHttp {
         long contentLength = conn.getContentLengthLong();
 
         Headers outHeaders = ex.getResponseHeaders();
-        applyCorsHeaders(outHeaders);
+        applyCorsHeaders(ex);
         outHeaders.set("Cache-Control", "no-store");
         outHeaders.set("X-Proxy-Target", target);
         outHeaders.set("X-Rewrite-Engine", ENGINE);
@@ -263,19 +263,78 @@ public final class DemoHttp {
         }
     }
 
+    private static final java.util.concurrent.atomic.AtomicReference<String> LAST_HTTPS_BASE =
+            new java.util.concurrent.atomic.AtomicReference<String>();
+
+    public static String envPublicBase() {
+        String e = System.getenv("DEMO_PUBLIC_BASE");
+        if (e == null) {
+            return null;
+        }
+        e = e.trim();
+        if (e.endsWith("/")) {
+            e = e.substring(0, e.length() - 1);
+        }
+        return e.length() == 0 ? null : e;
+    }
+
+    /** HTTPS origin seen via a tunnel (cloudflared) or DEMO_PUBLIC_BASE. */
+    public static String advertisedPublicBase() {
+        String env = envPublicBase();
+        return env != null ? env : LAST_HTTPS_BASE.get();
+    }
+
     public static String publicBase(HttpExchange ex, int port) {
-        String host = ex.getRequestHeaders().getFirst("Host");
+        String proto = firstHeader(ex.getRequestHeaders(), "X-Forwarded-Proto");
+        if (proto == null || proto.trim().isEmpty()) {
+            proto = "http";
+        } else {
+            proto = proto.trim().split(",")[0].trim().toLowerCase();
+            if (!"https".equals(proto)) {
+                proto = "http";
+            }
+        }
+        String host = firstHeader(ex.getRequestHeaders(), "X-Forwarded-Host");
+        if (host == null || host.trim().isEmpty()) {
+            host = firstHeader(ex.getRequestHeaders(), "Host");
+        }
         if (host == null || host.trim().isEmpty()) {
             host = "127.0.0.1:" + port;
+        } else {
+            host = host.trim().split(",")[0].trim();
         }
-        return "http://" + host.trim();
+        String base = proto + "://" + host;
+        if ("https".equals(proto) && host.indexOf("127.0.0.1") < 0 && host.indexOf("localhost") < 0) {
+            LAST_HTTPS_BASE.set(base);
+        }
+        return base;
+    }
+
+    public static void applyCorsHeaders(HttpExchange ex) {
+        if (ex == null) {
+            return;
+        }
+        applyCorsHeaders(ex.getResponseHeaders(), originOf(ex));
     }
 
     public static void applyCorsHeaders(Headers h) {
+        applyCorsHeaders(h, null);
+    }
+
+    /**
+     * Echo a specific Origin when present. Chrome Private Network Access / local-network
+     * preflights (public https page → http://127.0.0.1) reject Allow-Origin: *.
+     */
+    public static void applyCorsHeaders(Headers h, String origin) {
         if (h == null) {
             return;
         }
-        h.set("Access-Control-Allow-Origin", "*");
+        if (isSafeHttpOrigin(origin)) {
+            h.set("Access-Control-Allow-Origin", origin);
+            h.set("Vary", "Origin");
+        } else {
+            h.set("Access-Control-Allow-Origin", "*");
+        }
         h.set("Access-Control-Allow-Methods", "GET, HEAD, POST, OPTIONS");
         h.set("Access-Control-Allow-Headers",
                 "Content-Type, Range, Accept, Origin, X-Requested-With, "
@@ -291,6 +350,24 @@ public final class DemoHttp {
         h.set("Cross-Origin-Resource-Policy", "cross-origin");
     }
 
+    static String originOf(HttpExchange ex) {
+        if (ex == null || ex.getRequestHeaders() == null) {
+            return null;
+        }
+        return ex.getRequestHeaders().getFirst("Origin");
+    }
+
+    static boolean isSafeHttpOrigin(String origin) {
+        if (origin == null) {
+            return false;
+        }
+        String o = origin.trim();
+        if (o.length() == 0 || o.indexOf('\r') >= 0 || o.indexOf('\n') >= 0) {
+            return false;
+        }
+        return o.startsWith("http://") || o.startsWith("https://");
+    }
+
     public static void send(HttpExchange ex, int code, String contentType, String body)
             throws IOException {
         sendCors(ex, code, body.getBytes(StandardCharsets.UTF_8), contentType);
@@ -299,7 +376,7 @@ public final class DemoHttp {
     public static void sendCors(HttpExchange ex, int code, byte[] body, String contentType)
             throws IOException {
         Headers h = ex.getResponseHeaders();
-        applyCorsHeaders(h);
+        applyCorsHeaders(ex);
         h.set("Content-Type", contentType);
         h.set("Cache-Control", "no-store");
         if (body == null || body.length == 0) {
@@ -316,7 +393,7 @@ public final class DemoHttp {
     public static void writePlaylistResponse(HttpExchange ex, byte[] body, String target,
                                             String kind, String strategy) throws IOException {
         Headers outHeaders = ex.getResponseHeaders();
-        applyCorsHeaders(outHeaders);
+        applyCorsHeaders(ex);
         outHeaders.set("Cache-Control", "no-store");
         outHeaders.set("Content-Type", "application/vnd.apple.mpegurl; charset=utf-8");
         outHeaders.set("X-Proxy-Target", target == null ? "" : target);
@@ -355,7 +432,7 @@ public final class DemoHttp {
         }
         byte[] body = readFile(file);
         Headers h = ex.getResponseHeaders();
-        applyCorsHeaders(h);
+        applyCorsHeaders(ex);
         h.set("Content-Type", contentTypeFor(file.getName()));
         h.set("Cache-Control", "no-store");
         if ("HEAD".equalsIgnoreCase(ex.getRequestMethod())) {

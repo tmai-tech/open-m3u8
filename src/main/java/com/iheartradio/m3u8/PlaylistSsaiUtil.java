@@ -424,12 +424,16 @@ public final class PlaylistSsaiUtil {
         while (contentIndex < contentTracks.size()) {
             TrackData contentTrack = contentTracks.get(contentIndex);
             // DISCONTINUITY on content resume is applied to this track when previous item was ads.
-            if (!out.isEmpty() && lastWasAd(out) && options.discontinuityOutOfAd) {
-                // Cue-in already on last ad; mark discontinuity on first content after ad.
-                contentTrack = contentTrack.buildUpon()
-                        .withDiscontinuity(true)
-                        .withCueIn(false)
-                        .build();
+            if (!out.isEmpty() && lastWasAd(out)) {
+                TrackData.Builder resume = contentTrack.buildUpon();
+                // Written before this content URI: CUE-IN then DISCONTINUITY (MediaTailor).
+                if (options.emitCueTags) {
+                    resume.withCueIn(true);
+                }
+                if (options.discontinuityOutOfAd) {
+                    resume.withDiscontinuity(true);
+                }
+                contentTrack = resume.build();
             }
             out.add(contentTrack);
             final int justAddedIndex = contentIndex;
@@ -448,6 +452,12 @@ public final class PlaylistSsaiUtil {
             ResolvedBreak rb = resolved.get(breakCursor++);
             appendAdPod(out, rb.breakDef, options, contentTracks);
             maybeAddDateRange(dateRanges, rb, basePdtMs, contentTracks, options);
+        }
+
+        // Post-roll (or ads with no following content): CUE-IN after the last ad URI.
+        if (options.emitCueTags && lastWasAd(out)) {
+            int last = out.size() - 1;
+            out.set(last, out.get(last).buildUpon().withCueIn(true).build());
         }
 
         int targetDuration = media.getTargetDuration();
@@ -601,10 +611,6 @@ public final class PlaylistSsaiUtil {
                 b.withCueOutCont(new CueOutContData(elapsed, podDuration, null));
             }
 
-            if (i == ads.size() - 1 && options.emitCueTags) {
-                b.withCueIn(true);
-            }
-
             TrackData built = b.build();
             out.add(built);
             if (built.hasTrackInfo()) {
@@ -630,7 +636,8 @@ public final class PlaylistSsaiUtil {
             return false;
         }
         TrackData last = out.get(out.size() - 1);
-        return last.hasCueIn() || last.hasCueOut() || last.hasCueOutCont();
+        // Do not treat content-with-CUE-IN (MediaTailor resume) as an ad.
+        return last.hasCueOut() || last.hasCueOutCont();
     }
 
     private static void maybeAddDateRange(List<DateRangeData> dateRanges, ResolvedBreak rb,

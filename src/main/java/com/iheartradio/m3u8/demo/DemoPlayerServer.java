@@ -158,10 +158,15 @@ public final class DemoPlayerServer {
                 DemoHttp.send(ex, 405, "text/plain", "method not allowed");
                 return;
             }
+            DemoHttp.publicBase(ex, port);
+            String pub = DemoHttp.advertisedPublicBase();
             String body = "{\"ok\":true,\"proxy\":true,\"engine\":\""
                     + DemoHttp.ENGINE + "\",\"port\":" + port
                     + ",\"strategies\":[\"sgai\",\"ssai\"],\"sessions\":"
-                    + sessions.size() + "}";
+                    + sessions.size()
+                    + ",\"publicBase\":"
+                    + (pub == null ? "null" : DemoHttp.jsonString(pub))
+                    + "}";
             DemoHttp.send(ex, 200, "application/json; charset=utf-8", body);
         }
     }
@@ -241,7 +246,7 @@ public final class DemoPlayerServer {
                     return;
                 }
                 Headers h = ex.getResponseHeaders();
-                DemoHttp.applyCorsHeaders(h);
+                DemoHttp.applyCorsHeaders(ex);
                 h.set("Location", manifestUrl);
                 h.set("Cache-Control", "no-store");
                 ex.sendResponseHeaders(302, -1);
@@ -338,7 +343,7 @@ public final class DemoPlayerServer {
                     session, playlistUrl, DemoHttp.publicBase(ex, port));
             if (result.fallback) {
                 Headers h = ex.getResponseHeaders();
-                DemoHttp.applyCorsHeaders(h);
+                DemoHttp.applyCorsHeaders(ex);
                 h.set("X-Rewrite-Fallback", "uri-only");
             }
             DemoHttp.writePlaylistResponse(ex, result.body, playlistUrl, result.kind,

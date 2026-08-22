@@ -2,8 +2,11 @@
 
 One player. You pick the ad strategy.
 
-**Hosted:** https://tmai-tech.github.io/open-m3u8/  
-(GitHub Pages is static: SSAI/SGAI run in the browser. Content and ad CDNs must allow CORS. Mux demo chips do.)
+**Hosted (static):** https://tmai-tech.github.io/open-m3u8/  
+GitHub Pages has no Java proxy: `rewrite.js` patches playlists in the browser. Network stays the original CDN.
+
+**Local proxy:** `./gradlew runDemo` → http://127.0.0.1:8765/  
+Default ad is Tears of Steel (~4s segments). After Generate, **Copy** is localhost; **Copy HTTPS** appears when a Cloudflare tunnel has been used (for the official https hls.js demo). **Open in hls.js** is a same-origin player (`watch.html`).
 
 Local Java proxy (shareable `/s/{id}/manifest` URLs):
 
