@@ -96,10 +96,13 @@ public final class DemoPlayerServer {
         server.createContext("/s/", new SessionResourceHandler());
         server.setExecutor(Executors.newFixedThreadPool(16));
         server.start();
+        DemoHttp.startPublicBaseDiscovery();
+        String https = DemoHttp.advertisedPublicBase();
 
         System.out.println("HLS demo (open-m3u8 SSAI / SGAI)");
         System.out.println("  Bind:     " + BIND_HOST + ":" + port);
         System.out.println("  UI:       http://127.0.0.1:" + port + "/");
+        System.out.println("  HTTPS:    " + (https != null ? https : "(waiting for cloudflared)"));
         System.out.println("  Session:  POST http://127.0.0.1:" + port + "/api/session");
         System.out.println("  Play:     http://127.0.0.1:" + port
                 + "/play?strategy=ssai&content=<m3u8>&ad=<m3u8>&splices=30,90");
@@ -146,6 +149,7 @@ public final class DemoPlayerServer {
         return s;
     }
 
+    /** Liveness for tests / curl. The demo page does not call this. */
     private final class HealthHandler implements HttpHandler {
         @Override
         public void handle(HttpExchange ex) throws IOException {

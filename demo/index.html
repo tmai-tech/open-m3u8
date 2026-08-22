@@ -16,20 +16,29 @@
     * { box-sizing: border-box; }
     body {
       margin: 0; min-height: 100vh; color: var(--text);
+      background: var(--bg);
+      display: flex; justify-content: center; padding: 28px 16px 48px;
+    }
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      z-index: -1;
+      pointer-events: none;
       background:
         radial-gradient(1200px 600px at 10% -10%, rgba(91,140,255,.18), transparent 55%),
         radial-gradient(900px 500px at 100% 0%, rgba(240,160,48,.1), transparent 50%),
         var(--bg);
-      display: flex; justify-content: center; padding: 28px 16px 48px;
     }
     .app { width: min(980px, 100%); display: flex; flex-direction: column; gap: 16px; }
     header h1 { margin: 0 0 6px; font-size: 1.5rem; font-weight: 700; letter-spacing: -.02em; }
     header p { margin: 0; color: var(--muted); font-size: .94rem; line-height: 1.45; }
     code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .84em; }
     .card {
-      background: linear-gradient(180deg, rgba(255,255,255,.03), transparent 40%), var(--surface);
+      background: var(--surface);
       border: 1px solid var(--border); border-radius: var(--radius);
-      box-shadow: 0 18px 50px rgba(0,0,0,.45); overflow: hidden;
+      box-shadow: 0 8px 24px rgba(0,0,0,.35); overflow: hidden;
+      contain: layout style;
     }
     .section { padding: 16px; border-top: 1px solid var(--border); }
     .section:first-child { border-top: none; }
@@ -56,13 +65,14 @@
     .btn-ad { background: rgba(240,160,48,.18); color: #ffd089; border: 1px solid rgba(240,160,48,.45); }
     .btn-success { background: rgba(62,207,142,.18); color: var(--success); border: 1px solid rgba(62,207,142,.4); }
     .btn-sm { padding: 8px 12px; font-size: .82rem; }
-    video { width: 100%; aspect-ratio: 16/9; background: #000; display: block; }
+    video { width: 100%; aspect-ratio: 16/9; background: #000; display: block; transform: translateZ(0); }
     .status { padding: 10px 16px; font-size: .85rem; color: var(--muted); border-top: 1px solid var(--border); word-break: break-all; }
     .status.ok { color: var(--success); }
     .status.err { color: var(--danger); }
     .manifest-box {
       max-height: 280px; overflow: auto; background: #0a0c10; padding: 12px 14px;
       font-size: .75rem; line-height: 1.4; white-space: pre-wrap; color: #c8d0e0; margin: 0;
+      contain: layout paint;
     }
     .tag { color: #7aa3ff; }
     .cue { color: #f0a030; font-weight: 600; }
@@ -110,7 +120,7 @@
     .col-label { font-size: .72rem; color: var(--muted); font-weight: 600; }
     .check-row { display: flex; align-items: center; gap: 8px; color: var(--text); font-size: .88rem; margin-bottom: 10px; }
     .hidden { display: none !important; }
-    .player-wrap { position: relative; background: #000; }
+    .player-wrap { position: relative; background: #000; contain: layout paint; }
     .ad-badge {
       position: absolute; top: 12px; left: 12px; z-index: 20;
       background: var(--ad); color: #1a1204; font-weight: 800; font-size: .85rem;
@@ -195,19 +205,17 @@
 
       <div class="section">
         <div class="section-title">Playable manifest URL</div>
-        <p class="hint">
-          Same-machine VLC / this origin work.
-          A <strong>https://</strong> hls.js demo cannot load <code>http://127.0.0.1</code>
-          (browser reports CORS / HTTP 0). Use <strong>Open in hls.js</strong> below.
-        </p>
+        <p class="hint">Same-machine VLC / this origin work. Official hls.js is HTTPS and needs the Cloudflare URL below.</p>
         <div class="url-row">
           <input id="manifestUrl" type="text" readonly placeholder="Apply to create a session…" />
           <button class="btn btn-success btn-sm" id="btnCopy" disabled>Copy</button>
-          <button class="btn btn-ghost btn-sm" id="btnWatch" disabled>Open in hls.js</button>
         </div>
-        <div class="url-row" id="publicRow" style="margin-top:8px;display:none">
-          <input id="publicManifestUrl" type="text" readonly placeholder="HTTPS URL for hlsjs.video-dev.org…" />
-          <button class="btn btn-success btn-sm" id="btnCopyPublic" disabled>Copy HTTPS</button>
+        <label for="publicManifestUrl" style="margin-top:12px">Public HTTPS (Cloudflare)</label>
+        <p class="hint">Filled after Generate when a tunnel is up. <strong>Open in hls.js</strong> launches the official demo with this URL.</p>
+        <div class="url-row" id="publicRow">
+          <input id="publicManifestUrl" type="text" readonly placeholder="Generate a session to fill this…" />
+          <button class="btn btn-success btn-sm" id="btnCopyPublic">Copy HTTPS</button>
+          <button class="btn btn-ghost btn-sm" id="btnWatch" disabled>Open in hls.js</button>
         </div>
         <div class="hint" id="sessionMeta" style="margin-top:8px">No session yet.</div>
       </div>
@@ -235,10 +243,21 @@
     let lastSession = null;
     let mediaDuration = 0;
     let useProxy = false;
+    let proxyKnown = false;
     let adWindows = [];
     let adPollTimer = null;
     let watchingAds = false;
     let lastPublicBase = null;
+    let seekGuard = false;
+    let ssaiPendingSeek = null;
+    let ssaiWasInAd = false;
+    let ssaiIgnoreSnapUntil = 0;
+    let guardedMedia = [];
+    const lastGoodTime = new WeakMap();
+    const MEDIA_CURRENT_TIME = Object.getOwnPropertyDescriptor(
+      HTMLMediaElement.prototype,
+      "currentTime"
+    );
 
     const HINTS = {
       ssai: "Stitches the ad into the media playlist (CUE-OUT / CUE-IN + DISCONTINUITY). Any HLS player can play the result.",
@@ -374,17 +393,35 @@
 
     async function createSession() {
       const body = buildLocalSession();
-      if (!useProxy) {
+      if (proxyKnown && !useProxy) {
         return Object.assign({ id: "static", manifestUrl: body.contentUrl }, body);
       }
-      const res = await fetch("/api/session", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || ("HTTP " + res.status));
-      return data.session;
+      try {
+        const res = await fetch("/api/session", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (res.ok && data.session) {
+          proxyKnown = true;
+          useProxy = true;
+          return data.session;
+        }
+        if (!proxyKnown && (res.status === 404 || res.status === 405)) {
+          proxyKnown = true;
+          useProxy = false;
+          return Object.assign({ id: "static", manifestUrl: body.contentUrl }, body);
+        }
+        throw new Error(data.error || ("HTTP " + res.status));
+      } catch (e) {
+        if (!proxyKnown && e && e.name === "TypeError") {
+          proxyKnown = true;
+          useProxy = false;
+          return Object.assign({ id: "static", manifestUrl: body.contentUrl }, body);
+        }
+        throw e;
+      }
     }
 
     function formatRemain(sec) {
@@ -429,8 +466,9 @@
     function setAdLabel(on, remainSec) {
       const badge = $("adBadge");
       const count = $("adCount");
-      if (badge) badge.hidden = !on;
-      if (count) count.textContent = on ? formatRemain(remainSec || 0) : "";
+      const text = on ? formatRemain(remainSec || 0) : "";
+      if (badge && badge.hidden !== !on) badge.hidden = !on;
+      if (count && count.textContent !== text) count.textContent = text;
     }
 
     function parseCueWindows(playlistText) {
@@ -499,6 +537,8 @@
         setAdLabel(on, on ? sgaiRemaining() : 0);
       } else {
         const on = isSsaiAdPlaying();
+        if (ssaiWasInAd && !on) applySsaiPendingSeek();
+        ssaiWasInAd = on;
         setAdLabel(on, on ? ssaiRemaining() : 0);
       }
     }
@@ -506,8 +546,13 @@
     function startAdWatch() {
       watchingAds = true;
       if (adPollTimer) clearInterval(adPollTimer);
-      adPollTimer = setInterval(refreshAdLabel, 200);
-      $("video").addEventListener("timeupdate", refreshAdLabel);
+      adPollTimer = setInterval(() => {
+        refreshAdLabel();
+        guardInterstitialMedia();
+      }, 500);
+      const v = $("video");
+      v.addEventListener("timeupdate", refreshAdLabel);
+      guardMedia(v);
     }
 
     function destroyPlayer() {
@@ -516,12 +561,245 @@
         clearInterval(adPollTimer);
         adPollTimer = null;
       }
+      unguardAllMedia();
+      ssaiPendingSeek = null;
+      ssaiWasInAd = false;
+      ssaiIgnoreSnapUntil = 0;
       if (hls) { hls.destroy(); hls = null; }
       const v = $("video");
       v.removeEventListener("timeupdate", refreshAdLabel);
       v.removeAttribute("src");
       v.load();
       setAdLabel(false);
+    }
+
+    function nativeCurrentTime(media) {
+      return MEDIA_CURRENT_TIME && MEDIA_CURRENT_TIME.get
+        ? MEDIA_CURRENT_TIME.get.call(media)
+        : media.currentTime;
+    }
+
+    function nativeSetCurrentTime(media, t) {
+      if (MEDIA_CURRENT_TIME && MEDIA_CURRENT_TIME.set) {
+        MEDIA_CURRENT_TIME.set.call(media, t);
+      } else {
+        media.currentTime = t;
+      }
+    }
+
+    function markGoodTime(media) {
+      if (!media || media.seeking) return;
+      const t = nativeCurrentTime(media) || 0;
+      if (strategy === "sgai" && isSgaiAdPlaying() && t >= sgaiPlayoutCap() - 0.05) return;
+      lastGoodTime.set(media, t);
+    }
+
+    function resetAdClock(media) {
+      if (!media) return;
+      lastGoodTime.set(media, 0);
+    }
+
+    function installTimeGuard(media) {
+      if (!media || !MEDIA_CURRENT_TIME || media._hlsTimeGuard) return;
+      media._hlsTimeGuard = true;
+      Object.defineProperty(media, "currentTime", {
+        configurable: true,
+        enumerable: true,
+        get() { return MEDIA_CURRENT_TIME.get.call(media); },
+        set(v) {
+          let next = Number(v);
+          if (shouldClampSgaiSeek(media, next)) next = sgaiSafeTime(media);
+          MEDIA_CURRENT_TIME.set.call(media, next);
+        },
+      });
+    }
+
+    function uninstallTimeGuard(media) {
+      if (!media || !media._hlsTimeGuard) return;
+      delete media._hlsTimeGuard;
+      delete media.currentTime;
+    }
+
+    function guardMedia(media) {
+      if (!media || guardedMedia.indexOf(media) >= 0) return;
+      guardedMedia.push(media);
+      installTimeGuard(media);
+      media.addEventListener("seeking", onSeekingBlockAds, true);
+      media.addEventListener("timeupdate", onGuardedTimeUpdate, true);
+      media.addEventListener("ended", onGuardedEnded, true);
+    }
+
+    function guardInterstitialMedia() {
+      const v = $("video");
+      if (v) {
+        installTimeGuard(v);
+        if (isSgaiAdPlaying()) {
+          const t = nativeCurrentTime(v) || 0;
+          const cap = sgaiPlayoutCap();
+          const prev = lastGoodTime.get(v);
+          if (prev == null || (prev > cap + 0.5 && t < cap)) resetAdClock(v);
+        }
+        if (guardedMedia.indexOf(v) < 0) guardMedia(v);
+      }
+      const im = hls && hls.interstitialsManager;
+      const q = (im && im.playerQueue) || [];
+      for (let i = 0; i < q.length; i++) {
+        if (q[i] && q[i].media) guardMedia(q[i].media);
+      }
+    }
+
+    function unguardAllMedia() {
+      guardedMedia.forEach((media) => {
+        media.removeEventListener("seeking", onSeekingBlockAds, true);
+        media.removeEventListener("timeupdate", onGuardedTimeUpdate, true);
+        media.removeEventListener("ended", onGuardedEnded, true);
+        uninstallTimeGuard(media);
+      });
+      guardedMedia = [];
+    }
+
+    function onGuardedTimeUpdate(ev) {
+      const media = ev.target;
+      if (strategy === "sgai" && isSgaiAdPlaying()) {
+        const t = nativeCurrentTime(media) || 0;
+        const cap = sgaiPlayoutCap();
+        const prev = lastGoodTime.get(media);
+        if (prev != null && prev > cap + 0.5 && t < cap) {
+          lastGoodTime.set(media, t);
+          return;
+        }
+        if (t + 0.01 >= cap && (prev == null || prev < cap - 0.25)) {
+          snapTime(media, sgaiSafeTime(media));
+          return;
+        }
+      }
+      if (!seekGuard) markGoodTime(media);
+    }
+
+    function onGuardedEnded(ev) {
+      if (strategy !== "sgai" || !isSgaiAdPlaying()) return;
+      ev.stopImmediatePropagation();
+      const media = ev.target;
+      snapTime(media, sgaiSafeTime(media));
+      if (media.play) media.play().catch(() => {});
+    }
+
+    function ssaiWindowAt(t) {
+      for (let i = 0; i < adWindows.length; i++) {
+        const w = adWindows[i];
+        if (t >= w.start && t < w.end + 0.2) return w;
+      }
+      return null;
+    }
+
+    function firstSsaiAdOnSeek(from, to) {
+      let best = null;
+      for (let i = 0; i < adWindows.length; i++) {
+        const w = adWindows[i];
+        const startsAhead = w.start > from && w.start <= to;
+        const landsInside = from < w.start && to >= w.start && to < w.end + 0.2;
+        if (startsAhead || landsInside) {
+          if (!best || w.start < best.start) best = w;
+        }
+      }
+      return best;
+    }
+
+    function sgaiPlayoutCap() {
+      const im = hls && hls.interstitialsManager;
+      const item = im && im.playingItem;
+      const ev = item && (item.event || item.interstitial);
+      const player = im && im.interstitialPlayer;
+      const cap = Number(
+        (ev && (ev.playoutLimit || ev.duration))
+        || (player && player.duration)
+        || configuredAdLength()
+      );
+      return isFinite(cap) && cap > 0 ? cap : 12;
+    }
+
+    function sgaiSafeTime(media) {
+      const cap = sgaiPlayoutCap();
+      const from = lastGoodTime.has(media) ? lastGoodTime.get(media) : 0;
+      const usable = (from > cap + 0.5) ? 0 : from;
+      return Math.max(0, Math.min(usable, cap - 0.25));
+    }
+
+    function shouldClampSgaiSeek(media, requested) {
+      if (!watchingAds || strategy !== "sgai" || !isFinite(requested)) return false;
+      if (!isSgaiAdPlaying()) return false;
+      const cap = sgaiPlayoutCap();
+      const from = lastGoodTime.has(media) ? lastGoodTime.get(media) : 0;
+      const usable = (from > cap + 0.5) ? 0 : from;
+      return requested >= cap - 0.05 || requested > usable + 0.4;
+    }
+
+    function snapTime(media, t) {
+      seekGuard = true;
+      try { nativeSetCurrentTime(media, Math.max(0, t)); } catch (_) { /* ignore */ }
+      lastGoodTime.set(media, nativeCurrentTime(media) || t);
+      seekGuard = false;
+    }
+
+    function applySsaiPendingSeek() {
+      const target = ssaiPendingSeek;
+      if (target == null || !isFinite(target) || strategy !== "ssai") return;
+      if (isSsaiAdPlaying()) return;
+      const video = $("video");
+      if (!video) return;
+      const now = nativeCurrentTime(video) || 0;
+      if (target <= now + 1) {
+        ssaiPendingSeek = null;
+        return;
+      }
+      ssaiPendingSeek = null;
+      ssaiIgnoreSnapUntil = Date.now() + 2000;
+      snapTime(video, target);
+      video.play().catch(() => {});
+    }
+
+    function onSeekingBlockAds(ev) {
+      if (seekGuard || !watchingAds) return;
+      const media = ev.target;
+      const to = media.currentTime || 0;
+      const from = lastGoodTime.has(media) ? lastGoodTime.get(media) : to;
+
+      if (strategy === "sgai") {
+        if (isSgaiAdPlaying()) {
+          if (shouldClampSgaiSeek(media, to)) snapTime(media, sgaiSafeTime(media));
+          return;
+        }
+        lastGoodTime.set(media, to);
+        return;
+      }
+
+      if (Date.now() < ssaiIgnoreSnapUntil) {
+        lastGoodTime.set(media, to);
+        return;
+      }
+
+      if (!adWindows.length) {
+        lastGoodTime.set(media, to);
+        return;
+      }
+      const inAd = ssaiWindowAt(from);
+      if (inAd) {
+        if (to < inAd.start - 0.05 || to >= inAd.end || to > from + 0.4) {
+          snapTime(media, Math.min(Math.max(from, inAd.start), Math.max(inAd.start, inAd.end - 0.05)));
+        } else {
+          lastGoodTime.set(media, to);
+        }
+        return;
+      }
+      if (to > from) {
+        const crossed = firstSsaiAdOnSeek(from, to);
+        if (crossed) {
+          if (to > crossed.end + 0.5) ssaiPendingSeek = to;
+          snapTime(media, crossed.start);
+          return;
+        }
+      }
+      lastGoodTime.set(media, to);
     }
 
     function playUrl(manifestUrl, enableInterstitials, staticSession) {
@@ -547,6 +825,23 @@
         hls.loadSource(manifestUrl);
         hls.attachMedia(video);
         startAdWatch();
+        const hookInterstitial = () => {
+          const im = hls && hls.interstitialsManager;
+          const q = (im && im.playerQueue) || [];
+          for (let i = 0; i < q.length; i++) {
+            if (q[i] && q[i].media) resetAdClock(q[i].media);
+          }
+          guardInterstitialMedia();
+        };
+        if (Hls.Events.INTERSTITIAL_STARTED) {
+          hls.on(Hls.Events.INTERSTITIAL_STARTED, hookInterstitial);
+        }
+        if (Hls.Events.INTERSTITIAL_ASSET_STARTED) {
+          hls.on(Hls.Events.INTERSTITIAL_ASSET_STARTED, hookInterstitial);
+        }
+        if (Hls.Events.INTERSTITIAL_ASSET_PLAYER_CREATED) {
+          hls.on(Hls.Events.INTERSTITIAL_ASSET_PLAYER_CREATED, hookInterstitial);
+        }
         hls.on(Hls.Events.MANIFEST_PARSED, () => {
           video.play().catch(() => {});
           setStatus("Playing " + strategy.toUpperCase() + " — " + manifestUrl, "ok");
@@ -583,7 +878,7 @@
     async function apply(andPlay) {
       try {
         $("btnApply").disabled = true;
-        if (useProxy && strategy === "sgai" && $("playPath").value === "direct") {
+        if (strategy === "sgai" && $("playPath").value === "direct") {
           const url = $("contentUrl").value.trim();
           if (!url) throw new Error("Content URL is required");
           $("manifestUrl").value = url;
@@ -597,6 +892,9 @@
         setStatus("Creating " + strategy.toUpperCase() + " session…");
         const session = await createSession();
         lastSession = session;
+        if (session.publicManifestUrl) {
+          lastPublicBase = session.publicManifestUrl.replace(/\/s\/.*$/, "");
+        }
         if (!useProxy) {
           if (session.strategy === "ssai" && window.HlsDemoRewrite) {
             await window.HlsDemoRewrite.loadAdTracks(session);
@@ -647,8 +945,6 @@
     bind("btnStop", "click", () => { destroyPlayer(); setAdLabel(false); setStatus("Player stopped."); });
     function setManifestButtons(enabled) {
       $("btnCopy").disabled = !enabled;
-      const w = $("btnWatch");
-      if (w) w.disabled = !enabled;
       fillPublicRow();
     }
 
@@ -661,31 +957,59 @@
       return "";
     }
 
-    function fillPublicRow() {
-      const row = $("publicRow");
-      const input = $("publicManifestUrl");
-      const btn = $("btnCopyPublic");
-      if (!row || !input) return;
-      const httpsUrl = (lastSession && lastSession.publicManifestUrl)
-        || httpsManifestFromLocal($("manifestUrl").value);
-      if (httpsUrl && httpsUrl.indexOf("https://") === 0) {
-        input.value = httpsUrl;
-        row.style.display = "flex";
-        if (btn) btn.disabled = false;
-      } else {
-        input.value = "";
-        row.style.display = "none";
-        if (btn) btn.disabled = true;
-      }
+    function publicHttpsUrl() {
+      return (lastSession && lastSession.publicManifestUrl)
+        || httpsManifestFromLocal($("manifestUrl").value)
+        || lastPublicBase
+        || "";
     }
+
+    function fillPublicRow() {
+      const input = $("publicManifestUrl");
+      const copyBtn = $("btnCopyPublic");
+      const watchBtn = $("btnWatch");
+      if (!input) return;
+      const httpsUrl = publicHttpsUrl();
+      if (input.value !== httpsUrl) input.value = httpsUrl;
+      if (copyBtn) copyBtn.disabled = false;
+      if (watchBtn) watchBtn.disabled = !(httpsUrl && httpsUrl.indexOf("https://") === 0);
+    }
+
+    function officialHlsJsUrl(src) {
+      const demoConfig = btoa(JSON.stringify({
+        enableStreaming: true,
+        autoRecoverError: true,
+        stopOnStall: false,
+        dumpfMP4: false,
+        levelCapping: -1,
+        limitMetrics: -1,
+      }));
+      const hlsjsConfig = btoa(JSON.stringify({
+        debug: true,
+        enableWorker: true,
+        lowLatencyMode: true,
+        backBufferLength: 90,
+      }));
+      return "https://hlsjs.video-dev.org/demo/?src=" + encodeURIComponent(src)
+        + "&demoConfig=" + demoConfig
+        + "&hlsjsConfig=" + hlsjsConfig;
+    }
+
     bind("btnWatch", "click", () => {
-      const url = $("manifestUrl").value;
-      if (!url) return;
-      window.open("watch.html?url=" + encodeURIComponent(url), "_blank");
+      const src = publicHttpsUrl();
+      if (!src || src.indexOf("https://") !== 0) {
+        setStatus("Generate a session with a Cloudflare URL first.", "err");
+        return;
+      }
+      window.open(officialHlsJsUrl(src), "_blank");
     });
     bind("btnCopyPublic", "click", async () => {
-      const url = $("publicManifestUrl").value;
-      if (!url) return;
+      fillPublicRow();
+      const url = publicHttpsUrl();
+      if (!url) {
+        setStatus("No HTTPS URL yet. Generate a session while cloudflared is running, or open this UI via the printed trycloudflare.com link.", "err");
+        return;
+      }
       try { await navigator.clipboard.writeText(url); setStatus("Copied HTTPS URL for hlsjs.video-dev.org.", "ok"); }
       catch (_) { $("publicManifestUrl").select(); document.execCommand("copy"); }
     });
@@ -716,34 +1040,6 @@
       addBreakRow(90, DEFAULT_AD, 12);
       setStatus("Demo content + two 12s Tears of Steel breaks. Click Apply & play.", "ok");
     });
-
-    function applyHealth(j) {
-      useProxy = !!(j && j.proxy);
-      if (j && j.publicBase && String(j.publicBase).indexOf("https://") === 0) {
-        lastPublicBase = j.publicBase;
-        fillPublicRow();
-      }
-    }
-    function pollHealth(announce) {
-      return fetch("/api/health", { cache: "no-store" })
-        .then((r) => (r.ok ? r.json() : Promise.reject()))
-        .then((j) => {
-          applyHealth(j);
-          if (announce && useProxy) {
-            setStatus("Local proxy online · " + (j.engine || "open-m3u8")
-              + (lastPublicBase ? " · HTTPS " + lastPublicBase : ""));
-          }
-          return j;
-        })
-        .catch(() => {
-          if (announce) {
-            useProxy = false;
-            setStatus("Static mode (GitHub Pages) — ads are rewritten in the browser. Content and ad hosts must allow CORS.");
-          }
-        });
-    }
-    pollHealth(true);
-    setInterval(() => pollHealth(false), 4000);
 
     setStrategy(strategy, false);
     if (!$("breakList").children.length) {
