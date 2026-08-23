@@ -279,7 +279,7 @@ public final class DemoSession {
         }
 
         List<Break> breaks = parseBreaks(json, ad);
-        if (strategy == Strategy.SSAI) {
+        if (strategy == Strategy.SSAI && !breaks.isEmpty()) {
             boolean hasAd = ad != null && ad.length() > 0;
             for (int i = 0; !hasAd && i < breaks.size(); i++) {
                 String u = breaks.get(i).assetUri;

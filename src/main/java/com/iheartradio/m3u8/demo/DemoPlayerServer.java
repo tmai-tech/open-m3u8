@@ -52,6 +52,9 @@ public final class DemoPlayerServer {
 
     static File locateStaticRoot() {
         File[] candidates = new File[] {
+                new File("apps/web-client"),
+                new File(System.getProperty("user.dir", "."), "apps/web-client"),
+                new File("open-m3u8/apps/web-client"),
                 new File("demo"),
                 new File(System.getProperty("user.dir", "."), "demo"),
                 new File("hls-player"),
@@ -65,6 +68,10 @@ public final class DemoPlayerServer {
                 File code = new File(loc.toURI());
                 File dir = code.isFile() ? code.getParentFile() : code;
                 for (int i = 0; i < 8 && dir != null; i++) {
+                    File web = new File(dir, "apps/web-client");
+                    if (web.isDirectory() && new File(web, "index.html").isFile()) {
+                        return web.getAbsoluteFile();
+                    }
                     File demo = new File(dir, "demo");
                     if (demo.isDirectory() && new File(demo, "index.html").isFile()) {
                         return demo.getAbsoluteFile();
@@ -84,13 +91,14 @@ public final class DemoPlayerServer {
                 return f.getAbsoluteFile();
             }
         }
-        return new File("demo").getAbsoluteFile();
+        return new File("apps/web-client").getAbsoluteFile();
     }
 
     public void start() throws IOException {
         HttpServer server = HttpServer.create(new InetSocketAddress(BIND_HOST, port), 0);
         server.createContext("/", new RootHandler());
         server.createContext("/api/health", new HealthHandler());
+        server.createContext("/api/origin", new OriginApiHandler());
         server.createContext("/api/session", new SessionApiHandler());
         server.createContext("/play", new PlayHandler());
         server.createContext("/s/", new SessionResourceHandler());
@@ -172,6 +180,68 @@ public final class DemoPlayerServer {
                     + (pub == null ? "null" : DemoHttp.jsonString(pub))
                     + "}";
             DemoHttp.send(ex, 200, "application/json; charset=utf-8", body);
+        }
+    }
+
+    /** Same-origin fetch of a remote playlist/segment (poster / I-frame). Demo only. */
+    private final class OriginApiHandler implements HttpHandler {
+        @Override
+        public void handle(HttpExchange ex) throws IOException {
+            if ("OPTIONS".equalsIgnoreCase(ex.getRequestMethod())) {
+                DemoHttp.sendCors(ex, 204, new byte[0], "application/json");
+                return;
+            }
+            if (!"GET".equalsIgnoreCase(ex.getRequestMethod())
+                    && !"HEAD".equalsIgnoreCase(ex.getRequestMethod())) {
+                DemoHttp.send(ex, 405, "text/plain", "method not allowed");
+                return;
+            }
+            String raw = DemoHttp.decode(DemoHttp.queryParam(ex.getRequestURI().getRawQuery(), "url"));
+            if (raw == null || raw.trim().isEmpty()) {
+                DemoHttp.send(ex, 400, "application/json; charset=utf-8",
+                        "{\"error\":\"url is required\"}");
+                return;
+            }
+            String target = raw.trim();
+            try {
+                DemoHttp.requireHttpUrl(target);
+            } catch (IllegalArgumentException e) {
+                DemoHttp.send(ex, 400, "application/json; charset=utf-8",
+                        "{\"error\":" + DemoHttp.jsonString(e.getMessage()) + "}");
+                return;
+            }
+            String range = DemoHttp.firstHeader(ex.getRequestHeaders(), "Range");
+            boolean playlist = target.toLowerCase().contains(".m3u8")
+                    || target.toLowerCase().contains("playlist");
+            try {
+                if (playlist) {
+                    DemoHttp.FetchResult r = DemoHttp.fetchRemote(target, null);
+                    String text = new String(r.body, StandardCharsets.UTF_8);
+                    if (text.indexOf("#EXTM3U") >= 0) {
+                        final String originBase = "/api/origin?url=";
+                        String rewritten = DemoHttp.rewritePlaylistUrisText(text, target,
+                                new com.iheartradio.m3u8.PlaylistRewriteUtil.UriMapper() {
+                                    @Override
+                                    public String map(String absoluteUrl) {
+                                        try {
+                                            return originBase
+                                                    + java.net.URLEncoder.encode(absoluteUrl, "UTF-8");
+                                        } catch (Exception e) {
+                                            return originBase + absoluteUrl;
+                                        }
+                                    }
+                                });
+                        DemoHttp.send(ex, 200, "application/vnd.apple.mpegurl; charset=utf-8",
+                                rewritten);
+                        return;
+                    }
+                }
+                DemoHttp.streamRemote(ex, target, range);
+            } catch (Exception e) {
+                DemoHttp.send(ex, 502, "application/json; charset=utf-8",
+                        "{\"error\":" + DemoHttp.jsonString("origin fetch failed: " + e.getMessage())
+                                + "}");
+            }
         }
     }
 

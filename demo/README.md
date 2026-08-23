@@ -1,5 +1,7 @@
 # HLS demo (SSAI / SGAI)
 
+The playable UI is **`apps/web-client/`** (HTML shell + `css/` + `js/` modules). This folder keeps notes, `BACKLOG.md`, and a leftover `watch.html`.
+
 One player. You pick the ad strategy.
 
 **Hosted (static):** https://tmai-tech.github.io/open-m3u8/  

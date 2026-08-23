@@ -17,6 +17,22 @@ import static org.junit.Assert.assertTrue;
 public class DemoPlaylistPipelineTest {
 
     @Test
+    public void emptyBreaksLeavesContentUnchanged() throws Exception {
+        Playlist content = media(
+                track("http://cdn/c0.ts", 10f),
+                track("http://cdn/c1.ts", 10f));
+        DemoSession session = DemoSession.fromJson("s0",
+                "{\"strategy\":\"ssai\",\"contentUrl\":\"http://cdn/prog.m3u8\"}");
+
+        Playlist out = new DemoPlaylistPipeline().apply(session, content);
+        String text = PlaylistRewriteUtil.writeToString(out, Encoding.UTF_8);
+
+        assertFalse(text.contains("#EXT-X-CUE-OUT"));
+        assertTrue(text.contains("http://cdn/c0.ts"));
+        assertTrue(text.contains("http://cdn/c1.ts"));
+    }
+
+    @Test
     public void sgaiInjectsDateRangeNotCues() throws Exception {
         Playlist content = media(
                 track("http://cdn/c0.ts", 10f),

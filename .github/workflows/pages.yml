@@ -5,6 +5,7 @@ on:
     branches: [master]
     paths:
       - "demo/**"
+      - "apps/web-client/**"
       - ".github/workflows/pages.yml"
   workflow_dispatch:
 
@@ -30,6 +31,6 @@ jobs:
           enablement: true
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: demo
+          path: apps/web-client
       - id: deployment
         uses: actions/deploy-pages@v4

@@ -13,11 +13,11 @@ Replace native controls with a custom bar:
 - Keep play/pause, volume, fullscreen
 - Work in fullscreen and on mobile; do not rely on overlaying the native seek bar
 
-Until then, seek blocking is `onSeekingBlockAds` in `demo/index.html`.
+Until then, seek blocking is `apps/web-client/js/seek-ssai.js` and `seek-sgai.js`.
 
 ## SSAI: resume at seek target after a forced mid-roll
 
-Implemented in `demo/index.html` (`ssaiPendingSeek`). Jumping past a cue window plays that ad, then seeks to the scrub time. SGAI still tabled below.
+Implemented in `apps/web-client/js/seek-ssai.js` (`ssaiSeekQueue`). Jumping past cue windows plays **every** crossed ad in order, then seeks to the scrub time. SGAI still tabled below.
 
 ## SGAI: resume at the user's seek target after a forced mid-roll
 
