@@ -1,0 +1,40 @@
+plugins {
+    id 'java'
+    id 'idea'
+}
+
+sourceCompatibility = '1.8'
+targetCompatibility = '1.8'
+
+dependencies {
+    implementation project(':library')
+    testImplementation 'junit:junit:4.13.2'
+}
+
+def demoJvm = {
+    it.group = 'application'
+    it.classpath = sourceSets.main.runtimeClasspath
+    it.mainClass = 'com.iheartradio.m3u8.demo.DemoPlayerServer'
+    it.args = project.hasProperty('port') ? [project.property('port')] : []
+    it.workingDir = rootProject.projectDir
+    it.jvmArgs = ['-Xms128m', '-Xmx768m']
+}
+
+task runDemo(type: JavaExec) {
+    description = 'Run the HLS playlist service (SSAI / SGAI) and serve apps/web-client'
+    demoJvm(it)
+}
+
+task runHlsPlayer(type: JavaExec) {
+    description = 'Alias for runDemo'
+    demoJvm(it)
+}
+
+task runSsaiProxy(type: JavaExec) {
+    description = 'Alias for runDemo'
+    demoJvm(it)
+}
+
+test {
+    useJUnit()
+}

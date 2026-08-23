@@ -33,7 +33,7 @@ Local Java proxy (shareable `/s/{id}/manifest` URLs):
 
 | | SSAI (default) | SGAI |
 |--|--|--|
-| Library | `PlaylistSsaiUtil.stitch` | `PlaylistRewriteUtil.injectMediaTags` |
+| playlist-service | `PlaylistSsaiUtil.stitch` | `PlaylistRewriteUtil.injectMediaTags` |
 | Player sees | Ad segments inlined with CUE-OUT / CUE-IN | Content only + `EXT-X-DATERANGE` / `X-ASSET-URI` |
 | hls.js interstitials | Off | On |
 

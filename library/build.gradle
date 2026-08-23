@@ -23,31 +23,6 @@ idea {
     }
 }
 
-def demoJvm = {
-    it.group = 'application'
-    it.classpath = sourceSets.main.runtimeClasspath
-    it.mainClass = 'com.iheartradio.m3u8.demo.DemoPlayerServer'
-    it.args = project.hasProperty('port') ? [project.property('port')] : []
-    // Demo static files live at the repo root (apps/web-client).
-    it.workingDir = rootProject.projectDir
-    it.jvmArgs = ['-Xms128m', '-Xmx768m']
-}
-
-task runDemo(type: JavaExec) {
-    description = 'Run the HLS demo player (SSAI / SGAI strategy switch)'
-    demoJvm(it)
-}
-
-task runHlsPlayer(type: JavaExec) {
-    description = 'Alias for runDemo'
-    demoJvm(it)
-}
-
-task runSsaiProxy(type: JavaExec) {
-    description = 'Alias for runDemo'
-    demoJvm(it)
-}
-
 test {
     useJUnit()
 }

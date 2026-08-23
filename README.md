@@ -2,7 +2,7 @@
 
 Java library for **parsing and writing HLS `.m3u8` playlists**, plus a local demo that inserts ads two ways:
 
-Java sources live in the `library/` Gradle subproject (`./gradlew test`, `./gradlew runDemo` still run from the repo root).
+Java parse/write lives in `library/`. SSAI/SGAI and the HTTP demo live in `apps/playlist-service/` (`./gradlew test`, `./gradlew runDemo` from the repo root).
 
 - **SSAI** — classic server-side stitch (MediaTailor-style `CUE-OUT` / `CUE-IN` + `DISCONTINUITY`)
 - **SGAI** — HLS Interstitials (`EXT-X-DATERANGE` + `X-ASSET-URI`)
@@ -37,7 +37,7 @@ Library scope is **playlist text ↔ Java models**. It does not transcode, decry
 
 | | SSAI | SGAI |
 |--|--|--|
-| Library | `PlaylistSsaiUtil.stitch` | `PlaylistRewriteUtil.injectMediaTags` |
+| playlist-service | `PlaylistSsaiUtil.stitch` | `PlaylistRewriteUtil.injectMediaTags` |
 | Player sees | Ad **segments inlined** in the media playlist | Content playlist + **DATERANGE**; player loads the ad |
 | Tags | `DISCONTINUITY`, `CUE-OUT` / `CUE-OUT-CONT`, `CUE-IN` (MediaTailor order) | `EXT-X-DATERANGE` `CLASS=com.apple.hls.interstitial`, `X-PLAYOUT-LIMIT` |
 | Ad length | Whole-segment trim (4s ads + max 12 → three segments) | Player stops the creative at `X-PLAYOUT-LIMIT` |
