@@ -75,6 +75,25 @@ public class DemoPlayerServerTest {
     }
 
     @Test
+    public void originRequiresHttpUrl() throws Exception {
+        HttpURLConnection missing = (HttpURLConnection) new URL(
+                "http://127.0.0.1:" + demoPort + "/api/origin").openConnection();
+        assertEquals(400, missing.getResponseCode());
+        HttpURLConnection bad = (HttpURLConnection) new URL(
+                "http://127.0.0.1:" + demoPort + "/api/origin?url=file:///tmp/x").openConnection();
+        assertEquals(400, bad.getResponseCode());
+    }
+
+    @Test
+    public void sessionWithoutAdsProxiesContent() throws Exception {
+        String json = "{\"strategy\":\"ssai\","
+                + "\"contentUrl\":\"http://127.0.0.1:" + originPort + "/content.m3u8\"}";
+        String playlist = createAndFetchManifest(json);
+        assertFalse(playlist.contains("#EXT-X-CUE-OUT"));
+        assertTrue(playlist.contains("#EXTINF"));
+    }
+
+    @Test
     public void sgaiSessionInjectsDateRange() throws Exception {
         String json = "{\"strategy\":\"sgai\","
                 + "\"contentUrl\":\"http://127.0.0.1:" + originPort + "/content.m3u8\","

@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>HLS Demo — SSAI / SGAI</title>
+  <link rel="stylesheet" href="css/demo.css" />
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@1.6.2/dist/hls.min.js"></script>
+  <script src="rewrite/rewrite.js"></script>
+  <script type="module" src="js/main.js"></script>
+</head>
+<body class="ott">
+  <div class="app">
+    <header class="ott-nav">
+      <div class="ott-brand">HLS Demo</div>
+      <p class="ott-nav-tag">Watch with stitched or interstitial ads</p>
+      <button type="button" class="btn btn-ghost btn-sm" id="btnStudio" aria-expanded="false">Ad setup</button>
+    </header>
+
+    <section class="hero">
+      <div class="player-wrap" id="heroStage">
+        <video id="video" controls playsinline></video>
+        <div id="posterLayer" class="poster-layer">
+          <img id="posterImg" class="poster-img" alt="" />
+          <div class="hero-shade"></div>
+          <div class="hero-copy">
+            <p class="hero-kicker" id="heroKicker">Featured</p>
+            <h2 class="hero-title" id="heroTitle">Big Buck Bunny</h2>
+            <p class="hero-hint" id="posterHint">Poster loads from the stream’s I-frame or lowest video variant.</p>
+            <button type="button" class="btn btn-primary" id="btnWatchNow">Play</button>
+          </div>
+          <button type="button" class="play-orb" id="btnPlayOrb" aria-label="Play">▶</button>
+        </div>
+        <div id="adBadge" class="ad-badge" hidden>AD <span id="adCount">0s</span></div>
+      </div>
+      <div class="seek-ad-bar" title="Ad positions on the content timeline">
+        <span class="seek-ad-label">Ads</span>
+        <div class="seek-ad-marks" id="seekMarks"></div>
+      </div>
+    </section>
+
+    <section class="rail">
+      <h3 class="rail-title">Titles</h3>
+      <div class="rail-row" id="catalog"></div>
+    </section>
+
+    <section class="rail" id="liveRail">
+      <h3 class="rail-title">Live</h3>
+      <div class="rail-row" id="liveCatalog"></div>
+    </section>
+
+    <div class="card studio" id="studio" hidden>
+    <div id="app-card">
+      <div class="studio-grid">
+        <select id="strategy" title="Ad strategy" aria-label="Ad strategy">
+          <option value="ssai">SSAI</option>
+          <option value="sgai">SGAI</option>
+        </select>
+        <input id="contentUrl" type="url" value="https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8" placeholder="Content .m3u8" aria-label="Content URL" />
+      </div>
+
+      <div class="breaks-toolbar">
+        <span class="col-label">s · ad url · dur</span>
+        <button type="button" class="btn btn-ghost btn-sm" id="btnAddBreak" title="Add break">+</button>
+      </div>
+      <div id="breakList"></div>
+      <div class="timeline" id="timeline" title="Click to add a break">
+        <div class="timeline-fill" id="timelineFill"></div>
+        <div class="timeline-playhead" id="timelinePlayhead"></div>
+      </div>
+
+      <div class="studio-actions">
+        <button class="btn btn-primary btn-sm" id="btnApply">Apply</button>
+        <button class="btn btn-ghost btn-sm" id="btnGenerate">Generate</button>
+        <button class="btn btn-ghost btn-sm" id="btnStop">Stop</button>
+        <input id="publicManifestUrl" type="text" readonly placeholder="HTTPS" aria-label="Public HTTPS URL" />
+        <button class="btn btn-ghost btn-sm" id="btnCopyPublic">Copy</button>
+        <button class="btn btn-ghost btn-sm" id="btnWatch" disabled>hls.js</button>
+      </div>
+      <div class="status" id="status"></div>
+
+      <details class="studio-more">
+        <summary>Manifest</summary>
+        <div class="url-row">
+          <input id="manifestUrl" type="text" readonly placeholder="Local session URL" aria-label="Local manifest URL" />
+          <button class="btn btn-ghost btn-sm" id="btnCopy" disabled>Copy</button>
+        </div>
+        <pre class="manifest-box" id="preview"></pre>
+      </details>
+
+      <div class="hidden" aria-hidden="true">
+        <p id="strategyHint"></p>
+        <p id="adLengthHint"></p>
+        <p id="tlHint"></p>
+        <div id="sessionMeta"></div>
+        <label><input type="checkbox" id="restrictSkip" /></label>
+        <label><input type="checkbox" id="snapSegment" checked /></label>
+        <select id="playPath">
+          <option value="proxy" selected>proxy</option>
+          <option value="direct">direct</option>
+        </select>
+      </div>
+    </div>
+    </div>
+  </div>
+
+  </body>
+</html>

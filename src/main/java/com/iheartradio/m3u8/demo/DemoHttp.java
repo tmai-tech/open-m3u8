@@ -265,6 +265,11 @@ public final class DemoHttp {
 
     private static final java.util.concurrent.atomic.AtomicReference<String> LAST_HTTPS_BASE =
             new java.util.concurrent.atomic.AtomicReference<String>();
+    private static final java.util.concurrent.atomic.AtomicBoolean DISCOVERY_STARTED =
+            new java.util.concurrent.atomic.AtomicBoolean(false);
+    private static final java.util.concurrent.atomic.AtomicInteger CACHED_METRICS_PORT =
+            new java.util.concurrent.atomic.AtomicInteger(0);
+    private static final Object SCAN_LOCK = new Object();
 
     public static String envPublicBase() {
         String e = System.getenv("DEMO_PUBLIC_BASE");
@@ -278,10 +283,188 @@ public final class DemoHttp {
         return e.length() == 0 ? null : e;
     }
 
-    /** HTTPS origin seen via a tunnel (cloudflared) or DEMO_PUBLIC_BASE. */
+    /** Cached HTTPS origin. Never scans; discovery runs on a background thread. */
     public static String advertisedPublicBase() {
         String env = envPublicBase();
         return env != null ? env : LAST_HTTPS_BASE.get();
+    }
+
+    public static void startPublicBaseDiscovery() {
+        if (!DISCOVERY_STARTED.compareAndSet(false, true)) {
+            return;
+        }
+        Thread t = new Thread(new Runnable() {
+            @Override
+            public void run() {
+                while (!Thread.currentThread().isInterrupted()) {
+                    try {
+                        String found = scanCloudflareQuickTunnel();
+                        if (found != null) {
+                            String prev = LAST_HTTPS_BASE.getAndSet(found);
+                            if (prev == null || !prev.equals(found)) {
+                                System.out.println("  HTTPS:    " + found);
+                            }
+                        }
+                        Thread.sleep(LAST_HTTPS_BASE.get() == null ? 4000L : 30000L);
+                    } catch (InterruptedException e) {
+                        return;
+                    } catch (Exception ignored) {
+                        try {
+                            Thread.sleep(8000L);
+                        } catch (InterruptedException ie) {
+                            return;
+                        }
+                    }
+                }
+            }
+        }, "demo-cf-discover");
+        t.setDaemon(true);
+        t.start();
+    }
+
+    /**
+     * cloudflared quick tunnels expose GET /quicktunnel on their local metrics port:
+     * {"hostname":"….trycloudflare.com"}
+     */
+    static String httpsOriginFromQuickTunnelJson(String json) {
+        String host = jsonStringValue(json, "hostname");
+        if (host == null) {
+            return null;
+        }
+        host = host.trim();
+        if (host.regionMatches(true, 0, "https://", 0, 8)
+                || host.regionMatches(true, 0, "http://", 0, 7)) {
+            try {
+                URI uri = new URI(host);
+                host = uri.getHost();
+            } catch (Exception e) {
+                return null;
+            }
+        }
+        if (host == null || host.isEmpty()) {
+            return null;
+        }
+        host = host.trim().toLowerCase();
+        if (host.indexOf("127.0.0.1") >= 0 || "localhost".equals(host) || host.indexOf(':') >= 0) {
+            return null;
+        }
+        if (host.indexOf('.') < 0 || host.indexOf(' ') >= 0) {
+            return null;
+        }
+        for (int i = 0; i < host.length(); i++) {
+            char c = host.charAt(i);
+            if (!(c >= 'a' && c <= 'z') && !(c >= '0' && c <= '9') && c != '.' && c != '-') {
+                return null;
+            }
+        }
+        return "https://" + host;
+    }
+
+    static String scanCloudflareQuickTunnel() {
+        synchronized (SCAN_LOCK) {
+            java.util.LinkedHashSet<Integer> ports = new java.util.LinkedHashSet<Integer>();
+            int cached = CACHED_METRICS_PORT.get();
+            if (cached > 0) {
+                ports.add(Integer.valueOf(cached));
+            }
+            ports.add(20241);
+            ports.add(20242);
+            ports.add(9090);
+            if (cached <= 0) {
+                ports.addAll(localListenPorts());
+            }
+            int probed = 0;
+            for (Integer port : ports) {
+                if (port == null || port.intValue() <= 1024 || port.intValue() > 65535) {
+                    continue;
+                }
+                if (port.intValue() == 8765) {
+                    continue;
+                }
+                if (probed >= 16) {
+                    break;
+                }
+                probed++;
+                String found = probeQuickTunnel(port.intValue());
+                if (found != null) {
+                    CACHED_METRICS_PORT.set(port.intValue());
+                    return found;
+                }
+            }
+            return null;
+        }
+    }
+
+    private static String probeQuickTunnel(int port) {
+        HttpURLConnection conn = null;
+        try {
+            conn = (HttpURLConnection) new URL("http://127.0.0.1:" + port + "/quicktunnel")
+                    .openConnection();
+            conn.setConnectTimeout(150);
+            conn.setReadTimeout(250);
+            conn.setInstanceFollowRedirects(false);
+            conn.setRequestProperty("Accept", "application/json, */*");
+            if (conn.getResponseCode() != 200) {
+                return null;
+            }
+            String body = new String(readAll(conn.getInputStream()), StandardCharsets.UTF_8);
+            return httpsOriginFromQuickTunnelJson(body);
+        } catch (Exception e) {
+            return null;
+        } finally {
+            if (conn != null) {
+                conn.disconnect();
+            }
+        }
+    }
+
+    private static java.util.List<Integer> localListenPorts() {
+        java.util.ArrayList<Integer> out = new java.util.ArrayList<Integer>();
+        Process proc = null;
+        try {
+            ProcessBuilder pb = new ProcessBuilder("netstat", "-ano", "-p", "tcp");
+            pb.redirectErrorStream(true);
+            proc = pb.start();
+            byte[] raw = readAll(proc.getInputStream());
+            proc.waitFor();
+            String text = new String(raw, StandardCharsets.US_ASCII);
+            String[] lines = text.split("\n");
+            for (String line : lines) {
+                String u = line.toUpperCase();
+                if (u.indexOf("LISTENING") < 0 && u.indexOf("LISTEN") < 0) {
+                    continue;
+                }
+                int idx = line.indexOf("127.0.0.1:");
+                if (idx < 0) {
+                    idx = line.indexOf("[::1]:");
+                    if (idx < 0) {
+                        continue;
+                    }
+                    idx += 6;
+                } else {
+                    idx += 10;
+                }
+                int end = idx;
+                while (end < line.length() && line.charAt(end) >= '0' && line.charAt(end) <= '9') {
+                    end++;
+                }
+                if (end == idx) {
+                    continue;
+                }
+                try {
+                    out.add(Integer.valueOf(line.substring(idx, end)));
+                } catch (NumberFormatException ignored) {
+                    // skip
+                }
+            }
+        } catch (Exception ignored) {
+            // Windows netstat is best-effort; hardcoded ports still run.
+        } finally {
+            if (proc != null) {
+                proc.destroy();
+            }
+        }
+        return out;
     }
 
     public static String publicBase(HttpExchange ex, int port) {
