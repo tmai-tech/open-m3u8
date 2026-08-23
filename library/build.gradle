@@ -1,0 +1,28 @@
+plugins {
+    id 'java'
+    id 'idea'
+}
+
+// Library remains source-compatible with Java 7 APIs; build with JDK 8+.
+sourceCompatibility = '1.8'
+targetCompatibility = '1.8'
+
+dependencies {
+    testImplementation 'junit:junit:4.13.2'
+}
+
+java {
+    withJavadocJar()
+    withSourcesJar()
+}
+
+idea {
+    module {
+        downloadJavadoc = true
+        downloadSources = true
+    }
+}
+
+test {
+    useJUnit()
+}
