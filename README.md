@@ -2,6 +2,8 @@
 
 Java library for **parsing and writing HLS `.m3u8` playlists**, plus a local demo that inserts ads two ways:
 
+Java sources live in the `library/` Gradle subproject (`./gradlew test`, `./gradlew runDemo` still run from the repo root).
+
 - **SSAI** — classic server-side stitch (MediaTailor-style `CUE-OUT` / `CUE-IN` + `DISCONTINUITY`)
 - **SGAI** — HLS Interstitials (`EXT-X-DATERANGE` + `X-ASSET-URI`)
 

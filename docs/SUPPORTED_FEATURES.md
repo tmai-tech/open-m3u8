@@ -309,4 +309,4 @@ String deltaUri = PlaylistDeltaUtil.appendSkipDirective(mediaPlaylistUri, true);
 Playlist merged = PlaylistDeltaUtil.merge(previous, delta);
 ```
 
-For fixture-backed examples used in tests, see `src/test/resources/*.m3u8`.
+For fixture-backed examples used in tests, see `library/src/test/resources/*.m3u8`.

@@ -327,6 +327,9 @@ public final class DemoHttp {
      * {"hostname":"….trycloudflare.com"}
      */
     static String httpsOriginFromQuickTunnelJson(String json) {
+        if (json == null || json.isEmpty()) {
+            return null;
+        }
         String host = jsonStringValue(json, "hostname");
         if (host == null) {
             return null;
