@@ -1,4 +1,4 @@
-package com.iheartradio.m3u8.demo;
+package com.iheartradio.m3u8.http;
 
 import com.sun.net.httpserver.HttpServer;
 import org.junit.After;

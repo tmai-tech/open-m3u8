@@ -1,5 +1,12 @@
-package com.iheartradio.m3u8;
+package com.iheartradio.m3u8.ads;
 
+import com.iheartradio.m3u8.Encoding;
+import com.iheartradio.m3u8.Format;
+import com.iheartradio.m3u8.ParseException;
+import com.iheartradio.m3u8.ParsingMode;
+import com.iheartradio.m3u8.PlaylistException;
+import com.iheartradio.m3u8.PlaylistParser;
+import com.iheartradio.m3u8.PlaylistWriter;
 import com.iheartradio.m3u8.data.DateRangeData;
 import com.iheartradio.m3u8.data.EncryptionData;
 import com.iheartradio.m3u8.data.IFrameStreamInfo;
@@ -43,6 +50,7 @@ public final class PlaylistRewriteUtil {
     public static final String USER_AD_ID_PREFIX = "user-ad-";
     /** Minimum EXT-X-VERSION for DATERANGE / interstitials. */
     public static final int INTERSTITIAL_MIN_VERSION = 7;
+    public static final String INTERSTITIAL_CLASS = "com.apple.hls.interstitial";
 
     private PlaylistRewriteUtil() {
     }
@@ -202,7 +210,7 @@ public final class PlaylistRewriteUtil {
     public static String writeToString(Playlist playlist, Encoding encoding)
             throws IOException, ParseException, PlaylistException {
         try {
-            return new String(write(playlist, encoding), encoding.value);
+            return new String(write(playlist, encoding), encoding.getValue());
         } catch (UnsupportedEncodingException e) {
             throw new IOException(e);
         }
@@ -272,7 +280,7 @@ public final class PlaylistRewriteUtil {
 
             DateRangeData.Builder b = new DateRangeData.Builder()
                     .withId(id)
-                    .withClassAttribute(Constants.INTERSTITIAL_CLASS)
+                    .withClassAttribute(INTERSTITIAL_CLASS)
                     .withStartDate(startDate);
             if (br.durationSec > 0) {
                 b.withDuration(br.durationSec);

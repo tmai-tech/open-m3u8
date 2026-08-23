@@ -1,4 +1,4 @@
-package com.iheartradio.m3u8.demo;
+package com.iheartradio.m3u8.http;
 
 import org.junit.Test;
 

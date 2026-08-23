@@ -1,5 +1,8 @@
-package com.iheartradio.m3u8;
+package com.iheartradio.m3u8.ads;
 
+import com.iheartradio.m3u8.Encoding;
+import com.iheartradio.m3u8.Format;
+import com.iheartradio.m3u8.PlaylistParser;
 import com.iheartradio.m3u8.data.DateRangeData;
 import com.iheartradio.m3u8.data.MediaPlaylist;
 import com.iheartradio.m3u8.data.Playlist;
@@ -130,7 +133,7 @@ public class PlaylistRewriteUtilTest {
                 + "#EXT-X-ENDLIST\n";
 
         final Playlist parsed = PlaylistRewriteUtil.parse(
-                source.getBytes(Encoding.UTF_8.value), Encoding.UTF_8);
+                source.getBytes(Encoding.UTF_8.getValue()), Encoding.UTF_8);
 
         final Playlist mapped = PlaylistRewriteUtil.rewriteUris(
                 parsed,
@@ -160,7 +163,7 @@ public class PlaylistRewriteUtilTest {
                 + "#EXTINF:6.0,\nseg.ts\n#EXT-X-ENDLIST\n";
 
         final Playlist p = new PlaylistParser(
-                new ByteArrayInputStream(apple.getBytes(Encoding.UTF_8.value)),
+                new ByteArrayInputStream(apple.getBytes(Encoding.UTF_8.getValue())),
                 Format.EXT_M3U, Encoding.UTF_8).parse();
         final DateRangeData dr = p.getMediaPlaylist().getDateRanges().get(0);
         assertEquals("SKIP,JUMP", dr.getRestrict());
@@ -176,7 +179,7 @@ public class PlaylistRewriteUtilTest {
                 + "X-RESTRICTIONS=\"SKIP\"\n"
                 + "#EXTINF:6.0,\nseg.ts\n#EXT-X-ENDLIST\n";
         final Playlist p2 = new PlaylistParser(
-                new ByteArrayInputStream(legacy.getBytes(Encoding.UTF_8.value)),
+                new ByteArrayInputStream(legacy.getBytes(Encoding.UTF_8.getValue())),
                 Format.EXT_M3U, Encoding.UTF_8).parse();
         assertEquals("SKIP", p2.getMediaPlaylist().getDateRanges().get(0).getRestrictions());
     }
@@ -201,7 +204,7 @@ public class PlaylistRewriteUtilTest {
                 .build();
         final String written = PlaylistRewriteUtil.writeToString(playlist, Encoding.UTF_8);
         assertTrue(written.contains("#EXT-X-PROGRAM-DATE-TIME:2024-06-15T12:00:00.000Z"));
-        final Playlist again = PlaylistRewriteUtil.parse(written.getBytes(Encoding.UTF_8.value), Encoding.UTF_8);
+        final Playlist again = PlaylistRewriteUtil.parse(written.getBytes(Encoding.UTF_8.getValue()), Encoding.UTF_8);
         assertEquals("2024-06-15T12:00:00.000Z",
                 again.getMediaPlaylist().getTracks().get(0).getProgramDateTime());
     }

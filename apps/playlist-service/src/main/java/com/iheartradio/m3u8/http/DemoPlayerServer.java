@@ -1,4 +1,4 @@
-package com.iheartradio.m3u8.demo;
+package com.iheartradio.m3u8.http;
 
 import com.sun.net.httpserver.Headers;
 import com.sun.net.httpserver.HttpExchange;
@@ -220,7 +220,7 @@ public final class DemoPlayerServer {
                     if (text.indexOf("#EXTM3U") >= 0) {
                         final String originBase = "/api/origin?url=";
                         String rewritten = DemoHttp.rewritePlaylistUrisText(text, target,
-                                new com.iheartradio.m3u8.PlaylistRewriteUtil.UriMapper() {
+                                new com.iheartradio.m3u8.ads.PlaylistRewriteUtil.UriMapper() {
                                     @Override
                                     public String map(String absoluteUrl) {
                                         try {

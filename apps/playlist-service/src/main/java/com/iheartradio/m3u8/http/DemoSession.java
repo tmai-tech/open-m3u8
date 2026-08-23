@@ -1,9 +1,9 @@
-package com.iheartradio.m3u8.demo;
+package com.iheartradio.m3u8.http;
 
-import com.iheartradio.m3u8.PlaylistRewriteUtil;
-import com.iheartradio.m3u8.PlaylistRewriteUtil.InjectConfig;
-import com.iheartradio.m3u8.PlaylistRewriteUtil.InterstitialBreak;
-import com.iheartradio.m3u8.PlaylistSsaiUtil;
+import com.iheartradio.m3u8.ads.PlaylistRewriteUtil;
+import com.iheartradio.m3u8.ads.PlaylistRewriteUtil.InjectConfig;
+import com.iheartradio.m3u8.ads.PlaylistRewriteUtil.InterstitialBreak;
+import com.iheartradio.m3u8.ads.PlaylistSsaiUtil;
 import com.iheartradio.m3u8.data.Playlist;
 import com.iheartradio.m3u8.data.StartData;
 

@@ -2,8 +2,9 @@
 
 HTTP demo that uses the `library` module to parse and write playlists, then applies ads:
 
-- `PlaylistSsaiUtil` — SSAI stitch (`CUE-OUT` / `CUE-IN`)
-- `PlaylistRewriteUtil` — SGAI interstitials (`EXT-X-DATERANGE`) plus URI rewrite for the proxy
+- `com.iheartradio.m3u8.ads.PlaylistSsaiUtil` — SSAI stitch (`CUE-OUT` / `CUE-IN`)
+- `com.iheartradio.m3u8.ads.PlaylistRewriteUtil` — SGAI interstitials (`EXT-X-DATERANGE`) plus URI rewrite
+- `com.iheartradio.m3u8.http.DemoPlayerServer` — sessions and proxy
 
 ```bash
 # from repo root

@@ -1,5 +1,9 @@
-package com.iheartradio.m3u8;
+package com.iheartradio.m3u8.ads;
 
+import com.iheartradio.m3u8.Encoding;
+import com.iheartradio.m3u8.Format;
+import com.iheartradio.m3u8.PlaylistParser;
+import com.iheartradio.m3u8.PlaylistWriter;
 import com.iheartradio.m3u8.data.EncryptionData;
 import com.iheartradio.m3u8.data.EncryptionMethod;
 import com.iheartradio.m3u8.data.MediaPlaylist;
@@ -198,7 +202,7 @@ public class PlaylistSsaiUtilTest {
 
         ByteArrayOutputStream os = new ByteArrayOutputStream();
         new PlaylistWriter(os, Format.EXT_M3U, Encoding.UTF_8).write(stitched);
-        String text = os.toString(Encoding.UTF_8.value);
+        String text = os.toString(Encoding.UTF_8.getValue());
         assertTrue(text.contains("METHOD=NONE"));
         assertTrue(text.contains("#EXT-X-CUE-OUT"));
         assertTrue(text.contains("#EXT-X-CUE-IN"));
@@ -227,7 +231,7 @@ public class PlaylistSsaiUtilTest {
                 Format.EXT_M3U,
                 Encoding.UTF_8).parse();
 
-        String text = os.toString(Encoding.UTF_8.value);
+        String text = os.toString(Encoding.UTF_8.getValue());
         int lastAd = text.lastIndexOf("http://ads/a1.ts");
         int cueIn = text.indexOf("#EXT-X-CUE-IN");
         int resumeDisc = text.indexOf("#EXT-X-DISCONTINUITY", text.indexOf("http://ads/a0.ts"));

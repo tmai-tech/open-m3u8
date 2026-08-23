@@ -1,11 +1,11 @@
-package com.iheartradio.m3u8.demo;
+package com.iheartradio.m3u8.http;
 
 import com.iheartradio.m3u8.Encoding;
 import com.iheartradio.m3u8.ParseException;
 import com.iheartradio.m3u8.PlaylistException;
-import com.iheartradio.m3u8.PlaylistRewriteUtil;
-import com.iheartradio.m3u8.PlaylistRewriteUtil.UriMapper;
-import com.iheartradio.m3u8.PlaylistSsaiUtil;
+import com.iheartradio.m3u8.ads.PlaylistRewriteUtil;
+import com.iheartradio.m3u8.ads.PlaylistRewriteUtil.UriMapper;
+import com.iheartradio.m3u8.ads.PlaylistSsaiUtil;
 import com.iheartradio.m3u8.data.MediaPlaylist;
 import com.iheartradio.m3u8.data.Playlist;
 import com.iheartradio.m3u8.data.PlaylistData;

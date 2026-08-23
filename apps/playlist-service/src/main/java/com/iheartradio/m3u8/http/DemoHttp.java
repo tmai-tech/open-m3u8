@@ -1,7 +1,7 @@
-package com.iheartradio.m3u8.demo;
+package com.iheartradio.m3u8.http;
 
-import com.iheartradio.m3u8.PlaylistRewriteUtil;
-import com.iheartradio.m3u8.PlaylistRewriteUtil.UriMapper;
+import com.iheartradio.m3u8.ads.PlaylistRewriteUtil;
+import com.iheartradio.m3u8.ads.PlaylistRewriteUtil.UriMapper;
 import com.sun.net.httpserver.Headers;
 import com.sun.net.httpserver.HttpExchange;
 

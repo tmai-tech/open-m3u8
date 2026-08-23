@@ -14,7 +14,7 @@ dependencies {
 def demoJvm = {
     it.group = 'application'
     it.classpath = sourceSets.main.runtimeClasspath
-    it.mainClass = 'com.iheartradio.m3u8.demo.DemoPlayerServer'
+    it.mainClass = 'com.iheartradio.m3u8.http.DemoPlayerServer'
     it.args = project.hasProperty('port') ? [project.property('port')] : []
     it.workingDir = rootProject.projectDir
     it.jvmArgs = ['-Xms128m', '-Xmx768m']

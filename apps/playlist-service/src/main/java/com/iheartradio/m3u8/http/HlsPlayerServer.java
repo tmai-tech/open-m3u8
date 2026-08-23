@@ -1,4 +1,4 @@
-package com.iheartradio.m3u8.demo;
+package com.iheartradio.m3u8.http;
 
 /**
  * Compatibility entry point. Use {@link DemoPlayerServer} ({@code ./gradlew runDemo}).

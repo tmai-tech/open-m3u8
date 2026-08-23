@@ -1,4 +1,4 @@
-package com.iheartradio.m3u8;
+package com.iheartradio.m3u8.ads;
 
 import com.iheartradio.m3u8.data.CueOutContData;
 import com.iheartradio.m3u8.data.CueOutData;

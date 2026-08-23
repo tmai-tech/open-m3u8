@@ -1,7 +1,7 @@
-package com.iheartradio.m3u8.demo;
+package com.iheartradio.m3u8.http;
 
 import com.iheartradio.m3u8.Encoding;
-import com.iheartradio.m3u8.PlaylistRewriteUtil;
+import com.iheartradio.m3u8.ads.PlaylistRewriteUtil;
 import com.iheartradio.m3u8.data.MediaPlaylist;
 import com.iheartradio.m3u8.data.Playlist;
 import com.iheartradio.m3u8.data.TrackData;

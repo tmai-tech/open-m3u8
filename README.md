@@ -111,7 +111,7 @@ Playlist p = new PlaylistParser(in, Format.EXT_M3U, Encoding.UTF_8).parse();
 new PlaylistWriter(out, Format.EXT_M3U, Encoding.UTF_8).write(p);
 ```
 
-**SSAI stitch**
+**SSAI stitch** (`com.iheartradio.m3u8.ads`)
 
 ```java
 Playlist stitched = PlaylistSsaiUtil.stitch(contentMedia, Arrays.asList(
@@ -122,7 +122,7 @@ Playlist stitched = PlaylistSsaiUtil.stitch(contentMedia, Arrays.asList(
         .build()));
 ```
 
-**SGAI inject**
+**SGAI inject** (`com.iheartradio.m3u8.ads`)
 
 ```java
 Playlist rewritten = PlaylistRewriteUtil.injectMediaTags(

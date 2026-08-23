@@ -108,7 +108,7 @@ These appear in modern HLS / LL-HLS but are **not** first-class tags in this lib
 | Build / copy | `*.Builder`, `buildUpon()` on data classes |
 | Inject interstitials / rewrite URIs | `apps/playlist-service` `PlaylistRewriteUtil.injectMediaTags`, `rewriteUris`, `rewrite` |
 | **Classic SSAI segment stitch** | `apps/playlist-service` `PlaylistSsaiUtil.stitch(content, breaks)` — inline ad segments + CUE-OUT/CONT/IN + DISCONTINUITY |
-| Demo player (SSAI or SGAI) | `./gradlew runDemo` (`com.iheartradio.m3u8.demo.DemoPlayerServer`) |
+| Demo player (SSAI or SGAI) | `./gradlew runDemo` (`com.iheartradio.m3u8.http.DemoPlayerServer`) |
 
 ### Classic SSAI vs HLS Interstitials
 
