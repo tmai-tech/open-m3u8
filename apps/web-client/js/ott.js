@@ -1,8 +1,13 @@
 import { $, bind } from "./dom.js";
-import { SAMPLES, state } from "./state.js";
-import { dummyPosterDataUrl, loadPoster } from "./thumbnail.js";
+import { adsAllowed, SAMPLES, state } from "./state.js";
+import { dummyPosterDataUrl, loadPoster, probeMediaDuration } from "./thumbnail.js";
+import { renderTimeline } from "./ad-markers.js";
+import { setStatus } from "./status.js";
 
 export const CATALOG = [
+  { id: "mars", title: "Summer on Mars", sub: "Local · 73s · 720p", kicker: "Your library", url: SAMPLES.mars, library: true, adUrl: SAMPLES.giff, adOffset: 10, adDuration: 12 },
+  { id: "giff", title: "GIFF Day 1", sub: "Local · 12s · 720p", kicker: "Your library", url: SAMPLES.giff, library: true, adUrl: SAMPLES.giff, adOffset: 10, adDuration: 12 },
+  { id: "grok", title: "Grok clip", sub: "Local · 15s · 720p", kicker: "Your library", url: SAMPLES.grok, library: true, adUrl: SAMPLES.giff, adOffset: 10, adDuration: 12 },
   { id: "mux", title: "Big Buck Bunny", sub: "Mux · HLS", kicker: "Featured · Blender Foundation", url: SAMPLES.mux },
   { id: "apple", title: "BipBop", sub: "Apple · I-frame", kicker: "Featured · Apple HLS", url: SAMPLES.apple },
   { id: "tos", title: "Tears of Steel", sub: "Unified · 4s", kicker: "Featured · Blender Institute", url: SAMPLES.tos },
@@ -15,7 +20,7 @@ export const CATALOG = [
   { id: "atmos", title: "Apple TV Trailer", sub: "Apple · Dolby Vision / Atmos", kicker: "Apple HLS examples", url: SAMPLES.atmos },
   { id: "av1", title: "Apple AV1 Trailer", sub: "Apple · AV1", kicker: "Apple HLS examples", url: SAMPLES.av1 },
   { id: "fdr", title: "FDR", sub: "JW Player · 4s", kicker: "JW Player CDN", url: SAMPLES.fdr },
-  { id: "blender", title: "Blender 24/7", sub: "Ireplay · I-frame", kicker: "Live · Ireplay", url: SAMPLES.blender, live: true },
+  { id: "blender", title: "Blender 24/7", sub: "Ireplay · I-frame", kicker: "Live · Ireplay", url: SAMPLES.blender, live: true, asVod: true },
   { id: "unifiedLive", title: "Channel 1", sub: "Unified · low-latency", kicker: "Live · Unified Streaming", url: SAMPLES.unifiedLive, live: true },
 ];
 
@@ -34,18 +39,100 @@ export function setCatalogApply(fn) {
 export function setLiveUi(on) {
   state.liveMode = !!on;
   document.body.classList.toggle("live-mode", state.liveMode);
+  const bar = $("livePlayBar");
+  if (bar) bar.hidden = !state.liveMode;
+  syncSnapshotAdUi();
+  syncLivePlayButtons();
+}
+
+export function syncSnapshotAdUi() {
+  const snapshot = !!(state.liveMode && state.forceVod);
+  document.body.classList.toggle("snapshot-mode", snapshot);
   const btn = $("btnStudio");
   const studio = $("studio");
-  if (state.liveMode) {
-    if (studio) studio.hidden = true;
-    if (btn) {
-      btn.hidden = true;
-      btn.setAttribute("aria-expanded", "false");
-      btn.textContent = "Ad setup";
-    }
-  } else if (btn) {
-    btn.hidden = false;
+  if (!state.liveMode) {
+    if (btn) btn.hidden = false;
+    return;
   }
+  if (snapshot) {
+    if (btn) btn.hidden = false;
+    return;
+  }
+  if (studio) studio.hidden = true;
+  if (btn) {
+    btn.hidden = true;
+    btn.setAttribute("aria-expanded", "false");
+    btn.textContent = "Ad setup";
+  }
+}
+
+function applyWindowDuration(sec) {
+  const n = Number(sec);
+  if (!isFinite(n) || n <= 0) return;
+  state.windowDuration = n;
+  state.mediaDuration = n;
+  const hint = $("tlHint");
+  if (hint) hint.textContent = "Window " + Math.round(n) + "s — click to add a break.";
+  renderTimeline();
+}
+
+function clearWindowDuration() {
+  state.windowDuration = 0;
+  if (!state.hls) state.mediaDuration = 0;
+  renderTimeline();
+}
+
+let durationToken = 0;
+
+export async function loadSnapshotTimeline(url) {
+  const token = ++durationToken;
+  const target = url || ($("contentUrl") && $("contentUrl").value.trim()) || "";
+  if (!target || !adsAllowed() || !state.liveMode) return 0;
+  try {
+    const sec = await probeMediaDuration(target);
+    if (token !== durationToken) return 0;
+    applyWindowDuration(sec);
+    return sec;
+  } catch (_) {
+    return 0;
+  }
+}
+
+function syncLivePlayButtons() {
+  const live = $("btnForceLive");
+  const vod = $("btnForceVod");
+  if (live) live.classList.toggle("is-on", !state.forceVod);
+  if (vod) vod.classList.toggle("is-on", !!state.forceVod);
+}
+
+function isVideoPlaying() {
+  if (state.hls) return true;
+  const v = $("video");
+  return !!(v && !v.paused && v.readyState > 1);
+}
+
+function setForceVod(on) {
+  const next = !!on;
+  const changed = next !== !!state.forceVod;
+  state.forceVod = next;
+  syncLivePlayButtons();
+  syncSnapshotAdUi();
+  setPosterHint(state.forceVod
+    ? "Snapshot of the current live window. Ads use this window’s timeline."
+    : "Rolling live — the player keeps polling the window.");
+  if (!changed) return;
+  if (next) {
+    const playing = isVideoPlaying();
+    loadSnapshotTimeline().then(() => {
+      setStatus("Snapshot — add breaks on the window timeline, then Apply.");
+      if (playing) playFn();
+    });
+    return;
+  }
+  durationToken++;
+  clearWindowDuration();
+  setStatus("Live — ads are not available on this rail.");
+  if (isVideoPlaying()) playFn();
 }
 
 export function catalogMeta(url) {
@@ -98,29 +185,37 @@ export async function refreshPoster() {
   try {
     const { dataUrl, kind } = await loadPoster(url);
     if (token !== posterToken) return;
-    if (kind === "iframe" || kind === "image") {
+    if (dataUrl && (kind === "iframe" || kind === "image" || kind === "variant")) {
       setPosterImage(dataUrl);
       if (hint) {
         hint.textContent = state.liveMode
-          ? (kind === "iframe" ? "Live · poster from I-frame variant" : "Live · no ads")
+          ? (state.forceVod
+            ? "Snapshot of the current live window. Switch to Live below."
+            : "Rolling live. Switch to Snapshot below to freeze the window.")
           : kind === "iframe"
             ? "Poster from I-frame variant (via local proxy)"
-            : "Poster from image playlist";
+            : kind === "image"
+              ? "Poster from image playlist"
+              : "Poster from lowest video variant.";
       }
       return;
     }
-    setPosterImage(dummyPosterDataUrl(meta.title, "No I-frame variant in this master."));
+    setPosterImage(dummyPosterDataUrl(meta.title, "No I-frame or video variant in this master."));
     if (hint) {
       hint.textContent = state.liveMode
-        ? "Live — no ads. Play starts the stream."
-        : "No I-frame variant — placeholder art. Play starts the real stream.";
+        ? (state.forceVod
+          ? "Snapshot of the current live window. Switch to Live below."
+          : "Rolling live. Switch to Snapshot below to freeze the window.")
+        : "Could not grab a poster frame — placeholder art. Play starts the real stream.";
     }
   } catch (_) {
     if (token !== posterToken) return;
     setPosterImage(dummyPosterDataUrl(meta.title, "No I-frame variant in this master."));
     if (hint) {
       hint.textContent = state.liveMode
-        ? "Live — no ads. Play starts the stream."
+        ? (state.forceVod
+          ? "Snapshot of the current live window. Switch to Live below."
+          : "Rolling live. Switch to Snapshot below to freeze the window.")
         : "No I-frame variant — placeholder art. Play starts the real stream.";
     }
   }
@@ -128,7 +223,7 @@ export async function refreshPoster() {
 
 export function bindOtt() {
   bind("btnStudio", "click", () => {
-    if (state.liveMode) return;
+    if (state.liveMode && !state.forceVod) return;
     const studio = $("studio");
     if (!studio) return;
     studio.hidden = !studio.hidden;
@@ -145,6 +240,8 @@ export function bindOtt() {
   bind("btnWatchNow", "click", (ev) => { ev.stopPropagation(); watch(); });
   bind("btnPlayOrb", "click", (ev) => { ev.stopPropagation(); watch(); });
   bind("posterLayer", "click", watch);
+  bind("btnForceLive", "click", () => setForceVod(false));
+  bind("btnForceVod", "click", () => setForceVod(true));
   const input = $("contentUrl");
   if (input) {
     let t = null;
@@ -190,12 +287,13 @@ async function fillCatalogThumb(card, item) {
   img.src = dummyPosterDataUrl(item.title, item.sub);
   try {
     const { dataUrl, kind } = await loadPoster(item.url);
-    if (kind === "iframe" || kind === "image") img.src = dataUrl;
+    if (dataUrl && (kind === "iframe" || kind === "image" || kind === "variant")) img.src = dataUrl;
   } catch (_) { /* keep dummy */ }
 }
 
 export function renderCatalog() {
-  paintRail($("catalog"), CATALOG.filter((c) => !c.live));
+  paintRail($("libraryCatalog"), CATALOG.filter((c) => c.library && !c.live));
+  paintRail($("catalog"), CATALOG.filter((c) => !c.live && !c.library));
   paintRail($("liveCatalog"), CATALOG.filter((c) => c.live));
   const current = ($("contentUrl") && $("contentUrl").value) || SAMPLES.mux;
   const match = CATALOG.find((c) => !c.fillAds && c.url === current) || CATALOG[0];

@@ -5,6 +5,7 @@ import com.iheartradio.m3u8.data.CueOutData;
 import com.iheartradio.m3u8.data.DateRangeData;
 import com.iheartradio.m3u8.data.EncryptionData;
 import com.iheartradio.m3u8.data.EncryptionMethod;
+import com.iheartradio.m3u8.data.MapInfo;
 import com.iheartradio.m3u8.data.MediaPlaylist;
 import com.iheartradio.m3u8.data.Playlist;
 import com.iheartradio.m3u8.data.TrackData;
@@ -433,6 +434,12 @@ public final class PlaylistSsaiUtil {
                 if (options.discontinuityOutOfAd) {
                     resume.withDiscontinuity(true);
                 }
+                if (!contentTrack.hasMapInfo()) {
+                    MapInfo map = lastContentMap(contentTracks, contentIndex);
+                    if (map != null) {
+                        resume.withMapInfo(map);
+                    }
+                }
                 contentTrack = resume.build();
             }
             out.add(contentTrack);
@@ -682,6 +689,19 @@ public final class PlaylistSsaiUtil {
             }
         }
         return sum;
+    }
+
+    private static MapInfo lastContentMap(List<TrackData> tracks, int atOrBefore) {
+        if (tracks == null || tracks.isEmpty()) {
+            return null;
+        }
+        int start = Math.min(atOrBefore, tracks.size() - 1);
+        for (int i = start; i >= 0; i--) {
+            if (tracks.get(i).hasMapInfo()) {
+                return tracks.get(i).getMapInfo();
+            }
+        }
+        return null;
     }
 
     private static String firstProgramDateTime(List<TrackData> tracks) {

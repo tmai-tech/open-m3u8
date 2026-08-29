@@ -76,13 +76,46 @@ public final class DemoPlaylistPipeline {
 
     public Result process(DemoSession session, String playlistUrl, String publicBase)
             throws Exception {
+        long t0 = System.currentTimeMillis();
         DemoHttp.FetchResult remote = fetch.fetch(playlistUrl);
+        if (DemoHttp.looksLikePlaylist(playlistUrl, remote.contentType, remote.body)) {
+            DemoLog.event("origin")
+                    .sid(session != null ? session.id : null)
+                    .put("url", playlistUrl)
+                    .put("status", remote.status)
+                    .put("bytes", remote.body == null ? 0 : remote.body.length)
+                    .put("ms", System.currentTimeMillis() - t0)
+                    .write();
+        }
         if (remote.status >= 400) {
+            DemoLog.event("error")
+                    .sid(session != null ? session.id : null)
+                    .put("url", playlistUrl)
+                    .put("status", remote.status)
+                    .put("msg", "origin returned HTTP " + remote.status)
+                    .write();
             throw new DemoHttp.HttpException(remote.status > 0 ? remote.status : 502,
                     "origin returned HTTP " + remote.status + " for " + playlistUrl);
         }
         if (!DemoHttp.looksLikePlaylist(playlistUrl, remote.contentType, remote.body)) {
             return new Result(remote.body, "passthrough", false);
+        }
+
+        if (session.forceVod) {
+            byte[] pinned = session.getForcedVodSnapshot(playlistUrl);
+            if (pinned != null) {
+                DemoLog.Event pin = DemoLog.event("rewrite")
+                        .sid(session.id)
+                        .put("url", playlistUrl)
+                        .put("kind", "media")
+                        .put("strategy", session.strategy.wireName())
+                        .put("forceVod", true)
+                        .put("pin", true)
+                        .put("fallback", false);
+                DemoLog.summarizePlaylist(pin, pinned);
+                pin.write();
+                return new Result(pinned, "media", false);
+            }
         }
 
         final String proxyBase = publicBase + "/s/" + session.id;
@@ -95,31 +128,73 @@ public final class DemoPlaylistPipeline {
 
         try {
             Playlist playlist = PlaylistRewriteUtil.parse(remote.body, Encoding.UTF_8);
+            if (session.forceVod) {
+                playlist = snapshotAsVod(playlist);
+            }
             Playlist transformed = apply(session, playlist);
             Playlist rewritten = PlaylistRewriteUtil.rewriteUris(transformed, playlistUrl, mapper);
             byte[] out = PlaylistRewriteUtil.write(rewritten, Encoding.UTF_8);
             String kind = rewritten.hasMasterPlaylist() ? "master"
                     : rewritten.hasMediaPlaylist() ? "media" : "playlist";
-            return new Result(out, kind, false);
+            Result result = pinIfForcedVod(session, playlistUrl, new Result(out, kind, false));
+            logRewrite(session, playlistUrl, result, false, null);
+            return result;
         } catch (ParseException e) {
-            return fallbackUriRewrite(remote.body, playlistUrl, mapper, e);
+            Result result = pinIfForcedVod(session, playlistUrl,
+                    fallbackUriRewrite(session, remote.body, playlistUrl, mapper, e));
+            logRewrite(session, playlistUrl, result, true, e);
+            return result;
         } catch (PlaylistException e) {
-            return fallbackUriRewrite(remote.body, playlistUrl, mapper, e);
+            Result result = pinIfForcedVod(session, playlistUrl,
+                    fallbackUriRewrite(session, remote.body, playlistUrl, mapper, e));
+            logRewrite(session, playlistUrl, result, true, e);
+            return result;
         }
     }
 
-    private Result fallbackUriRewrite(byte[] body, String playlistUrl, UriMapper mapper, Exception e)
+    private static void logRewrite(DemoSession session, String playlistUrl, Result result,
+                                   boolean fallback, Exception err) {
+        DemoLog.Event ev = DemoLog.event("rewrite")
+                .sid(session != null ? session.id : null)
+                .put("url", playlistUrl)
+                .put("kind", result != null ? result.kind : "unknown")
+                .put("strategy", session != null ? session.strategy.wireName() : null)
+                .put("forceVod", session != null && session.forceVod)
+                .put("pin", false)
+                .put("fallback", fallback || (result != null && result.fallback));
+        if (result != null) {
+            DemoLog.summarizePlaylist(ev, result.body);
+        }
+        if (err != null) {
+            ev.put("msg", err.getClass().getSimpleName() + ": " + err.getMessage());
+        }
+        ev.write();
+    }
+
+    private Result fallbackUriRewrite(DemoSession session, byte[] body, String playlistUrl,
+                                      UriMapper mapper, Exception e)
             throws DemoHttp.HttpException {
         System.err.println("open-m3u8 parse/rewrite failed for " + playlistUrl + ": " + e
                 + " — falling back to URI rewrite only");
         try {
             String text = new String(body, StandardCharsets.UTF_8);
             String fixed = DemoHttp.rewritePlaylistUrisText(text, playlistUrl, mapper);
+            if (session != null && session.forceVod) {
+                fixed = snapshotAsVodText(fixed);
+            }
             return new Result(fixed.getBytes(StandardCharsets.UTF_8), "fallback", true);
         } catch (Exception fallbackEx) {
             throw new DemoHttp.HttpException(502,
                     "failed to parse playlist: " + e.getMessage());
         }
+    }
+
+    private static Result pinIfForcedVod(DemoSession session, String playlistUrl, Result result) {
+        if (session != null && session.forceVod && result != null && result.body != null
+                && !"master".equals(result.kind)) {
+            session.putForcedVodSnapshot(playlistUrl, result.body);
+        }
+        return result;
     }
 
     Playlist loadAdMediaPlaylist(DemoSession session) throws Exception {
@@ -169,6 +244,11 @@ public final class DemoPlaylistPipeline {
             } catch (Exception e) {
                 String msg = "failed to load ad playlist: " + e.getMessage();
                 session.setAdLoadError(msg);
+                DemoLog.event("error")
+                        .sid(session.id)
+                        .put("url", adUrl)
+                        .put("msg", msg)
+                        .write();
                 throw new DemoHttp.HttpException(502, msg);
             }
         }
@@ -180,6 +260,83 @@ public final class DemoPlaylistPipeline {
             throw new IOException("HTTP " + remote.status + " for " + url);
         }
         return PlaylistRewriteUtil.parse(remote.body, Encoding.UTF_8);
+    }
+
+    /**
+     * Freeze a live media playlist into a VOD snapshot of the current window:
+     * {@code EXT-X-ENDLIST} + {@code PLAYLIST-TYPE:VOD}, and drop {@code EXT-X-START}
+     * so playback begins at the first listed segment.
+     */
+    static Playlist snapshotAsVod(Playlist playlist) {
+        if (playlist == null || !playlist.hasMediaPlaylist()) {
+            return playlist;
+        }
+        MediaPlaylist media = playlist.getMediaPlaylist();
+        MediaPlaylist.Builder b = media.buildUpon()
+                .withIsOngoing(false)
+                .withPlaylistType(PlaylistType.VOD);
+        if (media.hasStartData()) {
+            b.withStartData(null);
+        }
+        return playlist.buildUpon().withMediaPlaylist(b.build()).build();
+    }
+
+    /**
+     * Text-level snapshot used when parse/write cannot run (unknown tags, huge
+     * media-sequence, etc.). Masters are left unchanged.
+     */
+    static String snapshotAsVodText(String text) {
+        if (text == null || text.indexOf("#EXTM3U") < 0) {
+            return text;
+        }
+        if (text.contains("#EXT-X-STREAM-INF") || text.contains("#EXT-X-I-FRAME-STREAM-INF")) {
+            return text;
+        }
+        boolean crlf = text.contains("\r\n");
+        String nl = crlf ? "\r\n" : "\n";
+        String[] lines = text.split("\\r?\\n", -1);
+        List<String> out = new java.util.ArrayList<String>(lines.length + 2);
+        boolean sawType = false;
+        boolean sawEnd = false;
+        int insertAfter = 0;
+        for (String line : lines) {
+            String trimmed = line.trim();
+            if (trimmed.startsWith("#EXT-X-START")) {
+                continue;
+            }
+            if (trimmed.startsWith("#EXT-X-PLAYLIST-TYPE:")) {
+                if (!sawType) {
+                    out.add("#EXT-X-PLAYLIST-TYPE:VOD");
+                    sawType = true;
+                }
+                continue;
+            }
+            if (trimmed.equals("#EXT-X-ENDLIST")) {
+                sawEnd = true;
+            }
+            out.add(line);
+            if (trimmed.equals("#EXTM3U") || trimmed.startsWith("#EXT-X-VERSION:")) {
+                insertAfter = out.size();
+            }
+        }
+        if (!sawType) {
+            out.add(insertAfter, "#EXT-X-PLAYLIST-TYPE:VOD");
+        }
+        if (!sawEnd) {
+            if (!out.isEmpty() && out.get(out.size() - 1).length() == 0) {
+                out.add(out.size() - 1, "#EXT-X-ENDLIST");
+            } else {
+                out.add("#EXT-X-ENDLIST");
+            }
+        }
+        StringBuilder sb = new StringBuilder(text.length() + 64);
+        for (int i = 0; i < out.size(); i++) {
+            if (i > 0) {
+                sb.append(nl);
+            }
+            sb.append(out.get(i));
+        }
+        return sb.toString();
     }
 
     static Playlist ensureVodHints(Playlist playlist) {

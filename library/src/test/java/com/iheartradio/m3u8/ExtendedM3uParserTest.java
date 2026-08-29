@@ -113,6 +113,27 @@ public class ExtendedM3uParserTest {
     }
 
     @Test
+    public void testParseLargeMediaSequenceAndMicrosecondPdt() throws Exception {
+        final String data =
+                "#EXTM3U\n" +
+                        "#EXT-X-VERSION:6\n" +
+                        "#EXT-X-MEDIA-SEQUENCE:5585863797\n" +
+                        "#EXT-X-TARGETDURATION:1\n" +
+                        "#EXT-X-MAP:URI=\"hls/init.m4s\"\n" +
+                        "#EXT-X-PROGRAM-DATE-TIME:2026-08-23T09:13:34.720000Z\n" +
+                        "#EXTINF:0.32, no desc\n" +
+                        "hls/seg.m4s\n";
+        final Playlist playlist = new ExtendedM3uParser(
+                new ByteArrayInputStream(data.getBytes("utf-8")),
+                Encoding.UTF_8,
+                ParsingMode.LENIENT).parse();
+        assertTrue(playlist.hasMediaPlaylist());
+        assertEquals(5585863797L, playlist.getMediaPlaylist().getMediaSequenceNumber());
+        assertEquals("2026-08-23T09:13:34.720000Z",
+                playlist.getMediaPlaylist().getTracks().get(0).getProgramDateTime());
+    }
+
+    @Test
     public void testParsingMultiplePlaylists() throws Exception {
         try (final InputStream inputStream = inputStreamFromResource("twoMediaPlaylists.m3u8")) {
             final PlaylistParser parser = new PlaylistParser(inputStream, Format.EXT_M3U, Encoding.UTF_8);

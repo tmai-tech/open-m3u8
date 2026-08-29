@@ -659,6 +659,10 @@ public final class DemoHttp {
         if (lower.endsWith(".png")) return "image/png";
         if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) return "image/jpeg";
         if (lower.endsWith(".m3u8")) return "application/vnd.apple.mpegurl";
+        if (lower.endsWith(".m4s") || lower.endsWith(".mp4") || lower.endsWith(".cmfv")
+                || lower.endsWith(".cmfa")) {
+            return "video/mp4";
+        }
         return "application/octet-stream";
     }
 

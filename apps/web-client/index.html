@@ -14,6 +14,7 @@
     <header class="ott-nav">
       <div class="ott-brand">HLS Demo</div>
       <p class="ott-nav-tag">Watch with stitched or interstitial ads</p>
+      <span class="session-id" id="sessionIdLabel" hidden>Session <a id="sessionIdLink" href="/api/logs" target="_blank" rel="noopener">—</a></span>
       <button type="button" class="btn btn-ghost btn-sm" id="btnStudio" aria-expanded="false">Ad setup</button>
     </header>
 
@@ -32,11 +33,25 @@
           <button type="button" class="play-orb" id="btnPlayOrb" aria-label="Play">▶</button>
         </div>
         <div id="adBadge" class="ad-badge" hidden>AD <span id="adCount">0s</span></div>
+        <div id="seekThumb" class="seek-thumb" hidden>
+          <img id="seekThumbImg" alt="" />
+          <span id="seekThumbTime" class="seek-thumb-t"></span>
+        </div>
       </div>
       <div class="seek-ad-bar" title="Ad positions on the content timeline">
         <span class="seek-ad-label">Ads</span>
         <div class="seek-ad-marks" id="seekMarks"></div>
       </div>
+      <div class="live-play-bar" id="livePlayBar" hidden>
+        <span class="seek-ad-label">Play as</span>
+        <button type="button" class="btn btn-ghost btn-sm" id="btnForceLive">Live</button>
+        <button type="button" class="btn btn-ghost btn-sm" id="btnForceVod">Snapshot</button>
+      </div>
+    </section>
+
+    <section class="rail" id="libraryRail">
+      <h3 class="rail-title">Library</h3>
+      <div class="rail-row" id="libraryCatalog"></div>
     </section>
 
     <section class="rail">
@@ -73,6 +88,7 @@
         <button class="btn btn-primary btn-sm" id="btnApply">Apply</button>
         <button class="btn btn-ghost btn-sm" id="btnGenerate">Generate</button>
         <button class="btn btn-ghost btn-sm" id="btnStop">Stop</button>
+        <button class="btn btn-ghost btn-sm" id="btnLogs" title="Dump session logs">Logs</button>
         <input id="publicManifestUrl" type="text" readonly placeholder="HTTPS" aria-label="Public HTTPS URL" />
         <button class="btn btn-ghost btn-sm" id="btnCopyPublic">Copy</button>
         <button class="btn btn-ghost btn-sm" id="btnWatch" disabled>hls.js</button>

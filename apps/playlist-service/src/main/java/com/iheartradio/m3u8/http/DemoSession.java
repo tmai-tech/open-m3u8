@@ -65,12 +65,15 @@ public final class DemoSession {
     public final String defaultRestrict;
     public final String defaultSnap;
     public final long createdAtMs;
+    public boolean forceVod;
 
     private volatile Playlist cachedAdMedia;
     private volatile String adLoadError;
     private final Object adLock = new Object();
     private final java.util.Map<String, Playlist> adCache =
             new java.util.concurrent.ConcurrentHashMap<String, Playlist>();
+    private final java.util.Map<String, byte[]> forcedVodSnapshots =
+            new java.util.concurrent.ConcurrentHashMap<String, byte[]>();
 
     public DemoSession(String id, Strategy strategy, String contentUrl, String adUrl,
                        List<Break> breaks, float maxAdDurationSec, StartData startOverride,
@@ -118,6 +121,16 @@ public final class DemoSession {
     public void putCachedAd(String url, Playlist playlist) {
         if (url != null && playlist != null) {
             adCache.put(url, playlist);
+        }
+    }
+
+    public byte[] getForcedVodSnapshot(String url) {
+        return url == null ? null : forcedVodSnapshots.get(url);
+    }
+
+    public void putForcedVodSnapshot(String url, byte[] body) {
+        if (url != null && body != null) {
+            forcedVodSnapshots.putIfAbsent(url, body);
         }
     }
 
@@ -245,6 +258,7 @@ public final class DemoSession {
         }
         sb.append("],");
         sb.append("\"maxAdDurationSec\":").append(maxAdDurationSec).append(',');
+        sb.append("\"forceVod\":").append(forceVod).append(',');
         String localManifest = publicBase + "/s/" + id + "/manifest";
         sb.append("\"manifestUrl\":").append(DemoHttp.jsonString(localManifest));
         String advertised = DemoHttp.advertisedPublicBase();
@@ -323,8 +337,10 @@ public final class DemoSession {
             snap = DemoHttp.jsonStringValue(json, "snap");
         }
 
-        return new DemoSession(id, strategy, content, ad, breaks, maxAd, start,
+        DemoSession session = new DemoSession(id, strategy, content, ad, breaks, maxAd, start,
                 snapSeg, resume, restrict, snap);
+        session.forceVod = DemoHttp.jsonBool(json, "forceVod", false);
+        return session;
     }
 
     public static DemoSession fromPlayQuery(String id, Strategy strategy, String content, String ad,

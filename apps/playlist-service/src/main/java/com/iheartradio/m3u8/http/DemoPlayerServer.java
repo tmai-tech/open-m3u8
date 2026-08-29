@@ -32,13 +32,19 @@ public final class DemoPlayerServer {
 
     private final int port;
     private final File staticRoot;
+    private final File mediaRoot;
     private final Map<String, DemoSession> sessions = new ConcurrentHashMap<String, DemoSession>();
     private final AtomicLong sessionCounter = new AtomicLong(0);
     private final DemoPlaylistPipeline pipeline = new DemoPlaylistPipeline();
 
     public DemoPlayerServer(int port, File staticRoot) {
+        this(port, staticRoot, locateMediaRoot());
+    }
+
+    public DemoPlayerServer(int port, File staticRoot, File mediaRoot) {
         this.port = port;
         this.staticRoot = staticRoot;
+        this.mediaRoot = mediaRoot;
     }
 
     public static void main(String[] args) throws Exception {
@@ -94,14 +100,30 @@ public final class DemoPlayerServer {
         return new File("apps/web-client").getAbsoluteFile();
     }
 
+    static File locateMediaRoot() {
+        File[] candidates = new File[] {
+                new File("media"),
+                new File(System.getProperty("user.dir", "."), "media"),
+                new File("open-m3u8/media"),
+        };
+        for (File f : candidates) {
+            if (f != null && f.isDirectory()) {
+                return f.getAbsoluteFile();
+            }
+        }
+        return new File("media").getAbsoluteFile();
+    }
+
     public void start() throws IOException {
         HttpServer server = HttpServer.create(new InetSocketAddress(BIND_HOST, port), 0);
         server.createContext("/", new RootHandler());
         server.createContext("/api/health", new HealthHandler());
         server.createContext("/api/origin", new OriginApiHandler());
         server.createContext("/api/session", new SessionApiHandler());
+        server.createContext("/api/logs", new LogsApiHandler());
         server.createContext("/play", new PlayHandler());
         server.createContext("/s/", new SessionResourceHandler());
+        server.createContext("/media/", new MediaHandler());
         server.setExecutor(Executors.newFixedThreadPool(16));
         server.start();
         DemoHttp.startPublicBaseDiscovery();
@@ -115,14 +137,41 @@ public final class DemoPlayerServer {
         System.out.println("  Play:     http://127.0.0.1:" + port
                 + "/play?strategy=ssai&content=<m3u8>&ad=<m3u8>&splices=30,90");
         System.out.println("  Manifest: http://127.0.0.1:" + port + "/s/{id}/manifest");
+        System.out.println("  Logs:     http://127.0.0.1:" + port + "/api/logs");
         System.out.println("  Engine:   DemoPlaylistPipeline (injectMediaTags | stitch)");
         System.out.println("  Static:   " + staticRoot.getAbsolutePath());
+        System.out.println("  Media:    " + mediaRoot.getAbsolutePath());
+        System.out.println("  Log file: " + DemoLog.logFile().getAbsolutePath());
     }
 
     DemoSession createSession(DemoSession session) {
         expireOldSessions();
         sessions.put(session.id, session);
+        logSession(session);
         return session;
+    }
+
+    private static void logSession(DemoSession session) {
+        if (session == null) {
+            return;
+        }
+        StringBuilder offs = new StringBuilder("[");
+        for (int i = 0; i < session.breaks.size(); i++) {
+            if (i > 0) {
+                offs.append(',');
+            }
+            offs.append(session.breaks.get(i).offsetSec);
+        }
+        offs.append(']');
+        DemoLog.event("session")
+                .sid(session.id)
+                .put("strategy", session.strategy.wireName())
+                .put("forceVod", session.forceVod)
+                .put("contentUrl", session.contentUrl)
+                .put("adUrl", session.adUrl)
+                .put("breakCount", session.breaks.size())
+                .putRaw("splices", offs.toString())
+                .write();
     }
 
     DemoSession newSessionFromJson(String json) {
@@ -180,6 +229,36 @@ public final class DemoPlayerServer {
                     + (pub == null ? "null" : DemoHttp.jsonString(pub))
                     + "}";
             DemoHttp.send(ex, 200, "application/json; charset=utf-8", body);
+        }
+    }
+
+    private final class LogsApiHandler implements HttpHandler {
+        @Override
+        public void handle(HttpExchange ex) throws IOException {
+            if ("OPTIONS".equalsIgnoreCase(ex.getRequestMethod())) {
+                DemoHttp.sendCors(ex, 204, new byte[0], "application/json");
+                return;
+            }
+            if (!"GET".equalsIgnoreCase(ex.getRequestMethod())
+                    && !"HEAD".equalsIgnoreCase(ex.getRequestMethod())) {
+                DemoHttp.send(ex, 405, "text/plain", "method not allowed");
+                return;
+            }
+            String q = ex.getRequestURI().getRawQuery();
+            String sid = DemoHttp.decode(DemoHttp.queryParam(q, "session"));
+            if (sid == null) {
+                sid = DemoHttp.decode(DemoHttp.queryParam(q, "id"));
+            }
+            int limit = DemoLog.DEFAULT_DUMP_LIMIT;
+            String limitRaw = DemoHttp.decode(DemoHttp.queryParam(q, "limit"));
+            if (limitRaw != null && limitRaw.length() > 0) {
+                try {
+                    limit = Integer.parseInt(limitRaw);
+                } catch (NumberFormatException ignored) {
+                    // keep default
+                }
+            }
+            DemoHttp.send(ex, 200, "application/json; charset=utf-8", DemoLog.dumpJson(sid, limit));
         }
     }
 
@@ -273,9 +352,11 @@ public final class DemoPlayerServer {
                             + s.toJson(DemoHttp.publicBase(ex, port)) + "}";
                     DemoHttp.send(ex, 200, "application/json; charset=utf-8", resp);
                 } catch (IllegalArgumentException e) {
+                    DemoLog.event("error").put("evSrc", "session").put("msg", e.getMessage()).write();
                     DemoHttp.send(ex, 400, "application/json; charset=utf-8",
                             "{\"error\":" + DemoHttp.jsonString(e.getMessage()) + "}");
                 } catch (Exception e) {
+                    DemoLog.event("error").put("evSrc", "session").put("msg", e.getMessage()).write();
                     DemoHttp.send(ex, 400, "application/json; charset=utf-8",
                             "{\"error\":" + DemoHttp.jsonString(e.getMessage()) + "}");
                 }
@@ -423,14 +504,46 @@ public final class DemoPlayerServer {
             DemoHttp.writePlaylistResponse(ex, result.body, playlistUrl, result.kind,
                     session.strategy.wireName());
         } catch (DemoHttp.HttpException e) {
+            DemoLog.event("error")
+                    .sid(session.id)
+                    .put("url", playlistUrl)
+                    .put("status", e.status)
+                    .put("msg", e.getMessage())
+                    .write();
             DemoHttp.send(ex, e.status, "application/json; charset=utf-8",
                     "{\"error\":" + DemoHttp.jsonString(e.getMessage())
                             + ",\"url\":" + DemoHttp.jsonString(playlistUrl) + "}");
         } catch (Exception e) {
             e.printStackTrace();
+            DemoLog.event("error")
+                    .sid(session.id)
+                    .put("url", playlistUrl)
+                    .put("status", 502)
+                    .put("msg", e.getMessage())
+                    .write();
             DemoHttp.send(ex, 502, "application/json; charset=utf-8",
                     "{\"error\":" + DemoHttp.jsonString("rewrite failed: " + e.getMessage())
                             + ",\"url\":" + DemoHttp.jsonString(playlistUrl) + "}");
+        }
+    }
+
+    private final class MediaHandler implements HttpHandler {
+        @Override
+        public void handle(HttpExchange ex) throws IOException {
+            if ("OPTIONS".equalsIgnoreCase(ex.getRequestMethod())) {
+                DemoHttp.sendCors(ex, 204, new byte[0], "text/plain");
+                return;
+            }
+            if (!"GET".equalsIgnoreCase(ex.getRequestMethod())
+                    && !"HEAD".equalsIgnoreCase(ex.getRequestMethod())) {
+                DemoHttp.send(ex, 405, "text/plain", "method not allowed");
+                return;
+            }
+            String path = ex.getRequestURI().getPath();
+            String rel = path != null && path.startsWith("/media") ? path.substring("/media".length()) : path;
+            if (!DemoHttp.serveStatic(ex, mediaRoot, rel)) {
+                DemoHttp.send(ex, 404, "text/plain", "not found");
+            }
         }
     }
 
@@ -448,7 +561,7 @@ public final class DemoPlayerServer {
             }
             String path = ex.getRequestURI().getPath();
             if (path != null && (path.startsWith("/api/") || path.startsWith("/s/")
-                    || path.equals("/play") || path.startsWith("/play/"))) {
+                    || path.startsWith("/media/") || path.equals("/play") || path.startsWith("/play/"))) {
                 DemoHttp.send(ex, 404, "text/plain", "not found");
                 return;
             }

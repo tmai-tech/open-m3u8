@@ -12,7 +12,7 @@ class MediaParseState implements PlaylistParseState<MediaPlaylist> {
     public final List<TrackData> tracks = new ArrayList<>();
 
     public Integer targetDuration;
-    public Integer mediaSequenceNumber;
+    public Long mediaSequenceNumber;
     public boolean isIframesOnly;
     public PlaylistType playlistType;
     public TrackInfo trackInfo;

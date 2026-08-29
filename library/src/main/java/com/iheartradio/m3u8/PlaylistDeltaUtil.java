@@ -76,10 +76,10 @@ public final class PlaylistDeltaUtil {
 
         final SkipData skipData = deltaMedia.getSkipData();
         final int skipped = skipData.getSkippedSegments();
-        final int deltaMsn = deltaMedia.getMediaSequenceNumber();
-        final int prevMsn = prevMedia.getMediaSequenceNumber();
+        final long deltaMsn = deltaMedia.getMediaSequenceNumber();
+        final long prevMsn = prevMedia.getMediaSequenceNumber();
 
-        final Map<Integer, TrackData> previousBySequence = new HashMap<Integer, TrackData>();
+        final Map<Long, TrackData> previousBySequence = new HashMap<Long, TrackData>();
         final List<TrackData> prevTracks = prevMedia.getTracks();
         for (int i = 0; i < prevTracks.size(); i++) {
             previousBySequence.put(prevMsn + i, prevTracks.get(i));
@@ -87,7 +87,7 @@ public final class PlaylistDeltaUtil {
 
         final List<TrackData> mergedTracks = new ArrayList<TrackData>();
         for (int i = 0; i < skipped; i++) {
-            final int sequence = deltaMsn + i;
+            final long sequence = deltaMsn + i;
             final TrackData track = previousBySequence.get(sequence);
             if (track == null) {
                 throw new PlaylistException("", java.util.Collections.singleton(PlaylistError.DELTA_UPDATE_MISSING_SEGMENTS));
