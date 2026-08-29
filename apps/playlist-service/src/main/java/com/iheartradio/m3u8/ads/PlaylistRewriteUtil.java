@@ -28,6 +28,7 @@ import java.io.UnsupportedEncodingException;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.text.SimpleDateFormat;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -610,13 +611,19 @@ public final class PlaylistRewriteUtil {
         if (iso == null || iso.length() == 0) {
             return -1;
         }
+        String raw = iso.trim();
         try {
-            String s = iso.trim();
-            // Support trailing Z
+            return Instant.parse(toInstantString(raw)).toEpochMilli();
+        } catch (Exception ignored) {
+            // fall through
+        }
+        try {
+            // SimpleDateFormat treats S as milliseconds and is greedy: ".920000" becomes
+            // 920000ms (15+ minutes). Truncate to 3 fractional digits first.
+            String s = raw.replaceFirst("(\\.\\d{3})\\d+", "$1");
             if (s.endsWith("Z") || s.endsWith("z")) {
                 s = s.substring(0, s.length() - 1) + "+0000";
             }
-            // Normalize +00:00 → +0000 for SimpleDateFormat
             if (s.length() > 5 && (s.charAt(s.length() - 3) == ':') &&
                     (s.charAt(s.length() - 6) == '+' || s.charAt(s.length() - 6) == '-')) {
                 s = s.substring(0, s.length() - 3) + s.substring(s.length() - 2);
@@ -645,5 +652,25 @@ public final class PlaylistRewriteUtil {
             // fall through
         }
         return -1;
+    }
+
+    /** {@link Instant#parse} needs {@code Z} or {@code ±HH:MM}. */
+    private static String toInstantString(String s) {
+        if (s.endsWith("Z") || s.endsWith("z")) {
+            return s.substring(0, s.length() - 1) + "Z";
+        }
+        int t = s.indexOf('T');
+        if (t > 0) {
+            int plus = s.indexOf('+', t);
+            int minus = s.indexOf('-', t + 1);
+            int sign = plus >= 0 ? plus : minus;
+            if (sign >= 0 && s.indexOf(':', sign) < 0 && s.length() == sign + 5) {
+                return s.substring(0, sign + 3) + ":" + s.substring(sign + 3);
+            }
+            if (sign < 0) {
+                return s + "Z";
+            }
+        }
+        return s;
     }
 }

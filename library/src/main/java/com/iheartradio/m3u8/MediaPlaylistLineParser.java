@@ -231,7 +231,7 @@ class MediaPlaylistLineParser implements LineParser {
                 throw ParseException.create(ParseExceptionType.MULTIPLE_EXT_TAG_INSTANCES, getTag(), line);
             }
 
-            state.getMedia().mediaSequenceNumber = ParseUtil.parseInt(matcher.group(1), getTag());
+            state.getMedia().mediaSequenceNumber = ParseUtil.parseLong(matcher.group(1), getTag());
         }
     };
 

@@ -13,6 +13,12 @@ export const SAMPLES = {
   fdr: "https://cdn.jwplayer.com/manifests/pZxWPRg4.m3u8",
   blender: "https://ireplay.tv/test/blender.m3u8",
   unifiedLive: "https://demo.unified-streaming.com/k8s/low-latency/stable/channel1/channel1.isml/.m3u8",
+  mars: "/media/titles/summer-on-mars/master.m3u8",
+  giff: "/media/titles/giff-day-1/master.m3u8",
+  grok: "/media/titles/grok-clip/master.m3u8",
+  adMars: "/media/ads/mars-clip/master.m3u8",
+  adGiff: "/media/ads/giff-day-1/master.m3u8",
+  adGrok: "/media/ads/grok-clip/master.m3u8",
 };
 
 export const HINTS = {
@@ -39,6 +45,8 @@ export const state = {
   watchingAds: false,
   lastPublicBase: null,
   liveMode: false,
+  forceVod: false,
+  windowDuration: 0,
   seekGuard: false,
   ssaiSeekQueue: [],
   ssaiFinalTarget: null,
@@ -48,3 +56,8 @@ export const state = {
   lastGoodTime: new WeakMap(),
   mediaCurrentTime: Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, "currentTime"),
 };
+
+/** Ads are allowed on catalog VOD and on a live Snapshot — not on rolling Live. */
+export function adsAllowed() {
+  return !state.liveMode || !!state.forceVod;
+}

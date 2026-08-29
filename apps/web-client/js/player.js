@@ -1,5 +1,5 @@
 import { $, bind } from "./dom.js";
-import { state } from "./state.js";
+import { adsAllowed, state } from "./state.js";
 import { highlight, setStatus } from "./status.js";
 import { createSession } from "./api.js";
 import { setManifestButtons } from "./form.js";
@@ -9,17 +9,36 @@ import { refreshAdLabel, setAdLabel } from "./ad-overlay.js";
 import { resetAdClock } from "./seek-sgai.js";
 import { startAdWatch, stopAdWatch, guardInterstitialMedia } from "./seek-guard.js";
 import { hidePoster, setPosterHint, showPoster } from "./ott.js";
+import { startSeekThumbs, stopSeekThumbs } from "./seek-thumbs.js";
 
 let onDestroyed = () => {};
 export function setOnDestroyed(fn) { onDestroyed = fn || (() => {}); }
 
+export function showSessionId(id) {
+  const label = $("sessionIdLabel");
+  const link = $("sessionIdLink");
+  if (!label || !link) return;
+  if (!id || id === "static") {
+    label.hidden = true;
+    link.textContent = "—";
+    link.href = "/api/logs";
+    return;
+  }
+  label.hidden = false;
+  link.textContent = id;
+  link.href = "/api/logs?session=" + encodeURIComponent(id);
+}
+
 export function destroyPlayer() {
+  stopSeekThumbs();
   stopAdWatch();
   if (state.hls) { state.hls.destroy(); state.hls = null; }
   const v = $("video");
   v.removeAttribute("src");
   v.load();
-  state.mediaDuration = 0;
+  state.mediaDuration = (state.liveMode && state.forceVod && state.windowDuration)
+    ? state.windowDuration
+    : 0;
   setAdLabel(false);
   onDestroyed();
 }
@@ -46,6 +65,7 @@ export function playUrl(manifestUrl, enableInterstitials, staticSession) {
     state.hls = new Hls(cfg);
     state.hls.loadSource(manifestUrl);
     state.hls.attachMedia(video);
+    startSeekThumbs(manifestUrl);
     startAdWatch();
     const hookInterstitial = () => {
       const im = state.hls && state.hls.interstitialsManager;
@@ -75,6 +95,7 @@ export function playUrl(manifestUrl, enableInterstitials, staticSession) {
         const fromVideo = video.duration;
         const next = (isFinite(fromVideo) && fromVideo > fromLevel) ? fromVideo : fromLevel;
         if (next > state.mediaDuration) state.mediaDuration = next;
+        if (state.liveMode && state.forceVod) state.windowDuration = state.mediaDuration;
         $("tlHint").textContent = "Duration " + Math.round(state.mediaDuration) + "s — click to add a break.";
         renderTimeline();
       }
@@ -96,6 +117,7 @@ export function playUrl(manifestUrl, enableInterstitials, staticSession) {
     return;
   }
   startAdWatch();
+  startSeekThumbs(manifestUrl);
   video.src = manifestUrl;
   video.play().catch(() => {});
   hidePoster();
@@ -104,6 +126,7 @@ export function playUrl(manifestUrl, enableInterstitials, staticSession) {
 
 export async function apply(andPlay) {
   try {
+    if (andPlay) destroyPlayer();
     $("btnApply").disabled = true;
     if (state.strategy === "sgai" && $("playPath").value === "direct") {
       const url = $("contentUrl").value.trim();
@@ -111,14 +134,16 @@ export async function apply(andPlay) {
       $("manifestUrl").value = url;
       setManifestButtons(true);
       $("sessionMeta").textContent = "Direct CDN — tags are not on the Network response.";
+      showSessionId(null);
       $("preview").textContent = "// direct mode: original CDN playlist (no server rewrite)";
-      if (andPlay) playUrl(url, !state.liveMode);
+      if (andPlay) playUrl(url, adsAllowed());
       setStatus("Direct mode — hls.js may inject client-side. Use Local rewrite to see tags in Network.", "ok");
       return;
     }
     setStatus("Creating " + state.strategy.toUpperCase() + " session…");
     const session = await createSession();
     state.lastSession = session;
+    showSessionId(session && session.id);
     if (session.publicManifestUrl) {
       state.lastPublicBase = session.publicManifestUrl.replace(/\/s\/.*$/, "");
     }
@@ -137,7 +162,7 @@ export async function apply(andPlay) {
         "<strong>GitHub Pages (static)</strong> · " + state.strategy.toUpperCase() +
         " · ads applied in the browser · CORS required on content/ad hosts";
       setStatus(state.strategy.toUpperCase() + " ready (in-browser rewrite).", "ok");
-      if (andPlay) playUrl(session.contentUrl, !state.liveMode && state.strategy === "sgai", session);
+      if (andPlay) playUrl(session.contentUrl, adsAllowed() && state.strategy === "sgai", session);
       return;
     }
     $("manifestUrl").value = session.manifestUrl;
@@ -152,7 +177,7 @@ export async function apply(andPlay) {
     $("preview").innerHTML = highlight(text);
     state.adWindows = parseCueWindows(text);
     setStatus(state.strategy.toUpperCase() + " manifest ready.", "ok");
-    if (andPlay) playUrl(session.manifestUrl, !state.liveMode && state.strategy === "sgai");
+    if (andPlay) playUrl(session.manifestUrl, adsAllowed() && state.strategy === "sgai");
   } catch (e) {
     const msg = String(e.message || e);
     showPoster();
@@ -167,4 +192,8 @@ export function bindPlayer() {
   bind("btnApply", "click", () => apply(true));
   bind("btnGenerate", "click", () => apply(false));
   bind("btnStop", "click", () => { destroyPlayer(); setAdLabel(false); setStatus("Player stopped."); });
+  bind("btnLogs", "click", () => {
+    const id = state.lastSession && state.lastSession.id;
+    window.open(id ? ("/api/logs?session=" + encodeURIComponent(id)) : "/api/logs", "_blank");
+  });
 }

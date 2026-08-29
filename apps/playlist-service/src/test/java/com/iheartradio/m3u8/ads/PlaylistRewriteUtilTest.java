@@ -116,6 +116,51 @@ public class PlaylistRewriteUtilTest {
     }
 
     @Test
+    public void parseIsoToMsKeepsMicrosecondFractionAsMillis() {
+        long expected = java.time.Instant.parse("2026-08-23T10:20:17.920Z").toEpochMilli();
+        assertEquals(expected, PlaylistRewriteUtil.parseIsoToMs("2026-08-23T10:20:17.920000Z"));
+        assertEquals(expected, PlaylistRewriteUtil.parseIsoToMs("2026-08-23T10:20:17.920Z"));
+        long offset = PlaylistRewriteUtil.parseIsoToMs("2026-08-23T12:14:41+02:00");
+        assertEquals(java.time.Instant.parse("2026-08-23T12:14:41+02:00").toEpochMilli(), offset);
+    }
+
+    @Test
+    public void injectStartDateFollowsMicrosecondProgramDateTime() throws Exception {
+        TrackData t0 = new TrackData.Builder()
+                .withUri("hls/c0.m4s")
+                .withTrackInfo(new TrackInfo(1f, null))
+                .withProgramDateTime("2026-08-23T10:20:17.920000Z")
+                .build();
+        TrackData t1 = new TrackData.Builder()
+                .withUri("hls/c1.m4s")
+                .withTrackInfo(new TrackInfo(1f, null))
+                .build();
+        Playlist original = new Playlist.Builder()
+                .withCompatibilityVersion(6)
+                .withExtended(true)
+                .withMediaPlaylist(new MediaPlaylist.Builder()
+                        .withTargetDuration(1)
+                        .withMediaSequenceNumber(0)
+                        .withIsOngoing(false)
+                        .withTracks(Arrays.asList(t0, t1))
+                        .build())
+                .build();
+        Playlist rewritten = PlaylistRewriteUtil.injectMediaTags(
+                original,
+                PlaylistRewriteUtil.InjectConfig.builder()
+                        .addBreak(new PlaylistRewriteUtil.InterstitialBreak(
+                                "user-ad-1", 1f, 12f, "https://ads.example.com/ad.m3u8"))
+                        .withSnapToSegment(true)
+                        .withDefaultResumeOffset(0f)
+                        .build());
+        String start = rewritten.getMediaPlaylist().getDateRanges().get(0).getStartDate();
+        long startMs = PlaylistRewriteUtil.parseIsoToMs(start);
+        long baseMs = PlaylistRewriteUtil.parseIsoToMs("2026-08-23T10:20:17.920000Z");
+        assertEquals(baseMs + 1000L, startMs);
+        assertFalse(start.contains("10:35:"));
+    }
+
+    @Test
     public void rewriteUrisThroughProxyMapper() throws Exception {
         final String source = ""
                 + "#EXTM3U\n"

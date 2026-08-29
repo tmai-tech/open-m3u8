@@ -18,6 +18,14 @@ final class ParseUtil {
         }
     }
 
+    public static long parseLong(String string, String tag) throws ParseException {
+        try {
+            return Long.parseLong(string);
+        } catch (NumberFormatException exception) {
+            throw ParseException.create(ParseExceptionType.NOT_JAVA_INTEGER, tag, string);
+        }
+    }
+
     public static <T extends Enum<T>> T parseEnum(String string, Class<T> enumType, String tag) throws ParseException {
         try {
             return Enum.valueOf(enumType, string);

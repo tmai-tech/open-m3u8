@@ -6,6 +6,7 @@ import com.iheartradio.m3u8.PlaylistParser;
 import com.iheartradio.m3u8.PlaylistWriter;
 import com.iheartradio.m3u8.data.EncryptionData;
 import com.iheartradio.m3u8.data.EncryptionMethod;
+import com.iheartradio.m3u8.data.MapInfo;
 import com.iheartradio.m3u8.data.MediaPlaylist;
 import com.iheartradio.m3u8.data.Playlist;
 import com.iheartradio.m3u8.data.TrackData;
@@ -310,6 +311,39 @@ public class PlaylistSsaiUtilTest {
         assertEquals(5, tracks.size());
         assertTrue(tracks.get(1).hasCueOut());
         assertEquals(30f, tracks.get(1).getCueOut().getDuration(), 1e-4);
+    }
+
+    @Test
+    public void stitchReemitsMapAfterAdOnFmp4Content() throws Exception {
+        MapInfo init = new MapInfo.Builder().withUri("hls/init.m4s").build();
+        Playlist content = contentPlaylist(
+                new TrackData.Builder()
+                        .withUri("hls/c0.m4s")
+                        .withTrackInfo(new TrackInfo(1f, null))
+                        .withMapInfo(init)
+                        .build(),
+                track("hls/c1.m4s", 1f),
+                track("hls/c2.m4s", 1f));
+        PlaylistSsaiUtil.AdBreak mid = PlaylistSsaiUtil.AdBreak.builder()
+                .withId("mid-map")
+                .atOffsetSec(1f)
+                .addAdSegment("http://ads/a0.ts", 4f)
+                .build();
+        Playlist stitched = PlaylistSsaiUtil.stitch(content, Collections.singletonList(mid));
+        List<TrackData> tracks = stitched.getMediaPlaylist().getTracks();
+        assertEquals("hls/c1.m4s", tracks.get(2).getUri());
+        assertTrue(tracks.get(2).hasDiscontinuity());
+        assertTrue(tracks.get(2).hasMapInfo());
+        assertEquals("hls/init.m4s", tracks.get(2).getMapInfo().getUri());
+
+        ByteArrayOutputStream os = new ByteArrayOutputStream();
+        new PlaylistWriter(os, Format.EXT_M3U, Encoding.UTF_8).write(stitched);
+        String text = os.toString("UTF-8");
+        assertTrue(text.contains("#EXT-X-CUE-IN"));
+        int cueIn = text.indexOf("#EXT-X-CUE-IN");
+        int mapAfter = text.indexOf("#EXT-X-MAP", cueIn);
+        assertTrue(mapAfter > cueIn);
+        assertTrue(text.substring(mapAfter).contains("hls/init.m4s"));
     }
 
     private static float durationSum(List<TrackData> tracks) {

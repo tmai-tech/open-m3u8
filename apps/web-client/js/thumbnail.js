@@ -1,6 +1,10 @@
 function resolveUrl(base, ref) {
-  if (ref && ref.indexOf("/api/origin?") === 0) return ref;
-  try { return new URL(ref, base).href; } catch (_) { return ref; }
+  if (ref && (ref.indexOf("/api/origin?") === 0 || ref.indexOf("/s/") === 0)) return ref;
+  let b = base || "";
+  if (b && b.charAt(0) === "/" && typeof location !== "undefined") {
+    b = location.origin + b;
+  }
+  try { return new URL(ref, b).href; } catch (_) { return ref; }
 }
 
 function parseAttrMap(line) {
@@ -55,6 +59,10 @@ export function pickPosterPlaylist(masterText, masterUrl) {
 export function viaOrigin(url) {
   if (!url) return url;
   if (url.indexOf("/api/origin?") >= 0) return url;
+  if (url.charAt(0) === "/") return url;
+  try {
+    if (typeof location !== "undefined" && new URL(url).origin === location.origin) return url;
+  } catch (_) { /* wrap remote */ }
   return "/api/origin?url=" + encodeURIComponent(url);
 }
 
@@ -68,6 +76,33 @@ export async function fetchText(url) {
   return res.text();
 }
 
+/** Sum EXTINF durations. Used as the Snapshot ad timeline before play. */
+export function playlistDurationSec(text) {
+  let total = 0;
+  const lines = String(text || "").replace(/\r/g, "").split("\n");
+  for (let i = 0; i < lines.length; i++) {
+    const m = /^#EXTINF:(-?\d+(?:\.\d+)?)/i.exec(lines[i].trim());
+    if (m) total += Number(m[1]);
+  }
+  return total;
+}
+
+/**
+ * Duration of the current live window (or a VOD media playlist).
+ * Follows the lowest video variant when {@code url} is a master.
+ */
+export async function probeMediaDuration(url) {
+  if (!url) return 0;
+  const first = await fetchText(url);
+  if (!/#EXT-X-STREAM-INF/i.test(first)) {
+    return playlistDurationSec(first);
+  }
+  const pick = pickPosterPlaylist(first, url);
+  if (!pick.variant) return 0;
+  const media = await fetchText(pick.variant);
+  return playlistDurationSec(media);
+}
+
 function captureFrame(video) {
   const w = video.videoWidth || 640;
   const h = video.videoHeight || 360;
@@ -79,9 +114,67 @@ function captureFrame(video) {
   return canvas.toDataURL("image/jpeg", 0.82);
 }
 
+const MAX_CAPTURES = 2;
+let capturesActive = 0;
+const captureWaiters = [];
+
+function acquireCapture() {
+  return new Promise((resolve) => {
+    if (capturesActive < MAX_CAPTURES) {
+      capturesActive++;
+      resolve();
+      return;
+    }
+    captureWaiters.push(resolve);
+  });
+}
+
+function releaseCapture() {
+  capturesActive--;
+  if (captureWaiters.length && capturesActive < MAX_CAPTURES) {
+    capturesActive++;
+    captureWaiters.shift()();
+  }
+}
+
+function posterSeekTime(video) {
+  const d = video.duration;
+  if (isFinite(d) && d > 0) return d * 0.2;
+  const s = video.seekable;
+  if (s && s.length) {
+    const start = s.start(0);
+    const end = s.end(s.length - 1);
+    if (end > start) return start + (end - start) * 0.2;
+  }
+  return 3;
+}
+
+function waitPosterFrame(video) {
+  return new Promise((resolve) => {
+    let settled = false;
+    const done = () => {
+      if (settled) return;
+      settled = true;
+      try { video.pause(); } catch (_) { /* ignore */ }
+      resolve();
+    };
+    setTimeout(done, 600);
+    const afterPlay = () => {
+      if (video.requestVideoFrameCallback) {
+        video.requestVideoFrameCallback(() => done());
+        return;
+      }
+      done();
+    };
+    const p = video.play();
+    if (p && p.then) p.then(afterPlay).catch(done);
+    else afterPlay();
+  });
+}
+
 export function capturePosterFromUrl(srcUrl, timeoutMs) {
   timeoutMs = timeoutMs || 18000;
-  return new Promise((resolve, reject) => {
+  return acquireCapture().then(() => new Promise((resolve, reject) => {
     if (!srcUrl || !window.Hls || !Hls.isSupported()) {
       reject(new Error("no player"));
       return;
@@ -90,6 +183,7 @@ export function capturePosterFromUrl(srcUrl, timeoutMs) {
     video.muted = true;
     video.playsInline = true;
     video.preload = "auto";
+    video.crossOrigin = "anonymous";
     video.setAttribute("playsinline", "");
     video.style.cssText = "position:fixed;left:-4000px;top:0;width:160px;height:90px;opacity:0;pointer-events:none";
     document.body.appendChild(video);
@@ -109,29 +203,28 @@ export function capturePosterFromUrl(srcUrl, timeoutMs) {
       if (data && data.fatal) finish(new Error(data.details || "hls error"));
     });
     hls.on(Hls.Events.MANIFEST_PARSED, () => {
-      const seekTo = 3;
       const grab = () => {
-        try {
-          if (video.videoWidth < 2) {
-            video.play().then(() => {
-              video.pause();
-              finish(null, captureFrame(video));
-            }).catch(() => finish(new Error("play failed")));
-            return;
+        waitPosterFrame(video).then(() => {
+          try {
+            if (video.videoWidth < 2) {
+              finish(new Error("no frame"));
+              return;
+            }
+            finish(null, captureFrame(video));
+          } catch (e) {
+            finish(e);
           }
-          finish(null, captureFrame(video));
-        } catch (e) {
-          finish(e);
-        }
+        });
       };
       const onSeeked = () => {
         video.removeEventListener("seeked", onSeeked);
         grab();
       };
       video.addEventListener("loadeddata", () => {
-        if (video.seekable && video.seekable.length) {
+        const target = posterSeekTime(video);
+        if (video.seekable && video.seekable.length && isFinite(target)) {
           video.addEventListener("seeked", onSeeked);
-          try { video.currentTime = Math.min(seekTo, Math.max(0.1, (video.duration || seekTo) * 0.05)); }
+          try { video.currentTime = target; }
           catch (_) { grab(); }
         } else {
           grab();
@@ -140,7 +233,7 @@ export function capturePosterFromUrl(srcUrl, timeoutMs) {
     });
     hls.loadSource(srcUrl);
     hls.attachMedia(video);
-  });
+  })).finally(releaseCapture);
 }
 
 export function dummyPosterDataUrl(title, line) {
@@ -165,7 +258,8 @@ export function dummyPosterDataUrl(title, line) {
   return canvas.toDataURL("image/jpeg", 0.85);
 }
 
-export async function loadPoster(contentUrl) {
+export async function loadPoster(contentUrl, opts) {
+  const allowVariant = !opts || opts.allowVariant !== false;
   try {
     const text = await fetchText(contentUrl);
     const pick = pickPosterPlaylist(text, contentUrl);
@@ -174,12 +268,16 @@ export async function loadPoster(contentUrl) {
         const dataUrl = await capturePosterFromUrl(viaOrigin(pick.url));
         return { dataUrl, kind: pick.kind, source: pick.url };
       } catch (_) {
-        if (pick.variant) {
+        if (allowVariant && pick.variant) {
           const dataUrl = await capturePosterFromUrl(viaOrigin(pick.variant));
-          return { dataUrl, kind: pick.kind, source: pick.variant };
+          return { dataUrl, kind: "variant", source: pick.variant };
         }
         throw _;
       }
+    }
+    if (allowVariant && pick.variant) {
+      const dataUrl = await capturePosterFromUrl(viaOrigin(pick.variant));
+      return { dataUrl, kind: "variant", source: pick.variant };
     }
     return { kind: "dummy" };
   } catch (_) {

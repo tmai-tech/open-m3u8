@@ -162,7 +162,7 @@ abstract class MediaPlaylistTagWriter extends ExtTagWriter {
         
         @Override
         public void doWrite(TagWriter tagWriter, Playlist playlist, MediaPlaylist mediaPlaylist) throws IOException ,ParseException {
-            tagWriter.writeTag(getTag(), Integer.toString(mediaPlaylist.getMediaSequenceNumber()));
+            tagWriter.writeTag(getTag(), Long.toString(mediaPlaylist.getMediaSequenceNumber()));
         };
     };
 
@@ -904,6 +904,10 @@ abstract class MediaPlaylistTagWriter extends ExtTagWriter {
         }
 
         void writeTrackData(TagWriter tagWriter, Playlist playlist, TrackData trackData) throws IOException, ParseException {
+            if (trackData != null && trackData.hasDiscontinuity()) {
+                // fMP4 init must be re-announced after a discontinuity (ad → content).
+                mMapInfo = null;
+            }
             if (trackData != null && trackData.getMapInfo() != null) {
                 final MapInfo mapInfo = trackData.getMapInfo();
                 if (!mapInfo.equals(mMapInfo)) {

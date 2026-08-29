@@ -9,7 +9,7 @@ public class MediaPlaylist {
     private final List<DateRangeData> mDateRanges;
     private final List<DefineData> mDefines;
     private final int mTargetDuration;
-    private final int mMediaSequenceNumber;
+    private final long mMediaSequenceNumber;
     private final boolean mIsIframesOnly;
     private final boolean mIsOngoing;
     private final PlaylistType mPlaylistType;
@@ -17,7 +17,7 @@ public class MediaPlaylist {
     private final ServerControlData mServerControlData;
     private final SkipData mSkipData;
 
-    private MediaPlaylist(List<TrackData> tracks, List<String> unknownTags, List<DateRangeData> dateRanges, List<DefineData> defines, int targetDuration, StartData startData, int mediaSequenceNumber, boolean isIframesOnly, boolean isOngoing, PlaylistType playlistType, ServerControlData serverControlData, SkipData skipData) {
+    private MediaPlaylist(List<TrackData> tracks, List<String> unknownTags, List<DateRangeData> dateRanges, List<DefineData> defines, int targetDuration, StartData startData, long mediaSequenceNumber, boolean isIframesOnly, boolean isOngoing, PlaylistType playlistType, ServerControlData serverControlData, SkipData skipData) {
         mTracks = DataUtil.emptyOrUnmodifiable(tracks);
         mUnknownTags = DataUtil.emptyOrUnmodifiable(unknownTags);
         mDateRanges = DataUtil.emptyOrUnmodifiable(dateRanges);
@@ -44,7 +44,7 @@ public class MediaPlaylist {
         return mTargetDuration;
     }
 
-    public int getMediaSequenceNumber() {
+    public long getMediaSequenceNumber() {
         return mMediaSequenceNumber;
     }
     
@@ -204,7 +204,7 @@ public class MediaPlaylist {
         private List<DateRangeData> mDateRanges;
         private List<DefineData> mDefines;
         private int mTargetDuration;
-        private int mMediaSequenceNumber;
+        private long mMediaSequenceNumber;
         private boolean mIsIframesOnly;
         private boolean mIsOngoing;
         private PlaylistType mPlaylistType;
@@ -215,7 +215,7 @@ public class MediaPlaylist {
         public Builder() {
         }
 
-        private Builder(List<TrackData> tracks, List<String> unknownTags, List<DateRangeData> dateRanges, List<DefineData> defines, int targetDuration, int mediaSequenceNumber, boolean isIframesOnly, boolean isOngoing, PlaylistType playlistType, StartData startData, ServerControlData serverControlData, SkipData skipData) {
+        private Builder(List<TrackData> tracks, List<String> unknownTags, List<DateRangeData> dateRanges, List<DefineData> defines, int targetDuration, long mediaSequenceNumber, boolean isIframesOnly, boolean isOngoing, PlaylistType playlistType, StartData startData, ServerControlData serverControlData, SkipData skipData) {
             mTracks = tracks;
             mUnknownTags = unknownTags;
             mDateRanges = dateRanges;
@@ -260,7 +260,7 @@ public class MediaPlaylist {
             return this;
         }
         
-        public Builder withMediaSequenceNumber(int mediaSequenceNumber) {
+        public Builder withMediaSequenceNumber(long mediaSequenceNumber) {
             mMediaSequenceNumber = mediaSequenceNumber;
             return this;
         }

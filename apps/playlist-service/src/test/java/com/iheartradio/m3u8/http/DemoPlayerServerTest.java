@@ -75,6 +75,28 @@ public class DemoPlayerServerTest {
     }
 
     @Test
+    public void logsDumpIncludesCreatedSession() throws Exception {
+        String json = "{\"strategy\":\"ssai\",\"contentUrl\":\"http://127.0.0.1:" + originPort
+                + "/content.m3u8\"}";
+        HttpURLConnection post = (HttpURLConnection) new URL(
+                "http://127.0.0.1:" + demoPort + "/api/session").openConnection();
+        post.setRequestMethod("POST");
+        post.setDoOutput(true);
+        post.setRequestProperty("Content-Type", "application/json");
+        post.getOutputStream().write(json.getBytes(StandardCharsets.UTF_8));
+        assertEquals(200, post.getResponseCode());
+        String sessionBody = readFully(post.getInputStream());
+        String id = extract(sessionBody, "id");
+        HttpURLConnection logs = (HttpURLConnection) new URL(
+                "http://127.0.0.1:" + demoPort + "/api/logs?session=" + id).openConnection();
+        assertEquals(200, logs.getResponseCode());
+        String body = readFully(logs.getInputStream());
+        assertTrue(body.contains("\"ok\":true"));
+        assertTrue(body.contains("\"ev\":\"session\""));
+        assertTrue(body.contains(id));
+    }
+
+    @Test
     public void originRequiresHttpUrl() throws Exception {
         HttpURLConnection missing = (HttpURLConnection) new URL(
                 "http://127.0.0.1:" + demoPort + "/api/origin").openConnection();

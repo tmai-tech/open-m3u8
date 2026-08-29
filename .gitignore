@@ -18,6 +18,13 @@ local.properties
 /.gradle/
 build/
 
+# demo decision log
+/logs/
+
+# packaged HLS (first-slice library)
+/media/titles/
+/media/ads/
+
 # idea
 /.idea/
 *.iml
