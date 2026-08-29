@@ -291,12 +291,26 @@ async function fillCatalogThumb(card, item) {
   } catch (_) { /* keep dummy */ }
 }
 
-export function renderCatalog() {
-  paintRail($("libraryCatalog"), CATALOG.filter((c) => c.library && !c.live));
+async function localMediaAvailable() {
+  try {
+    const res = await fetch(SAMPLES.mars, { cache: "no-store" });
+    return res.ok;
+  } catch (_) {
+    return false;
+  }
+}
+
+export async function renderCatalog() {
+  const hasLocal = await localMediaAvailable();
+  const rail = $("libraryRail");
+  if (rail) rail.hidden = !hasLocal;
+  paintRail($("libraryCatalog"), hasLocal ? CATALOG.filter((c) => c.library && !c.live) : []);
   paintRail($("catalog"), CATALOG.filter((c) => !c.live && !c.library));
   paintRail($("liveCatalog"), CATALOG.filter((c) => c.live));
   const current = ($("contentUrl") && $("contentUrl").value) || SAMPLES.mux;
-  const match = CATALOG.find((c) => !c.fillAds && c.url === current) || CATALOG[0];
+  const visible = CATALOG.filter((c) => !c.fillAds && (!c.library || hasLocal));
+  const match = visible.find((c) => c.url === current) || visible[0];
+  if (!match) return;
   document.querySelectorAll(".thumb-card").forEach((el) => {
     el.classList.toggle("is-on", el.getAttribute("data-id") === match.id);
   });
