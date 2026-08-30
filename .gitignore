@@ -20,10 +20,15 @@ build/
 
 # demo decision log
 /logs/
+/apps/playlist-service/logs/
 
 # packaged HLS (first-slice library)
 /media/titles/
 /media/ads/
+/media/inbox/
+/media/catalog.json
+/media/catalog.lock
+/media/catalog.json.tmp
 
 # idea
 /.idea/

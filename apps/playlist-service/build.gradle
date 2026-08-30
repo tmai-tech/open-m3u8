@@ -35,6 +35,15 @@ task runSsaiProxy(type: JavaExec) {
     demoJvm(it)
 }
 
+task runPackager(type: JavaExec) {
+    description = 'Watch media/inbox and package uploaded MP4s (separate from runDemo)'
+    group = 'application'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'com.iheartradio.m3u8.http.DemoPackager'
+    args = project.hasProperty('media') ? [project.property('media')] : []
+    workingDir = rootProject.projectDir
+}
+
 test {
     useJUnit()
 }

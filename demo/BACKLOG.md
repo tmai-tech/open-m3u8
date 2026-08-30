@@ -42,3 +42,13 @@ Reproduced against Summer on Mars (muxed fMP4, H.264 + AAC, 1280×720, 24 fps):
 Same-encode self-clips (copy of the title `init.m4s` + later `.m4s`) append. **SGAI** also plays the mismatched ads because the creative is a separate asset.
 
 Do not change library stitch APIs for this. Later pass: reject or warn at session create when the ad media playlist is not the same container / track layout as content; or transcode house ads to the title encode. Until then, SSAI on the library rail may still error with GIFF as the default ad.
+
+## Watch Library: delete from the rail
+
+**Later.** Cancel / Delete is on the Uploads tab (`DELETE /api/ingest?id=`). The Watch rail still only plays ready titles.
+
+## Library: display titles for uploaded MP4s
+
+**Tabled.** Folder id is a slug of the filename (unique). Display title is cleaned from that name: `grok-video-<uuid>.mp4` → **Grok clip**, `My Holiday.mp4` → **My Holiday**. Two Grok exports therefore share the same rail label.
+
+Leave it. Later pass: a title field on upload, or disambiguate (`Grok clip 2`, date, duration). Do not put the raw UUID back on the card.

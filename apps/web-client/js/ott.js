@@ -5,9 +5,6 @@ import { renderTimeline } from "./ad-markers.js";
 import { setStatus } from "./status.js";
 
 export const CATALOG = [
-  { id: "mars", title: "Summer on Mars", sub: "Local · 73s · 720p", kicker: "Your library", url: SAMPLES.mars, library: true, adUrl: SAMPLES.giff, adOffset: 10, adDuration: 12 },
-  { id: "giff", title: "GIFF Day 1", sub: "Local · 12s · 720p", kicker: "Your library", url: SAMPLES.giff, library: true, adUrl: SAMPLES.giff, adOffset: 10, adDuration: 12 },
-  { id: "grok", title: "Grok clip", sub: "Local · 15s · 720p", kicker: "Your library", url: SAMPLES.grok, library: true, adUrl: SAMPLES.giff, adOffset: 10, adDuration: 12 },
   { id: "mux", title: "Big Buck Bunny", sub: "Mux · HLS", kicker: "Featured · Blender Foundation", url: SAMPLES.mux },
   { id: "apple", title: "BipBop", sub: "Apple · I-frame", kicker: "Featured · Apple HLS", url: SAMPLES.apple },
   { id: "tos", title: "Tears of Steel", sub: "Unified · 4s", kicker: "Featured · Blender Institute", url: SAMPLES.tos },
@@ -27,6 +24,8 @@ export const CATALOG = [
 let playFn = () => {};
 let applyPreset = () => {};
 let posterToken = 0;
+let libraryTitles = [];
+
 
 export function setOttPlay(fn) {
   playFn = fn || (() => {});
@@ -135,9 +134,14 @@ function setForceVod(on) {
   if (isVideoPlaying()) playFn();
 }
 
+export function findCatalogItem(url) {
+  const u = url || "";
+  return libraryTitles.find((c) => c.url === u) || CATALOG.find((c) => c.url === u);
+}
+
 export function catalogMeta(url) {
   const u = url || "";
-  const hit = CATALOG.find((c) => !c.fillAds && c.url === u);
+  const hit = findCatalogItem(u);
   if (hit) return { title: hit.title, kicker: hit.kicker || hit.sub };
   if (u.indexOf("tears-of-steel") >= 0) return { title: "Tears of Steel", kicker: "Featured · Blender Institute" };
   let host = "HLS title";
@@ -251,12 +255,25 @@ export function bindOtt() {
       t = setTimeout(refreshPoster, 600);
     });
   }
-  renderCatalog();
+  renderCatalog().then(() => {
+    const q = new URLSearchParams(location.search).get("play");
+    if (q) selectCatalog(q);
+  });
+}
+
+function allItems() {
+  return libraryTitles.concat(CATALOG);
 }
 
 function selectCatalog(id) {
-  const item = CATALOG.find((c) => c.id === id);
+  const item = allItems().find((c) => c.id === id);
   if (!item) return;
+  if (item.library && item.status && item.status !== "ready") {
+    setStatus(item.status === "failed"
+      ? ("Packaging failed: " + (item.error || item.title))
+      : (item.title + " is still " + item.status + "."));
+    return;
+  }
   document.querySelectorAll(".thumb-card").forEach((el) => {
     el.classList.toggle("is-on", el.getAttribute("data-id") === id);
   });
@@ -270,10 +287,12 @@ function paintRail(host, items) {
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "thumb-card";
+    if (item.status && item.status !== "ready") btn.classList.add("is-busy");
+    if (item.status === "failed") btn.classList.add("is-fail");
     btn.setAttribute("data-id", item.id);
     btn.innerHTML = "<img alt=\"\" /><div class=\"thumb-meta\"><strong></strong><span></span></div>";
     btn.querySelector("strong").textContent = item.title;
-    btn.querySelector("span").textContent = item.sub;
+    btn.querySelector("span").textContent = item.sub || item.status || "";
     btn.addEventListener("click", () => selectCatalog(item.id));
     host.appendChild(btn);
     fillCatalogThumb(btn, item);
@@ -285,33 +304,67 @@ async function fillCatalogThumb(card, item) {
   if (!img) return;
   img.alt = item.title;
   img.src = dummyPosterDataUrl(item.title, item.sub);
+  if (item.poster) {
+    img.src = item.poster;
+  }
+  if (item.status && item.status !== "ready") return;
   try {
     const { dataUrl, kind } = await loadPoster(item.url);
     if (dataUrl && (kind === "iframe" || kind === "image" || kind === "variant")) img.src = dataUrl;
-  } catch (_) { /* keep dummy */ }
+  } catch (_) { /* keep dummy / poster.jpg */ }
 }
 
-async function localMediaAvailable() {
+function toLibraryItem(t) {
+  const status = t.status || "ready";
+  const dur = Number(t.durationSec);
+  const sub = t.sub || (status === "ready" && isFinite(dur) && dur > 0
+    ? ("Local · " + Math.round(dur) + "s · 720p")
+    : (status === "ready" ? "Local · 720p" : status.charAt(0).toUpperCase() + status.slice(1)));
+  return {
+    id: t.id,
+    title: t.title || t.id,
+    sub,
+    kicker: "Your library",
+    url: t.url,
+    poster: t.poster,
+    library: true,
+    adUrl: t.adUrl || SAMPLES.giff,
+    adOffset: t.adOffset != null ? t.adOffset : 10,
+    adDuration: t.adDuration != null ? t.adDuration : 12,
+    status,
+    error: t.error,
+  };
+}
+
+async function fetchLibraryCatalog() {
   try {
-    const res = await fetch(SAMPLES.mars, { cache: "no-store" });
-    return res.ok;
+    const res = await fetch("/api/catalog", { cache: "no-store" });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const titles = (data && data.titles) || [];
+    return titles
+      .filter((t) => t.status !== "duplicate")
+      .map(toLibraryItem);
   } catch (_) {
-    return false;
+    return null;
   }
 }
 
 export async function renderCatalog() {
-  const hasLocal = await localMediaAvailable();
+  const remote = await fetchLibraryCatalog();
+  const hasLocal = remote != null;
+  libraryTitles = remote || [];
   const rail = $("libraryRail");
   if (rail) rail.hidden = !hasLocal;
-  paintRail($("libraryCatalog"), hasLocal ? CATALOG.filter((c) => c.library && !c.live) : []);
+  paintRail($("libraryCatalog"), libraryTitles);
   paintRail($("catalog"), CATALOG.filter((c) => !c.live && !c.library));
   paintRail($("liveCatalog"), CATALOG.filter((c) => c.live));
   const current = ($("contentUrl") && $("contentUrl").value) || SAMPLES.mux;
-  const visible = CATALOG.filter((c) => !c.fillAds && (!c.library || hasLocal));
+  const visible = allItems().filter((c) => !c.fillAds && (!c.library || c.status === "ready"));
   const match = visible.find((c) => c.url === current) || visible[0];
-  if (!match) return;
-  document.querySelectorAll(".thumb-card").forEach((el) => {
-    el.classList.toggle("is-on", el.getAttribute("data-id") === match.id);
-  });
+  if (match) {
+    document.querySelectorAll(".thumb-card").forEach((el) => {
+      el.classList.toggle("is-on", el.getAttribute("data-id") === match.id);
+    });
+  }
 }

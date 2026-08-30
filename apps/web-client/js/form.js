@@ -3,7 +3,7 @@ import { adsAllowed, DEFAULT_AD, HINTS, LENGTH_HINTS, SAMPLES, state } from "./s
 import { setStatus } from "./status.js";
 import { renderTimeline } from "./ad-markers.js";
 import { fillPublicRow } from "./public-url.js";
-import { CATALOG, loadSnapshotTimeline, refreshPoster, setLiveUi } from "./ott.js";
+import { findCatalogItem, loadSnapshotTimeline, refreshPoster, setLiveUi } from "./ott.js";
 
 let destroyPlayerFn = () => {};
 
@@ -77,7 +77,7 @@ export function addBreakRow(offsetSec, assetUri, durationSec) {
 
 export function defaultAdUrl() {
   const u = $("contentUrl") && $("contentUrl").value.trim();
-  const item = CATALOG.find((c) => c.url === u);
+  const item = findCatalogItem(u);
   if (item && item.library) return item.adUrl || SAMPLES.giff;
   return DEFAULT_AD;
 }

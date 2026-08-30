@@ -14,6 +14,10 @@
     <header class="ott-nav">
       <div class="ott-brand">HLS Demo</div>
       <p class="ott-nav-tag">Watch with stitched or interstitial ads</p>
+      <nav class="ott-tabs">
+        <a href="./" aria-current="page">Watch</a>
+        <a href="uploads.html" target="_blank" rel="noopener">Uploads</a>
+      </nav>
       <span class="session-id" id="sessionIdLabel" hidden>Session <a id="sessionIdLink" href="/api/logs" target="_blank" rel="noopener">—</a></span>
       <button type="button" class="btn btn-ghost btn-sm" id="btnStudio" aria-expanded="false">Ad setup</button>
     </header>
@@ -50,7 +54,10 @@
     </section>
 
     <section class="rail" id="libraryRail">
-      <h3 class="rail-title">Library</h3>
+      <div class="rail-head">
+        <h3 class="rail-title">Library</h3>
+        <a class="btn btn-ghost btn-sm" href="uploads.html" target="_blank" rel="noopener">Uploads</a>
+      </div>
       <div class="rail-row" id="libraryCatalog"></div>
     </section>
 
