@@ -1,5 +1,10 @@
 package com.iheartradio.m3u8.http;
 
+import com.iheartradio.m3u8.http.catalog.CatalogStore;
+import com.iheartradio.m3u8.http.catalog.Title;
+import com.iheartradio.m3u8.http.ingest.IngestService;
+import com.iheartradio.m3u8.http.ingest.JobLog;
+
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
@@ -23,11 +28,17 @@ public final class DemoPackager {
     private static final int FFMPEG_TIMEOUT_MIN = 30;
 
     private final File mediaRoot;
+    private final CatalogStore catalog;
+    private final IngestService ingest;
+    private final JobLog logs;
     private final String ffmpeg;
     private final String ffprobe;
 
     public DemoPackager(File mediaRoot, String ffmpeg) {
         this.mediaRoot = mediaRoot;
+        this.catalog = new CatalogStore(mediaRoot);
+        this.ingest = new IngestService(catalog);
+        this.logs = ingest.logs();
         this.ffmpeg = ffmpeg;
         this.ffprobe = siblingBin(ffmpeg, "ffprobe");
     }
@@ -60,7 +71,7 @@ public final class DemoPackager {
     }
 
     void tick() throws IOException {
-        File inbox = DemoCatalog.inboxDir(mediaRoot);
+        File inbox = catalog.inboxDir();
         if (!inbox.isDirectory()) {
             return;
         }
@@ -100,14 +111,14 @@ public final class DemoPackager {
     }
 
     boolean gone(String id) throws IOException {
-        return DemoCatalog.isCancelled(mediaRoot, id)
-                || DemoCatalog.find(DemoCatalog.load(mediaRoot), id) == null;
+        return catalog.isCancelled(id)
+                || CatalogStore.find(catalog.load(), id) == null;
     }
 
     void dropCancelled(String id, String note) throws IOException {
-        DemoJobLog.append(mediaRoot, id, note);
-        DemoIngest.purgeJobFiles(mediaRoot, id);
-        File cancel = DemoCatalog.cancelFile(mediaRoot, id);
+        logs.append(id, note);
+        ingest.purgeJobFiles(id);
+        File cancel = catalog.cancelFile(id);
         if (cancel.isFile()) {
             cancel.delete();
         }
@@ -127,7 +138,7 @@ public final class DemoPackager {
                 continue;
             }
             String id = name.substring(0, name.length() - ".cancel".length());
-            if (!DemoJobLog.validId(id)) {
+            if (!JobLog.validId(id)) {
                 continue;
             }
             if (new File(inbox, id + ".mp4").isFile()
@@ -135,7 +146,7 @@ public final class DemoPackager {
                 continue;
             }
             try {
-                if (DemoCatalog.find(DemoCatalog.load(mediaRoot), id) != null) {
+                if (CatalogStore.find(catalog.load(), id) != null) {
                     continue;
                 }
             } catch (IOException e) {
@@ -157,13 +168,13 @@ public final class DemoPackager {
         if (!src.renameTo(work)) {
             throw new IOException("could not claim " + src.getName());
         }
-        DemoJobLog.append(mediaRoot, id, "packaging claimed " + work.getName());
+        logs.append(id, "packaging claimed " + work.getName());
         if (gone(id)) {
             dropCancelled(id, "cancelled");
             return;
         }
-        DemoCatalog.update(mediaRoot, titles -> {
-            DemoCatalog.Title t = DemoCatalog.find(titles, id);
+        catalog.update(titles -> {
+            Title t = CatalogStore.find(titles, id);
             if (t == null) {
                 return;
             }
@@ -175,14 +186,14 @@ public final class DemoPackager {
             dropCancelled(id, "cancelled");
             return;
         }
-        File dest = new File(DemoCatalog.titlesDir(mediaRoot), id);
+        File dest = new File(catalog.titlesDir(), id);
         try {
             PackageResult result = encode(id, work, dest);
             if (gone(id)) {
                 throw new InterruptedException("cancelled");
             }
             writeMaster(dest, result);
-            DemoJobLog.append(mediaRoot, id, "ready " + result.durationSec + "s");
+            logs.append(id, "ready " + result.durationSec + "s");
             File doneDir = new File(src.getParentFile(), "done");
             doneDir.mkdirs();
             File done = new File(doneDir, id + ".mp4");
@@ -190,13 +201,13 @@ public final class DemoPackager {
                 done.delete();
             }
             work.renameTo(done);
-            DemoCatalog.update(mediaRoot, titles -> {
-                DemoCatalog.Title t = DemoCatalog.find(titles, id);
+            catalog.update(titles -> {
+                Title t = CatalogStore.find(titles, id);
                 if (t == null) {
                     return;
                 }
                 t.status = DemoJobStatus.READY;
-                t.contentHash = DemoCatalog.sha256(done);
+                t.contentHash = CatalogStore.sha256(done);
                 t.durationSec = result.durationSec;
                 t.sub = "Local · " + Math.round(result.durationSec) + "s · 720p";
                 t.url = "/media/titles/" + id + "/master.m3u8";
@@ -211,14 +222,14 @@ public final class DemoPackager {
                 dropCancelled(id, "cancelled");
                 return;
             }
-            DemoJobLog.append(mediaRoot, id, "failed " + e.getMessage());
+            logs.append(id, "failed " + e.getMessage());
             File failed = new File(src.getParentFile(), id + ".failed.mp4");
             if (failed.exists()) {
                 failed.delete();
             }
             work.renameTo(failed);
-            DemoCatalog.update(mediaRoot, titles -> {
-                DemoCatalog.Title t = DemoCatalog.find(titles, id);
+            catalog.update(titles -> {
+                Title t = CatalogStore.find(titles, id);
                 if (t == null) {
                     return;
                 }
@@ -248,7 +259,7 @@ public final class DemoPackager {
             r.fps = 24;
         }
         boolean audio = hasAudio(src);
-        DemoJobLog.append(mediaRoot, id, "probe duration=" + r.durationSec
+        logs.append(id, "probe duration=" + r.durationSec
                 + "s fps=" + r.fps + " audio=" + audio);
         int gop = r.fps * 4;
         List<String> cmd = new ArrayList<String>();
@@ -304,9 +315,9 @@ public final class DemoPackager {
         cmd.add("-hls_segment_filename");
         cmd.add(new File(dest, "v720_%d.m4s").getAbsolutePath());
         cmd.add(new File(dest, "v720.m3u8").getAbsolutePath());
-        DemoJobLog.append(mediaRoot, id, "ffmpeg hls start");
+        logs.append(id, "ffmpeg hls start");
         run(cmd, FFMPEG_TIMEOUT_MIN, TimeUnit.MINUTES, id);
-        DemoJobLog.append(mediaRoot, id, "ffmpeg hls done");
+        logs.append(id, "ffmpeg hls done");
 
         float posterAt = r.durationSec > 0 ? r.durationSec * 0.2f : 1f;
         List<String> poster = new ArrayList<String>();
@@ -328,9 +339,9 @@ public final class DemoPackager {
         poster.add("-q:v");
         poster.add("3");
         poster.add(new File(dest, "poster.jpg").getAbsolutePath());
-        DemoJobLog.append(mediaRoot, id, "poster start");
+        logs.append(id, "poster start");
         run(poster, 2, TimeUnit.MINUTES, id);
-        DemoJobLog.append(mediaRoot, id, "poster done");
+        logs.append(id, "poster done");
 
         r.bandwidth = estimateBandwidth(dest, r.durationSec);
         return r;
@@ -417,13 +428,13 @@ public final class DemoPackager {
                 new InputStreamReader(p.getInputStream(), StandardCharsets.UTF_8))) {
             String line;
             while ((line = r.readLine()) != null) {
-                if (jobId != null && (DemoCatalog.isCancelled(mediaRoot, jobId)
-                        || DemoCatalog.find(DemoCatalog.load(mediaRoot), jobId) == null)) {
+                if (jobId != null && (catalog.isCancelled(jobId)
+                        || CatalogStore.find(catalog.load(), jobId) == null)) {
                     p.destroyForcibly();
                     throw new InterruptedException("cancelled");
                 }
                 if (jobId != null) {
-                    DemoJobLog.append(mediaRoot, jobId, line);
+                    logs.append(jobId, line);
                 }
                 if (err.length() < 4000) {
                     err.append(line).append('\n');

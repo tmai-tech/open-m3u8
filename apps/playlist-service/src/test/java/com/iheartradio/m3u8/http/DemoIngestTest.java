@@ -1,5 +1,9 @@
 package com.iheartradio.m3u8.http;
 
+import com.iheartradio.m3u8.http.catalog.CatalogStore;
+import com.iheartradio.m3u8.http.catalog.Title;
+import com.iheartradio.m3u8.http.ingest.IngestService;
+import com.iheartradio.m3u8.http.ingest.MultipartForm;
 import org.junit.Test;
 
 import java.io.ByteArrayInputStream;
@@ -17,10 +21,10 @@ public class DemoIngestTest {
     @Test
     public void parsesMultipartBoundary() {
         assertEquals("----WebKitFormBoundary7",
-                DemoIngest.multipartBoundary(
+                MultipartForm.multipartBoundary(
                         "multipart/form-data; boundary=----WebKitFormBoundary7"));
         assertEquals("abc",
-                DemoIngest.multipartBoundary("multipart/form-data; boundary=\"abc\""));
+                MultipartForm.multipartBoundary("multipart/form-data; boundary=\"abc\""));
     }
 
     @Test
@@ -30,7 +34,7 @@ public class DemoIngestTest {
                 new byte[] { 0, 1, 2, 3, 4 }, "My Holiday");
         File inbox = Files.createTempDirectory("ingest-mp").toFile();
         File dest = new File(inbox, "tmp.part");
-        DemoIngest.ParsedUpload parsed = DemoIngest.parseMultipart(
+        MultipartForm.ParsedUpload parsed = MultipartForm.parseMultipart(
                 new ByteArrayInputStream(body), boundary, dest);
         assertEquals("Holiday Clip.mp4", parsed.filename);
         assertEquals("My Holiday", parsed.title);
@@ -42,67 +46,69 @@ public class DemoIngestTest {
     public void headerAttrReadsQuotedFilename() {
         String headers = "Content-Disposition: form-data; name=\"file\"; filename=\"GIFF Day 1.mp4\"\r\n"
                 + "Content-Type: video/mp4";
-        assertEquals("file", DemoIngest.headerAttr(headers, "name"));
-        assertEquals("GIFF Day 1.mp4", DemoIngest.headerAttr(headers, "filename"));
+        assertEquals("file", MultipartForm.headerAttr(headers, "name"));
+        assertEquals("GIFF Day 1.mp4", MultipartForm.headerAttr(headers, "filename"));
     }
 
     @Test
     public void deleteQueuedPurgesInboxAndLeavesCancel() throws Exception {
         File root = Files.createTempDirectory("ingest-del").toFile();
-        File inbox = new File(root, "inbox");
+        CatalogStore store = new CatalogStore(root);
+        File inbox = store.inboxDir();
         inbox.mkdirs();
         Files.write(new File(inbox, "gone.mp4").toPath(), new byte[] { 1, 2, 3 });
-        DemoCatalog.Title t = new DemoCatalog.Title();
+        Title t = new Title();
         t.id = "gone";
         t.title = "Gone";
         t.status = DemoJobStatus.QUEUED;
-        java.util.List<DemoCatalog.Title> list = new java.util.ArrayList<DemoCatalog.Title>();
+        java.util.List<Title> list = new java.util.ArrayList<Title>();
         list.add(t);
-        DemoCatalog.save(root, list);
+        store.save(list);
 
-        DemoCatalog.Title removed = DemoIngest.delete(root, "gone");
+        Title removed = new IngestService(store).delete("gone");
         assertEquals("gone", removed.id);
         assertFalse(new File(inbox, "gone.mp4").exists());
-        assertTrue(DemoCatalog.cancelFile(root, "gone").isFile());
-        assertTrue(DemoCatalog.load(root).isEmpty());
+        assertTrue(store.cancelFile("gone").isFile());
+        assertTrue(store.load().isEmpty());
     }
 
     @Test
     public void deleteReadyDropsCancelAndDuplicateRows() throws Exception {
         File root = Files.createTempDirectory("ingest-rdy").toFile();
-        File titles = new File(root, "titles/clip");
+        CatalogStore store = new CatalogStore(root);
+        File titles = new File(store.titlesDir(), "clip");
         titles.mkdirs();
         Files.write(new File(titles, "master.m3u8").toPath(), "#EXTM3U\n".getBytes(StandardCharsets.UTF_8));
-        File done = new File(root, "inbox/done");
+        File done = new File(store.inboxDir(), "done");
         done.mkdirs();
         Files.write(new File(done, "clip.mp4").toPath(), new byte[] { 9 });
-        DemoCatalog.Title t = new DemoCatalog.Title();
+        Title t = new Title();
         t.id = "clip";
         t.title = "Clip";
         t.status = DemoJobStatus.READY;
-        DemoCatalog.Title dup = new DemoCatalog.Title();
+        Title dup = new Title();
         dup.id = "clip-dup";
         dup.status = DemoJobStatus.DUPLICATE;
         dup.duplicateOf = "clip";
-        java.util.List<DemoCatalog.Title> list = new java.util.ArrayList<DemoCatalog.Title>();
+        java.util.List<Title> list = new java.util.ArrayList<Title>();
         list.add(t);
         list.add(dup);
-        DemoCatalog.save(root, list);
+        store.save(list);
 
-        DemoIngest.delete(root, "clip");
+        new IngestService(store).delete("clip");
         assertFalse(new File(done, "clip.mp4").exists());
         assertFalse(titles.exists());
-        assertFalse(DemoCatalog.cancelFile(root, "clip").exists());
-        assertTrue(DemoCatalog.load(root).isEmpty());
+        assertFalse(store.cancelFile("clip").exists());
+        assertTrue(store.load().isEmpty());
     }
 
     @Test
     public void deleteUnknownIsNotFound() throws Exception {
         File root = Files.createTempDirectory("ingest-404").toFile();
         try {
-            DemoIngest.delete(root, "nope");
+            new IngestService(new CatalogStore(root)).delete("nope");
             fail("expected NotFoundException");
-        } catch (DemoIngest.NotFoundException expected) {
+        } catch (IngestService.NotFoundException expected) {
             assertTrue(expected.getMessage().contains("nope"));
         }
     }
@@ -110,25 +116,26 @@ public class DemoIngestTest {
     @Test
     public void deleteHouseAdInUseIsBlocked() throws Exception {
         File root = Files.createTempDirectory("ingest-409").toFile();
-        DemoCatalog.Title ad = new DemoCatalog.Title();
+        CatalogStore store = new CatalogStore(root);
+        Title ad = new Title();
         ad.id = "house";
         ad.status = DemoJobStatus.READY;
-        DemoCatalog.Title show = new DemoCatalog.Title();
+        Title show = new Title();
         show.id = "show";
         show.status = DemoJobStatus.READY;
         show.adUrl = "/media/titles/house/master.m3u8";
-        java.util.List<DemoCatalog.Title> list = new java.util.ArrayList<DemoCatalog.Title>();
+        java.util.List<Title> list = new java.util.ArrayList<Title>();
         list.add(ad);
         list.add(show);
-        DemoCatalog.save(root, list);
+        store.save(list);
         try {
-            DemoIngest.delete(root, "house");
+            new IngestService(store).delete("house");
             fail("expected DeleteBlockedException");
-        } catch (DemoIngest.DeleteBlockedException expected) {
+        } catch (IngestService.DeleteBlockedException expected) {
             assertEquals(1, expected.usedBy.size());
             assertEquals("show", expected.usedBy.get(0));
         }
-        assertEquals(2, DemoCatalog.load(root).size());
+        assertEquals(2, store.load().size());
     }
 
     static byte[] multipart(String boundary, String filename, String ct, byte[] payload, String title) {

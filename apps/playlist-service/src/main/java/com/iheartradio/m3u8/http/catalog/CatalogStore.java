@@ -1,17 +1,19 @@
-package com.iheartradio.m3u8.http;
+package com.iheartradio.m3u8.http.catalog;
+
+import com.iheartradio.m3u8.http.DemoHttp;
+import com.iheartradio.m3u8.http.DemoJobStatus;
 
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.RandomAccessFile;
-import java.security.MessageDigest;
 import java.nio.channels.FileChannel;
 import java.nio.channels.FileLock;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.security.MessageDigest;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -19,176 +21,61 @@ import java.util.Map;
 /**
  * Local library catalog on disk ({@code media/catalog.json}). Shared by ingest and the packager.
  */
-public final class DemoCatalog {
+public final class CatalogStore {
 
-    public static final String DEFAULT_AD_URL = "/media/titles/giff-day-1/master.m3u8";
-    public static final float DEFAULT_AD_OFFSET = 10f;
-    public static final float DEFAULT_AD_DURATION = 12f;
+    public static final String DEFAULT_AD_URL = Title.DEFAULT_AD_URL;
+    public static final float DEFAULT_AD_OFFSET = Title.DEFAULT_AD_OFFSET;
+    public static final float DEFAULT_AD_DURATION = Title.DEFAULT_AD_DURATION;
 
-    private DemoCatalog() {
+    private final File mediaRoot;
+
+    public CatalogStore(File mediaRoot) {
+        this.mediaRoot = mediaRoot != null ? mediaRoot : new File("media");
     }
 
-    public static final class Title {
-        public String id;
-        public String title;
-        public String sub;
-        public String url;
-        public String poster;
-        public String adUrl;
-        public float adOffset;
-        public float adDuration;
-        public DemoJobStatus status;
-        public float durationSec;
-        public String error;
-        public String contentHash;
-        public String duplicateOf;
-
-        public Title() {
-            this.adUrl = DEFAULT_AD_URL;
-            this.adOffset = DEFAULT_AD_OFFSET;
-            this.adDuration = DEFAULT_AD_DURATION;
-            this.status = DemoJobStatus.READY;
-        }
+    public File mediaRoot() {
+        return mediaRoot;
     }
 
-    public static File catalogFile(File mediaRoot) {
+    public File catalogFile() {
         return new File(mediaRoot, "catalog.json");
     }
 
-    public static File lockFile(File mediaRoot) {
+    public File lockFile() {
         return new File(mediaRoot, "catalog.lock");
     }
 
-    public static File inboxDir(File mediaRoot) {
+    public File inboxDir() {
         return new File(mediaRoot, "inbox");
     }
 
-    public static File titlesDir(File mediaRoot) {
+    public File titlesDir() {
         return new File(mediaRoot, "titles");
     }
 
-    public static File cancelFile(File mediaRoot, String id) {
-        return new File(inboxDir(mediaRoot), id + ".cancel");
+    public File cancelFile(String id) {
+        return new File(inboxDir(), id + ".cancel");
     }
 
-    public static boolean isCancelled(File mediaRoot, String id) {
-        return id != null && cancelFile(mediaRoot, id).isFile();
+    public boolean isCancelled(String id) {
+        return id != null && cancelFile(id).isFile();
     }
 
-    public static boolean pointsAtTitle(Title t, String id) {
-        if (t == null || id == null || t.adUrl == null) {
-            return false;
-        }
-        String ad = t.adUrl;
-        return ad.equals("/media/titles/" + id + "/master.m3u8")
-                || ad.endsWith("/media/titles/" + id + "/master.m3u8")
-                || ad.endsWith("/" + id + "/master.m3u8");
-    }
-
-    /**
-     * Display name for the Library rail. A real title wins; otherwise we clean the
-     * filename (Grok exports are {@code grok-video-<uuid>.mp4}).
-     */
-    public static String displayTitle(String filename, String supplied) {
-        if (supplied != null) {
-            String s = supplied.trim();
-            if (s.length() > 0 && !looksGenerated(s)) {
-                return s;
-            }
-        }
-        return titleFromFilename(filename);
-    }
-
-    static String titleFromFilename(String filename) {
-        String stem = stem(filename);
-        if (stem.length() == 0) {
-            return "Untitled";
-        }
-        String lower = stem.toLowerCase(Locale.US);
-        if (lower.startsWith("grok-video") || lower.startsWith("grok_video")) {
-            return "Grok clip";
-        }
-        String stripped = stem.replaceAll(
-                "(?i)[-_]?[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$", "");
-        stripped = stripped.replaceAll("[-_]+$", "").trim();
-        if (stripped.length() == 0) {
-            return "Untitled";
-        }
-        return prettyName(slug(stripped + ".mp4"));
-    }
-
-    static boolean looksGenerated(String title) {
-        if (title == null) {
-            return true;
-        }
-        String n = title.toLowerCase(Locale.US).replaceAll("[^a-z0-9]+", "-");
-        n = n.replaceAll("^-+", "").replaceAll("-+$", "");
-        if (n.startsWith("grok-video-") || n.matches("grok-video")) {
-            return true;
-        }
-        return n.matches(".*[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{8,}.*");
-    }
-
-    static String stem(String filename) {
-        if (filename == null) {
-            return "";
-        }
-        String base = filename;
-        int slash = Math.max(base.lastIndexOf('/'), base.lastIndexOf('\\'));
-        if (slash >= 0) {
-            base = base.substring(slash + 1);
-        }
-        int dot = base.lastIndexOf('.');
-        if (dot > 0) {
-            base = base.substring(0, dot);
-        }
-        return base.trim();
-    }
-
-    public static String slug(String filename) {
-        if (filename == null) {
-            return "title";
-        }
-        String base = filename;
-        int slash = Math.max(base.lastIndexOf('/'), base.lastIndexOf('\\'));
-        if (slash >= 0) {
-            base = base.substring(slash + 1);
-        }
-        int dot = base.lastIndexOf('.');
-        if (dot > 0) {
-            base = base.substring(0, dot);
-        }
-        String s = base.toLowerCase(Locale.US).replaceAll("[^a-z0-9]+", "-");
-        s = s.replaceAll("^-+", "").replaceAll("-+$", "");
-        if (s.length() > 40) {
-            s = s.substring(0, 40).replaceAll("-+$", "");
-        }
-        return s.length() == 0 ? "title" : s;
-    }
-
-    public static String allocateId(List<Title> titles, String slug) {
-        return allocateId(titles, slug, null);
-    }
-
-    public static String allocateId(List<Title> titles, String slug, File mediaRoot) {
+    public String allocateId(List<Title> titles, String slug) {
         String want = slug == null || slug.length() == 0 ? "title" : slug;
-        if (!idTaken(titles, want, mediaRoot)) {
+        if (!idTaken(titles, want)) {
             return want;
         }
         for (int n = 2; n < 1000; n++) {
             String next = want + "-" + n;
-            if (!idTaken(titles, next, mediaRoot)) {
+            if (!idTaken(titles, next)) {
                 return next;
             }
         }
         return want + "-" + System.currentTimeMillis();
     }
 
-    private static boolean idTaken(List<Title> titles, String id) {
-        return idTaken(titles, id, null);
-    }
-
-    private static boolean idTaken(List<Title> titles, String id, File mediaRoot) {
+    private boolean idTaken(List<Title> titles, String id) {
         if (titles != null) {
             for (Title t : titles) {
                 if (t != null && id.equals(t.id)) {
@@ -196,7 +83,7 @@ public final class DemoCatalog {
                 }
             }
         }
-        return mediaRoot != null && isCancelled(mediaRoot, id);
+        return isCancelled(id);
     }
 
     public static Title find(List<Title> titles, String id) {
@@ -211,17 +98,21 @@ public final class DemoCatalog {
         return null;
     }
 
-    public static List<Title> loadOrDiscover(File mediaRoot) throws IOException {
-        List<Title> titles = load(mediaRoot);
+    public Title find(String id) throws IOException {
+        return find(loadOrDiscover(), id);
+    }
+
+    public List<Title> loadOrDiscover() throws IOException {
+        List<Title> titles = load();
         if (titles.isEmpty()) {
-            titles = discoverReadyTitles(mediaRoot);
+            titles = discoverReadyTitles();
             if (!titles.isEmpty()) {
-                save(mediaRoot, titles);
+                save(titles);
             }
             return titles;
         }
         if (normalizeTitles(titles)) {
-            save(mediaRoot, titles);
+            save(titles);
         }
         return titles;
     }
@@ -235,8 +126,8 @@ public final class DemoCatalog {
             if (t == null) {
                 continue;
             }
-            if (looksGenerated(t.title)) {
-                String next = titleFromFilename(t.id + ".mp4");
+            if (TitleNames.looksGenerated(t.title)) {
+                String next = TitleNames.titleFromFilename(t.id + ".mp4");
                 if (next != null && !next.equals(t.title)) {
                     t.title = next;
                     changed = true;
@@ -246,8 +137,8 @@ public final class DemoCatalog {
         return changed;
     }
 
-    public static List<Title> load(File mediaRoot) throws IOException {
-        File f = catalogFile(mediaRoot);
+    public List<Title> load() throws IOException {
+        File f = catalogFile();
         if (!f.isFile()) {
             return new ArrayList<Title>();
         }
@@ -276,8 +167,8 @@ public final class DemoCatalog {
             if (ad != null && ad.length() > 0) {
                 t.adUrl = ad;
             }
-            t.adOffset = (float) DemoHttp.jsonNumber(obj, "adOffset", DEFAULT_AD_OFFSET);
-            t.adDuration = (float) DemoHttp.jsonNumber(obj, "adDuration", DEFAULT_AD_DURATION);
+            t.adOffset = (float) DemoHttp.jsonNumber(obj, "adOffset", Title.DEFAULT_AD_OFFSET);
+            t.adDuration = (float) DemoHttp.jsonNumber(obj, "adDuration", Title.DEFAULT_AD_DURATION);
             t.status = DemoJobStatus.fromWire(DemoHttp.jsonStringValue(obj, "status"));
             t.durationSec = (float) DemoHttp.jsonNumber(obj, "durationSec", 0);
             t.error = DemoHttp.jsonStringValue(obj, "error");
@@ -290,11 +181,11 @@ public final class DemoCatalog {
         return out;
     }
 
-    public static void save(File mediaRoot, List<Title> titles) throws IOException {
+    public void save(List<Title> titles) throws IOException {
         if (mediaRoot != null && !mediaRoot.isDirectory()) {
             mediaRoot.mkdirs();
         }
-        File dest = catalogFile(mediaRoot);
+        File dest = catalogFile();
         File tmp = new File(dest.getParentFile(), "catalog.json.tmp");
         Files.write(tmp.toPath(), write(titles).getBytes(StandardCharsets.UTF_8));
         try {
@@ -360,8 +251,8 @@ public final class DemoCatalog {
         void mutate(List<Title> titles) throws IOException;
     }
 
-    public static List<Title> update(File mediaRoot, Mutator mutator) throws IOException {
-        File lock = lockFile(mediaRoot);
+    public List<Title> update(Mutator mutator) throws IOException {
+        File lock = lockFile();
         if (lock.getParentFile() != null) {
             lock.getParentFile().mkdirs();
         }
@@ -370,9 +261,9 @@ public final class DemoCatalog {
             FileChannel ch = raf.getChannel();
             FileLock fl = ch.lock();
             try {
-                List<Title> titles = loadOrDiscover(mediaRoot);
+                List<Title> titles = loadOrDiscover();
                 mutator.mutate(titles);
-                save(mediaRoot, titles);
+                save(titles);
                 return titles;
             } finally {
                 fl.release();
@@ -382,14 +273,14 @@ public final class DemoCatalog {
         }
     }
 
-    public static List<Title> discoverReadyTitles(File mediaRoot) {
+    public List<Title> discoverReadyTitles() {
         List<Title> out = new ArrayList<Title>();
-        File root = titlesDir(mediaRoot);
+        File root = titlesDir();
         File[] dirs = root.isDirectory() ? root.listFiles() : null;
         if (dirs == null) {
             return out;
         }
-        Map<String, String> pretty = knownTitles();
+        Map<String, String> pretty = TitleNames.knownTitles();
         for (File dir : dirs) {
             if (!dir.isDirectory()) {
                 continue;
@@ -400,7 +291,7 @@ public final class DemoCatalog {
             }
             Title t = new Title();
             t.id = dir.getName();
-            t.title = pretty.containsKey(t.id) ? pretty.get(t.id) : prettyName(t.id);
+            t.title = pretty.containsKey(t.id) ? pretty.get(t.id) : TitleNames.prettyName(t.id);
             t.url = "/media/titles/" + t.id + "/master.m3u8";
             File poster = new File(dir, "poster.jpg");
             if (poster.isFile()) {
@@ -411,35 +302,6 @@ public final class DemoCatalog {
             out.add(t);
         }
         return out;
-    }
-
-    static Map<String, String> knownTitles() {
-        Map<String, String> m = new LinkedHashMap<String, String>();
-        m.put("summer-on-mars", "Summer on Mars");
-        m.put("giff-day-1", "GIFF Day 1");
-        m.put("grok-clip", "Grok clip");
-        return m;
-    }
-
-    static String prettyName(String id) {
-        if (id == null || id.length() == 0) {
-            return "Untitled";
-        }
-        String[] parts = id.split("-");
-        StringBuilder sb = new StringBuilder();
-        for (String p : parts) {
-            if (p.length() == 0) {
-                continue;
-            }
-            if (sb.length() > 0) {
-                sb.append(' ');
-            }
-            sb.append(Character.toUpperCase(p.charAt(0)));
-            if (p.length() > 1) {
-                sb.append(p.substring(1));
-            }
-        }
-        return sb.length() == 0 ? id : sb.toString();
     }
 
     public static boolean blocksTranscode(DemoJobStatus status) {

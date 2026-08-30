@@ -152,21 +152,24 @@ public class DemoIngestApiTest {
 
     @Test
     public void deleteHouseAdInUseIs409() throws Exception {
-        DemoCatalog.Title ad = new DemoCatalog.Title();
+        com.iheartradio.m3u8.http.catalog.Title ad =
+                new com.iheartradio.m3u8.http.catalog.Title();
         ad.id = "house";
         ad.title = "House";
         ad.url = "/media/titles/house/master.m3u8";
         ad.status = DemoJobStatus.READY;
-        DemoCatalog.Title show = new DemoCatalog.Title();
+        com.iheartradio.m3u8.http.catalog.Title show =
+                new com.iheartradio.m3u8.http.catalog.Title();
         show.id = "show";
         show.title = "Show";
         show.url = "/media/titles/show/master.m3u8";
         show.adUrl = "/media/titles/house/master.m3u8";
         show.status = DemoJobStatus.READY;
-        java.util.List<DemoCatalog.Title> list = new java.util.ArrayList<DemoCatalog.Title>();
+        java.util.List<com.iheartradio.m3u8.http.catalog.Title> list =
+                new java.util.ArrayList<com.iheartradio.m3u8.http.catalog.Title>();
         list.add(ad);
         list.add(show);
-        DemoCatalog.save(mediaRoot, list);
+        new com.iheartradio.m3u8.http.catalog.CatalogStore(mediaRoot).save(list);
 
         HttpURLConnection del = (HttpURLConnection) new URL(
                 "http://127.0.0.1:" + port + "/api/ingest?id=house").openConnection();

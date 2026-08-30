@@ -1,4 +1,6 @@
-package com.iheartradio.m3u8.http;
+package com.iheartradio.m3u8.http.ingest;
+
+import com.iheartradio.m3u8.http.catalog.CatalogStore;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -13,11 +15,18 @@ import java.util.Locale;
 /**
  * Per-title packager log at {@code media/inbox/logs/{id}.log}. Survives leaving the tab.
  */
-public final class DemoJobLog {
+public final class JobLog {
 
     public static final int MAX_READ_CHARS = 80_000;
 
-    private DemoJobLog() {
+    private final File mediaRoot;
+
+    public JobLog(CatalogStore catalog) {
+        this(catalog != null ? catalog.mediaRoot() : new File("media"));
+    }
+
+    public JobLog(File mediaRoot) {
+        this.mediaRoot = mediaRoot != null ? mediaRoot : new File("media");
     }
 
     public static boolean validId(String id) {
@@ -33,15 +42,15 @@ public final class DemoJobLog {
         return true;
     }
 
-    public static File file(File mediaRoot, String id) {
-        return new File(new File(DemoCatalog.inboxDir(mediaRoot), "logs"), id + ".log");
+    public File file(String id) {
+        return new File(new File(new File(mediaRoot, "inbox"), "logs"), id + ".log");
     }
 
-    public static void append(File mediaRoot, String id, String line) {
+    public void append(String id, String line) {
         if (!validId(id) || line == null) {
             return;
         }
-        File f = file(mediaRoot, id);
+        File f = file(id);
         File dir = f.getParentFile();
         if (dir != null && !dir.isDirectory()) {
             dir.mkdirs();
@@ -66,11 +75,11 @@ public final class DemoJobLog {
         }
     }
 
-    public static String read(File mediaRoot, String id) throws IOException {
+    public String read(String id) throws IOException {
         if (!validId(id)) {
             throw new IllegalArgumentException("invalid id");
         }
-        File f = file(mediaRoot, id);
+        File f = file(id);
         if (!f.isFile()) {
             return "";
         }

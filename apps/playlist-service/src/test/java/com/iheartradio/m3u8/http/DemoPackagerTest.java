@@ -1,5 +1,6 @@
 package com.iheartradio.m3u8.http;
 
+import com.iheartradio.m3u8.http.catalog.CatalogStore;
 import org.junit.Test;
 
 import java.io.File;
@@ -13,34 +14,36 @@ public class DemoPackagerTest {
     @Test
     public void tickSkipsCancelledInboxWithoutResurrecting() throws Exception {
         File root = Files.createTempDirectory("pkg-cancel").toFile();
-        File inbox = new File(root, "inbox");
+        CatalogStore store = new CatalogStore(root);
+        File inbox = store.inboxDir();
         inbox.mkdirs();
         Files.write(new File(inbox, "gone.mp4").toPath(), new byte[] { 1, 2, 3 });
-        Files.write(DemoCatalog.cancelFile(root, "gone").toPath(), new byte[0]);
+        Files.write(store.cancelFile("gone").toPath(), new byte[0]);
         new DemoPackager(root, "ffmpeg").tick();
         assertFalse(new File(inbox, "gone.mp4").exists());
-        assertFalse(DemoCatalog.cancelFile(root, "gone").exists());
-        assertTrue(DemoCatalog.load(root).isEmpty());
+        assertFalse(store.cancelFile("gone").exists());
+        assertTrue(store.load().isEmpty());
     }
 
     @Test
     public void tickSkipsOrphanInboxWithoutCatalogRow() throws Exception {
         File root = Files.createTempDirectory("pkg-orphan").toFile();
-        File inbox = new File(root, "inbox");
+        CatalogStore store = new CatalogStore(root);
+        File inbox = store.inboxDir();
         inbox.mkdirs();
         Files.write(new File(inbox, "orphan.mp4").toPath(), new byte[] { 1 });
         new DemoPackager(root, "ffmpeg").tick();
         assertFalse(new File(inbox, "orphan.mp4").exists());
-        assertTrue(DemoCatalog.load(root).isEmpty());
+        assertTrue(store.load().isEmpty());
     }
 
     @Test
     public void tickSweepsOrphanCancelWhenIdle() throws Exception {
         File root = Files.createTempDirectory("pkg-sweep").toFile();
-        File inbox = new File(root, "inbox");
-        inbox.mkdirs();
-        Files.write(DemoCatalog.cancelFile(root, "stale").toPath(), new byte[0]);
+        CatalogStore store = new CatalogStore(root);
+        store.inboxDir().mkdirs();
+        Files.write(store.cancelFile("stale").toPath(), new byte[0]);
         new DemoPackager(root, "ffmpeg").tick();
-        assertFalse(DemoCatalog.cancelFile(root, "stale").exists());
+        assertFalse(store.cancelFile("stale").exists());
     }
 }
