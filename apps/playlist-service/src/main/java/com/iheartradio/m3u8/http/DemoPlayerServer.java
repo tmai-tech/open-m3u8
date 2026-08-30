@@ -9,6 +9,7 @@ import java.io.File;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -121,6 +122,8 @@ public final class DemoPlayerServer {
         server.createContext("/api/origin", new OriginApiHandler());
         server.createContext("/api/session", new SessionApiHandler());
         server.createContext("/api/logs", new LogsApiHandler());
+        server.createContext("/api/catalog", new CatalogApiHandler());
+        server.createContext("/api/ingest", new IngestApiHandler());
         server.createContext("/play", new PlayHandler());
         server.createContext("/s/", new SessionResourceHandler());
         server.createContext("/media/", new MediaHandler());
@@ -132,15 +135,21 @@ public final class DemoPlayerServer {
         System.out.println("HLS demo (open-m3u8 SSAI / SGAI)");
         System.out.println("  Bind:     " + BIND_HOST + ":" + port);
         System.out.println("  UI:       http://127.0.0.1:" + port + "/");
+        System.out.println("  Uploads:  http://127.0.0.1:" + port + "/uploads.html");
         System.out.println("  HTTPS:    " + (https != null ? https : "(waiting for cloudflared)"));
         System.out.println("  Session:  POST http://127.0.0.1:" + port + "/api/session");
         System.out.println("  Play:     http://127.0.0.1:" + port
                 + "/play?strategy=ssai&content=<m3u8>&ad=<m3u8>&splices=30,90");
         System.out.println("  Manifest: http://127.0.0.1:" + port + "/s/{id}/manifest");
         System.out.println("  Logs:     http://127.0.0.1:" + port + "/api/logs");
+        System.out.println("  Catalog:  GET  http://127.0.0.1:" + port + "/api/catalog");
+        System.out.println("  Ingest:   POST http://127.0.0.1:" + port + "/api/ingest");
         System.out.println("  Engine:   DemoPlaylistPipeline (injectMediaTags | stitch)");
         System.out.println("  Static:   " + staticRoot.getAbsolutePath());
         System.out.println("  Media:    " + mediaRoot.getAbsolutePath());
+        System.out.println("  Packager: start separately (ffmpeg on PATH):");
+        System.out.println("            java -cp … com.iheartradio.m3u8.http.DemoPackager");
+        System.out.println("            or: python3 apps/playlist-service/scripts/demo_packager.py");
         System.out.println("  Log file: " + DemoLog.logFile().getAbsolutePath());
     }
 
@@ -204,6 +213,153 @@ public final class DemoPlayerServer {
             return null;
         }
         return s;
+    }
+
+    private final class CatalogApiHandler implements HttpHandler {
+        @Override
+        public void handle(HttpExchange ex) throws IOException {
+            if ("OPTIONS".equalsIgnoreCase(ex.getRequestMethod())) {
+                DemoHttp.sendCors(ex, 204, new byte[0], "application/json");
+                return;
+            }
+            if (!"GET".equalsIgnoreCase(ex.getRequestMethod())
+                    && !"HEAD".equalsIgnoreCase(ex.getRequestMethod())) {
+                DemoHttp.send(ex, 405, "text/plain", "method not allowed");
+                return;
+            }
+            try {
+                List<DemoCatalog.Title> titles = DemoCatalog.loadOrDiscover(mediaRoot);
+                DemoHttp.send(ex, 200, "application/json; charset=utf-8", DemoCatalog.write(titles));
+            } catch (Exception e) {
+                DemoHttp.send(ex, 500, "application/json; charset=utf-8",
+                        "{\"error\":" + DemoHttp.jsonString(e.getMessage()) + "}");
+            }
+        }
+    }
+
+    private void sendIngestJob(HttpExchange ex) throws IOException {
+        String id = DemoHttp.decode(DemoHttp.queryParam(ex.getRequestURI().getRawQuery(), "id"));
+        if (id == null || id.length() == 0) {
+            DemoHttp.send(ex, 400, "application/json; charset=utf-8",
+                    "{\"error\":\"id is required\"}");
+            return;
+        }
+        if (!DemoJobLog.validId(id)) {
+            DemoHttp.send(ex, 400, "application/json; charset=utf-8",
+                    "{\"error\":\"invalid id\"}");
+            return;
+        }
+        try {
+            DemoCatalog.Title t = DemoCatalog.find(DemoCatalog.loadOrDiscover(mediaRoot), id);
+            String log = DemoJobLog.read(mediaRoot, id);
+            StringBuilder sb = new StringBuilder();
+            sb.append('{');
+            if (t != null) {
+                sb.append("\"id\":").append(DemoHttp.jsonString(t.id));
+                sb.append(",\"title\":").append(DemoHttp.jsonString(t.title));
+                sb.append(",\"status\":").append(DemoHttp.jsonString(
+                        t.status != null ? t.status.wire : DemoJobStatus.READY.wire));
+                sb.append(",\"sub\":").append(DemoHttp.jsonString(t.sub));
+                sb.append(",\"url\":").append(DemoHttp.jsonString(t.url));
+                sb.append(",\"error\":").append(DemoHttp.jsonString(t.error));
+            } else {
+                sb.append("\"id\":").append(DemoHttp.jsonString(id));
+                sb.append(",\"status\":\"unknown\"");
+            }
+            sb.append(",\"log\":").append(DemoHttp.jsonString(log));
+            sb.append('}');
+            DemoHttp.send(ex, 200, "application/json; charset=utf-8", sb.toString());
+        } catch (Exception e) {
+            DemoHttp.send(ex, 500, "application/json; charset=utf-8",
+                    "{\"error\":" + DemoHttp.jsonString(e.getMessage()) + "}");
+        }
+    }
+
+    private void deleteIngestJob(HttpExchange ex) throws IOException {
+        String id = DemoHttp.decode(DemoHttp.queryParam(ex.getRequestURI().getRawQuery(), "id"));
+        if (id == null || id.length() == 0) {
+            DemoHttp.send(ex, 400, "application/json; charset=utf-8",
+                    "{\"error\":\"id is required\"}");
+            return;
+        }
+        try {
+            DemoCatalog.Title t = DemoIngest.delete(mediaRoot, id);
+            DemoLog.event("ingest")
+                    .put("id", id)
+                    .put("status", "deleted")
+                    .write();
+            DemoHttp.send(ex, 200, "application/json; charset=utf-8",
+                    "{\"id\":" + DemoHttp.jsonString(id)
+                            + ",\"deleted\":true"
+                            + ",\"was\":" + DemoHttp.jsonString(
+                            t != null && t.status != null ? t.status.wire : null)
+                            + "}");
+        } catch (DemoIngest.NotFoundException e) {
+            DemoHttp.send(ex, 404, "application/json; charset=utf-8",
+                    "{\"error\":" + DemoHttp.jsonString(e.getMessage()) + "}");
+        } catch (DemoIngest.DeleteBlockedException e) {
+            StringBuilder sb = new StringBuilder("{\"error\":");
+            sb.append(DemoHttp.jsonString(e.getMessage()));
+            sb.append(",\"usedBy\":[");
+            for (int i = 0; i < e.usedBy.size(); i++) {
+                if (i > 0) {
+                    sb.append(',');
+                }
+                sb.append(DemoHttp.jsonString(e.usedBy.get(i)));
+            }
+            sb.append("]}");
+            DemoHttp.send(ex, 409, "application/json; charset=utf-8", sb.toString());
+        } catch (IllegalArgumentException e) {
+            DemoHttp.send(ex, 400, "application/json; charset=utf-8",
+                    "{\"error\":" + DemoHttp.jsonString(e.getMessage()) + "}");
+        } catch (Exception e) {
+            e.printStackTrace();
+            DemoHttp.send(ex, 500, "application/json; charset=utf-8",
+                    "{\"error\":" + DemoHttp.jsonString(e.getMessage()) + "}");
+        }
+    }
+
+    private final class IngestApiHandler implements HttpHandler {
+        @Override
+        public void handle(HttpExchange ex) throws IOException {
+            if ("OPTIONS".equalsIgnoreCase(ex.getRequestMethod())) {
+                DemoHttp.sendCors(ex, 204, new byte[0], "application/json");
+                return;
+            }
+            if ("GET".equalsIgnoreCase(ex.getRequestMethod())
+                    || "HEAD".equalsIgnoreCase(ex.getRequestMethod())) {
+                sendIngestJob(ex);
+                return;
+            }
+            if ("DELETE".equalsIgnoreCase(ex.getRequestMethod())) {
+                deleteIngestJob(ex);
+                return;
+            }
+            if (!"POST".equalsIgnoreCase(ex.getRequestMethod())) {
+                DemoHttp.send(ex, 405, "text/plain", "method not allowed");
+                return;
+            }
+            try {
+                DemoIngest.Result result = DemoIngest.accept(ex, mediaRoot);
+                DemoCatalog.Title t = result.title;
+                boolean dup = t != null && t.status == DemoJobStatus.DUPLICATE;
+                DemoLog.event("ingest")
+                        .put("id", t != null ? t.id : null)
+                        .put("status", t != null && t.status != null
+                                ? t.status.wire : DemoJobStatus.QUEUED.wire)
+                        .put("bytes", result.inboxFile != null ? result.inboxFile.length() : 0)
+                        .write();
+                DemoHttp.send(ex, dup ? 409 : 202, "application/json; charset=utf-8",
+                        DemoCatalog.write(java.util.Collections.singletonList(t)));
+            } catch (IllegalArgumentException e) {
+                DemoHttp.send(ex, 400, "application/json; charset=utf-8",
+                        "{\"error\":" + DemoHttp.jsonString(e.getMessage()) + "}");
+            } catch (Exception e) {
+                e.printStackTrace();
+                DemoHttp.send(ex, 500, "application/json; charset=utf-8",
+                        "{\"error\":" + DemoHttp.jsonString(e.getMessage()) + "}");
+            }
+        }
     }
 
     /** Liveness for tests / curl. The demo page does not call this. */
