@@ -47,6 +47,12 @@ Do not change library stitch APIs for this. Later pass: reject or warn at sessio
 
 **Later.** Cancel / Delete is on the Uploads tab (`DELETE /api/ingest?id=`). The Watch rail still only plays ready titles.
 
+## Watch Library: drop deleted titles without a refresh
+
+**Later.** Watch loads `/api/catalog` once at boot. Delete on Uploads already removes the row and files. A Watch refresh updates the rail. If Watch stays open, the old card still plays and the rewrite returns origin 404.
+
+Leave it. Later pass: refetch on tab focus / `pageshow`, and/or a `BroadcastChannel` from Uploads after DELETE or ingest. Do not poll `/api/catalog`. Do not add a second delete API.
+
 ## Library: display titles for uploaded MP4s
 
 **Tabled.** Folder id is a slug of the filename (unique). Display title is cleaned from that name: `grok-video-<uuid>.mp4` → **Grok clip**, `My Holiday.mp4` → **My Holiday**. Two Grok exports therefore share the same rail label.
