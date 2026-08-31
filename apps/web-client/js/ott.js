@@ -4,21 +4,25 @@ import { dummyPosterDataUrl, loadPoster, probeMediaDuration } from "./thumbnail.
 import { renderTimeline } from "./ad-markers.js";
 import { setStatus } from "./status.js";
 
+function featuredPoster(id) {
+  return "/media/posters/" + id + ".jpg";
+}
+
 export const CATALOG = [
-  { id: "mux", title: "Big Buck Bunny", sub: "Mux · HLS", kicker: "Featured · Blender Foundation", url: SAMPLES.mux },
-  { id: "apple", title: "BipBop", sub: "Apple · I-frame", kicker: "Featured · Apple HLS", url: SAMPLES.apple },
-  { id: "tos", title: "Tears of Steel", sub: "Unified · 4s", kicker: "Featured · Blender Institute", url: SAMPLES.tos },
-  { id: "demo", title: "BBB + ads", sub: "Mux · breaks at 30s / 90s", kicker: "Featured · Blender Foundation", url: SAMPLES.mux, fillAds: true },
-  { id: "elephants", title: "Elephants Dream", sub: "Longtail · multi-audio", kicker: "Blender Foundation", url: SAMPLES.elephants },
-  { id: "angel", title: "Angel One", sub: "Shaka · multi-audio", kicker: "Shaka Player demo", url: SAMPLES.angel },
-  { id: "skate", title: "Skate Phantom Flex", sub: "Vodobox · up to 4K", kicker: "Vodobox sample", url: SAMPLES.skate },
-  { id: "vinn", title: "VINN", sub: "Eyevinn · HLS", kicker: "Eyevinn sample", url: SAMPLES.vinn },
-  { id: "arte", title: "ARTE China", sub: "Mux · ABR", kicker: "Mux test stream", url: SAMPLES.arte },
-  { id: "atmos", title: "Apple TV Trailer", sub: "Apple · Dolby Vision / Atmos", kicker: "Apple HLS examples", url: SAMPLES.atmos },
-  { id: "av1", title: "Apple AV1 Trailer", sub: "Apple · AV1", kicker: "Apple HLS examples", url: SAMPLES.av1 },
-  { id: "fdr", title: "FDR", sub: "JW Player · 4s", kicker: "JW Player CDN", url: SAMPLES.fdr },
-  { id: "blender", title: "Blender 24/7", sub: "Ireplay · I-frame", kicker: "Live · Ireplay", url: SAMPLES.blender, live: true, asVod: true },
-  { id: "unifiedLive", title: "Channel 1", sub: "Unified · low-latency", kicker: "Live · Unified Streaming", url: SAMPLES.unifiedLive, live: true },
+  { id: "mux", title: "Big Buck Bunny", sub: "Mux · HLS", kicker: "Featured · Blender Foundation", url: SAMPLES.mux, poster: featuredPoster("mux") },
+  { id: "apple", title: "BipBop", sub: "Apple · I-frame", kicker: "Featured · Apple HLS", url: SAMPLES.apple, poster: featuredPoster("apple") },
+  { id: "tos", title: "Tears of Steel", sub: "Unified · 4s", kicker: "Featured · Blender Institute", url: SAMPLES.tos, poster: featuredPoster("tos") },
+  { id: "demo", title: "BBB + ads", sub: "Mux · breaks at 30s / 90s", kicker: "Featured · Blender Foundation", url: SAMPLES.mux, fillAds: true, poster: featuredPoster("mux") },
+  { id: "elephants", title: "Elephants Dream", sub: "Longtail · multi-audio", kicker: "Blender Foundation", url: SAMPLES.elephants, poster: featuredPoster("elephants") },
+  { id: "angel", title: "Angel One", sub: "Shaka · multi-audio", kicker: "Shaka Player demo", url: SAMPLES.angel, poster: featuredPoster("angel") },
+  { id: "skate", title: "Skate Phantom Flex", sub: "Vodobox · up to 4K", kicker: "Vodobox sample", url: SAMPLES.skate, poster: featuredPoster("skate") },
+  { id: "vinn", title: "VINN", sub: "Eyevinn · HLS", kicker: "Eyevinn sample", url: SAMPLES.vinn, poster: featuredPoster("vinn") },
+  { id: "arte", title: "ARTE China", sub: "Mux · ABR", kicker: "Mux test stream", url: SAMPLES.arte, poster: featuredPoster("arte") },
+  { id: "atmos", title: "Apple TV Trailer", sub: "Apple · Dolby Vision / Atmos", kicker: "Apple HLS examples", url: SAMPLES.atmos, poster: featuredPoster("atmos") },
+  { id: "av1", title: "Apple AV1 Trailer", sub: "Apple · AV1", kicker: "Apple HLS examples", url: SAMPLES.av1, poster: featuredPoster("av1") },
+  { id: "fdr", title: "FDR", sub: "JW Player · 4s", kicker: "JW Player CDN", url: SAMPLES.fdr, poster: featuredPoster("fdr") },
+  { id: "blender", title: "Blender 24/7", sub: "Ireplay · I-frame", kicker: "Live · Ireplay", url: SAMPLES.blender, live: true, asVod: true, poster: featuredPoster("blender") },
+  { id: "unifiedLive", title: "Channel 1", sub: "Unified · low-latency", kicker: "Live · Unified Streaming", url: SAMPLES.unifiedLive, live: true, poster: featuredPoster("unifiedLive") },
 ];
 
 let playFn = () => {};
@@ -142,7 +146,7 @@ export function findCatalogItem(url) {
 export function catalogMeta(url) {
   const u = url || "";
   const hit = findCatalogItem(u);
-  if (hit) return { title: hit.title, kicker: hit.kicker || hit.sub };
+  if (hit) return { title: hit.title, kicker: hit.summary || hit.kicker || hit.sub };
   if (u.indexOf("tears-of-steel") >= 0) return { title: "Tears of Steel", kicker: "Featured · Blender Institute" };
   let host = "HLS title";
   try { host = new URL(u).hostname.replace(/^www\./, ""); } catch (_) { /* ignore */ }
@@ -184,6 +188,12 @@ export async function refreshPoster() {
   if (!url) return;
   const token = ++posterToken;
   const hint = $("posterHint");
+  const packed = findCatalogItem(url);
+  if (packed && packed.poster) {
+    setPosterImage(packed.poster);
+    if (hint) hint.textContent = packed.summary || "Poster from the packaged title.";
+    return;
+  }
   if (hint) hint.textContent = "Checking the master for an I-frame variant…";
   const meta = catalogMeta(url);
   try {
@@ -290,9 +300,12 @@ function paintRail(host, items) {
     if (item.status && item.status !== "ready") btn.classList.add("is-busy");
     if (item.status === "failed") btn.classList.add("is-fail");
     btn.setAttribute("data-id", item.id);
-    btn.innerHTML = "<img alt=\"\" /><div class=\"thumb-meta\"><strong></strong><span></span></div>";
+    btn.innerHTML = "<img alt=\"\" /><div class=\"thumb-meta\"><strong></strong><span></span><em></em></div>";
     btn.querySelector("strong").textContent = item.title;
     btn.querySelector("span").textContent = item.sub || item.status || "";
+    const sum = btn.querySelector("em");
+    if (item.summary) sum.textContent = item.summary;
+    else sum.hidden = true;
     btn.addEventListener("click", () => selectCatalog(item.id));
     host.appendChild(btn);
     fillCatalogThumb(btn, item);
@@ -305,13 +318,18 @@ async function fillCatalogThumb(card, item) {
   img.alt = item.title;
   img.src = dummyPosterDataUrl(item.title, item.sub);
   if (item.poster) {
+    img.onerror = () => {
+      img.onerror = null;
+      img.src = dummyPosterDataUrl(item.title, item.sub);
+    };
     img.src = item.poster;
+    return;
   }
   if (item.status && item.status !== "ready") return;
   try {
     const { dataUrl, kind } = await loadPoster(item.url);
     if (dataUrl && (kind === "iframe" || kind === "image" || kind === "variant")) img.src = dataUrl;
-  } catch (_) { /* keep dummy / poster.jpg */ }
+  } catch (_) { /* keep dummy */ }
 }
 
 function toLibraryItem(t) {
@@ -324,6 +342,7 @@ function toLibraryItem(t) {
     id: t.id,
     title: t.title || t.id,
     sub,
+    summary: t.summary || "",
     kicker: "Your library",
     url: t.url,
     poster: t.poster,

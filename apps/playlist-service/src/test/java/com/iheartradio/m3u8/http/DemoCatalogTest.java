@@ -83,6 +83,7 @@ public class DemoCatalogTest {
         t.id = "mars";
         t.title = "Summer on Mars";
         t.sub = "Local · 73s · 720p";
+        t.summary = "A red rover on rust soil.";
         t.url = "/media/titles/summer-on-mars/master.m3u8";
         t.status = DemoJobStatus.QUEUED;
         t.durationSec = 73.4f;
@@ -95,7 +96,39 @@ public class DemoCatalogTest {
         assertEquals("Summer on Mars", back.get(0).title);
         assertEquals(DemoJobStatus.QUEUED, back.get(0).status);
         assertEquals(Title.DEFAULT_AD_URL, back.get(0).adUrl);
+        assertEquals("A red rover on rust soil.", back.get(0).summary);
         assertTrue(back.get(0).durationSec > 73f);
+    }
+
+    @Test
+    public void normalizeAssignsJobIdAndRoundTrips() throws Exception {
+        File root = Files.createTempDirectory("catalog-jobid").toFile();
+        CatalogStore store = new CatalogStore(root);
+        Title t = new Title();
+        t.id = "clip";
+        t.title = "Clip";
+        java.util.List<Title> one = new java.util.ArrayList<Title>();
+        one.add(t);
+        store.save(one);
+        java.util.List<Title> assigned = store.loadOrDiscover();
+        assertEquals(1, assigned.size());
+        assertTrue(assigned.get(0).jobId != null && assigned.get(0).jobId.length() > 8);
+        String jobId = assigned.get(0).jobId;
+        assertEquals(jobId, store.load().get(0).jobId);
+    }
+
+    @Test
+    public void normalizeRepairsBrokenMiddleDot() throws Exception {
+        File root = Files.createTempDirectory("catalog-dot").toFile();
+        CatalogStore store = new CatalogStore(root);
+        Title t = new Title();
+        t.id = "clip";
+        t.title = "Clip";
+        t.sub = "Local u00b7 12s u00b7 720p";
+        java.util.List<Title> one = new java.util.ArrayList<Title>();
+        one.add(t);
+        store.save(one);
+        assertEquals("Local \u00b7 12s \u00b7 720p", store.loadOrDiscover().get(0).sub);
     }
 
     @Test

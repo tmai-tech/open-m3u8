@@ -780,6 +780,15 @@ public final class DemoHttp {
         for (int p = i + 1; p < json.length(); p++) {
             char c = json.charAt(p);
             if (esc) {
+                if (c == 'u' && p + 4 < json.length()) {
+                    int cp = hex4(json, p + 1);
+                    if (cp >= 0) {
+                        sb.append((char) cp);
+                        p += 4;
+                        esc = false;
+                        continue;
+                    }
+                }
                 switch (c) {
                     case 'n':
                         sb.append('\n');
@@ -809,6 +818,21 @@ public final class DemoHttp {
             }
         }
         return null;
+    }
+
+    static int hex4(String s, int from) {
+        if (s == null || from + 4 > s.length()) {
+            return -1;
+        }
+        int n = 0;
+        for (int i = 0; i < 4; i++) {
+            int d = Character.digit(s.charAt(from + i), 16);
+            if (d < 0) {
+                return -1;
+            }
+            n = (n << 4) | d;
+        }
+        return n;
     }
 
     public static String jsonObject(String json, String key) {

@@ -11,13 +11,16 @@ import sys
 import time
 from pathlib import Path
 
+from ollama_describe import describe_poster, ollama_host, ollama_model
+
 POLL_SEC = 2
 DEFAULT_AD = "/media/titles/giff-day-1/master.m3u8"
 
 
 def media_root() -> Path:
-    if len(sys.argv) > 1:
-        return Path(sys.argv[1]).resolve()
+    for arg in sys.argv[1:]:
+        if not arg.startswith("-"):
+            return Path(arg).resolve()
     here = Path(__file__).resolve()
     for p in [here.parents[3] / "media", Path.cwd() / "media"]:
         if p.is_dir() or p.parent.is_dir():
@@ -60,7 +63,7 @@ def load_catalog(root: Path) -> list:
 def save_catalog(root: Path, titles: list) -> None:
     root.mkdir(parents=True, exist_ok=True)
     tmp = root / "catalog.json.tmp"
-    tmp.write_text(json.dumps({"titles": titles}, indent=2), encoding="utf-8")
+    tmp.write_text(json.dumps({"titles": titles}, indent=2, ensure_ascii=False), encoding="utf-8")
     tmp.replace(root / "catalog.json")
 
 
@@ -302,6 +305,7 @@ def tick(root: Path, ffmpeg: str, ffprobe: str) -> None:
             })
             save_catalog(root, titles)
             job_log(root, tid, f"ready {info['durationSec']:.1f}s")
+            enrich_title(root, tid)
         except Cancelled:
             job_log(root, tid, "cancelled")
             cleanup_job(root, tid)
@@ -326,14 +330,56 @@ def tick(root: Path, ffmpeg: str, ffprobe: str) -> None:
             print(f"demo-packager: failed {tid}: {e}", flush=True)
 
 
+def enrich_title(root: Path, tid: str) -> None:
+    poster = root / "titles" / tid / "poster.jpg"
+    row = next((t for t in load_catalog(root) if t.get("id") == tid), None)
+    current = (row or {}).get("title")
+    job_log(root, tid, f"ollama describe {ollama_model()} @ {ollama_host()}")
+    desc = describe_poster(poster, current)
+    if not desc:
+        job_log(root, tid, "ollama skipped (not running, no model, or empty reply)")
+        return
+    patch = {"id": tid}
+    if desc.get("title"):
+        patch["title"] = desc["title"]
+    if desc.get("summary"):
+        patch["summary"] = desc["summary"]
+    if len(patch) == 1:
+        job_log(root, tid, "ollama returned nothing usable")
+        return
+    save_catalog(root, upsert(load_catalog(root), patch))
+    job_log(root, tid, "ollama "
+            + ("title=" + desc["title"] + " " if desc.get("title") else "")
+            + ("summary set" if desc.get("summary") else ""))
+
+
+def enrich_ready(root: Path) -> None:
+    for t in load_catalog(root):
+        if t.get("status") not in (None, "ready"):
+            continue
+        if t.get("summary"):
+            continue
+        tid = t.get("id")
+        if not tid:
+            continue
+        enrich_title(root, tid)
+
+
 def main() -> None:
     root = media_root()
     root.mkdir(parents=True, exist_ok=True)
+    if "--enrich" in sys.argv:
+        print("demo-packager --enrich", flush=True)
+        print(f"  Media:   {root}", flush=True)
+        print(f"  Ollama:  {ollama_model()} @ {ollama_host()}", flush=True)
+        enrich_ready(root)
+        return
     ffmpeg = ffmpeg_bin()
     probe = ffprobe_bin(ffmpeg)
     print("demo-packager", flush=True)
     print(f"  Media:  {root}", flush=True)
     print(f"  FFmpeg: {ffmpeg}", flush=True)
+    print(f"  Ollama: {ollama_model()} @ {ollama_host()}", flush=True)
     print(f"  Inbox:  {root / 'inbox'}", flush=True)
     while True:
         try:

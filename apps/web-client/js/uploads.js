@@ -15,6 +15,21 @@ function jobById(id) {
   return jobs.find((j) => j.id === id) || null;
 }
 
+function jobLine(j) {
+  const parts = [];
+  const self = j.jobId || j.id;
+  if (self) parts.push(self);
+  if (j.status === "duplicate" || j.duplicateOf) {
+    const orig = jobById(j.duplicateOf);
+    const ref = (orig && orig.jobId) || j.duplicateOf;
+    if (ref) parts.push("duplicate of " + ref);
+  } else if (j.sub) {
+    parts.push(j.sub);
+  }
+  if (j.summary) parts.push(j.summary);
+  return parts.join(" · ");
+}
+
 async function loadJobs() {
   const res = await fetch("/api/catalog", { cache: "no-store" });
   if (!res.ok) throw new Error("catalog HTTP " + res.status);
@@ -33,13 +48,9 @@ async function loadLog(id) {
 
 function setLogOpen(open) {
   logOpen = !!open;
-  const pane = $("logPane");
-  const btn = $("btnToggleLog");
-  if (pane) pane.classList.toggle("is-min", !logOpen);
-  if (btn) {
-    btn.textContent = logOpen ? "Hide" : "Log";
-    btn.title = logOpen ? "Hide log" : "Show log";
-  }
+  const modal = $("logModal");
+  if (modal) modal.hidden = !logOpen;
+  document.body.classList.toggle("is-log", logOpen);
 }
 
 function paintJobs() {
@@ -62,7 +73,7 @@ function paintJobs() {
       '<a class="btn btn-success btn-sm job-play">Play</a>' +
       '<button type="button" class="btn btn-ghost btn-sm job-delete"></button>';
     row.querySelector("strong").textContent = j.title || j.id;
-    row.querySelector(".job-main span").textContent = j.sub || "";
+    row.querySelector(".job-main span").textContent = jobLine(j);
     const chip = row.querySelector(".job-chip");
     chip.textContent = st;
     chip.className = "job-chip job-chip-" + st;
@@ -95,9 +106,14 @@ function paintDetail(detail) {
   if (title) title.textContent = name;
   const st = (detail && detail.status) || (job && job.status) || "";
   if (status) {
-    status.textContent = st
+    const jid = (detail && detail.jobId) || (job && job.jobId) || "";
+    const dup = (detail && detail.duplicateOf) || (job && job.duplicateOf) || "";
+    let line = st
       ? (st + (detail && detail.error ? " — " + detail.error : ""))
       : "Select a job, then Refresh.";
+    if (jid) line += " · job " + jid;
+    if (dup) line += " · duplicate of " + dup;
+    status.textContent = line;
   }
   if (log) {
     log.textContent = detail && detail.log
@@ -135,7 +151,10 @@ async function deleteJob(job) {
       setStatus(data.error || (action + " failed (" + res.status + ")"), "err");
       return;
     }
-    if (selectedId === job.id) selectedId = null;
+    if (selectedId === job.id) {
+      selectedId = null;
+      setLogOpen(false);
+    }
     await loadJobs();
     paintJobs();
     paintDetail(null);
@@ -272,8 +291,13 @@ function bindDrop() {
   });
 }
 
-const toggle = $("btnToggleLog");
-if (toggle) toggle.addEventListener("click", () => setLogOpen(!logOpen));
+const closeLog = $("btnCloseLog");
+const backdrop = $("logBackdrop");
+if (closeLog) closeLog.addEventListener("click", () => setLogOpen(false));
+if (backdrop) backdrop.addEventListener("click", () => setLogOpen(false));
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && logOpen) setLogOpen(false);
+});
 bindDrop();
 setLogOpen(false);
 boot();

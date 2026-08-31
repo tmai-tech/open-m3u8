@@ -29,21 +29,21 @@
     </label>
     <p class="status" id="status">Idle.</p>
 
-    <div class="uploads-grid">
-      <section class="card uploads-jobs">
-        <h3 class="section-title">Jobs</h3>
-        <div id="jobList" class="job-list"></div>
-      </section>
-      <aside class="card uploads-log is-min" id="logPane">
-        <button type="button" class="log-toggle" id="btnToggleLog" title="Show log">Log</button>
-        <div class="uploads-log-body">
-          <div class="uploads-log-head">
-            <h3 class="section-title" id="logTitle">Log</h3>
-          </div>
-          <p class="job-status" id="jobStatus">Select a job, then Refresh.</p>
-          <pre class="manifest-box job-log" id="log">No log loaded.</pre>
-        </div>
-      </aside>
+    <section class="card uploads-jobs">
+      <h3 class="section-title">Jobs</h3>
+      <div id="jobList" class="job-list"></div>
+    </section>
+  </div>
+
+  <div class="log-modal" id="logModal" hidden>
+    <button type="button" class="log-modal-backdrop" id="logBackdrop" aria-label="Close log"></button>
+    <div class="log-modal-card" role="dialog" aria-modal="true" aria-labelledby="logTitle">
+      <div class="log-modal-head">
+        <h3 class="section-title" id="logTitle">Log</h3>
+        <button type="button" class="btn btn-ghost btn-sm" id="btnCloseLog">Close</button>
+      </div>
+      <p class="job-status" id="jobStatus">Select a job, then Refresh.</p>
+      <pre class="manifest-box job-log" id="log">No log loaded.</pre>
     </div>
   </div>
 </body>

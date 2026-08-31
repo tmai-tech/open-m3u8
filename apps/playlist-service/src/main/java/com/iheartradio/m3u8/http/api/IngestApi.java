@@ -82,12 +82,15 @@ public final class IngestApi implements HttpHandler {
             sb.append('{');
             if (t != null) {
                 sb.append("\"id\":").append(DemoHttp.jsonString(t.id));
+                sb.append(",\"jobId\":").append(DemoHttp.jsonString(t.jobId));
                 sb.append(",\"title\":").append(DemoHttp.jsonString(t.title));
                 sb.append(",\"status\":").append(DemoHttp.jsonString(
                         t.status != null ? t.status.wire : DemoJobStatus.READY.wire));
                 sb.append(",\"sub\":").append(DemoHttp.jsonString(t.sub));
                 sb.append(",\"url\":").append(DemoHttp.jsonString(t.url));
                 sb.append(",\"error\":").append(DemoHttp.jsonString(t.error));
+                sb.append(",\"duplicateOf\":").append(DemoHttp.jsonString(t.duplicateOf));
+                sb.append(",\"contentHash\":").append(DemoHttp.jsonString(t.contentHash));
             } else {
                 sb.append("\"id\":").append(DemoHttp.jsonString(id));
                 sb.append(",\"status\":\"unknown\"");

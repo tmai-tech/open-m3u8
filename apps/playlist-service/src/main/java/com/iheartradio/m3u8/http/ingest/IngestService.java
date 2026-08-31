@@ -115,12 +115,14 @@ public final class IngestService {
                     Title dup = new Title();
                     dup.id = catalog.allocateId(titles, slug + "-dup");
                     dup.title = original.title != null ? original.title : display;
-                    dup.sub = "Duplicate of " + (original.title != null ? original.title : original.id);
                     dup.url = original.url;
                     dup.poster = original.poster;
                     dup.status = DemoJobStatus.DUPLICATE;
                     dup.contentHash = hash;
                     dup.duplicateOf = original.id;
+                    dup.jobId = Title.newJobId();
+                    original.ensureJobId();
+                    dup.sub = "Duplicate of " + original.jobId;
                     titles.add(dup);
                     idHolder[0] = dup.id;
                     duplicate[0] = true;
@@ -136,6 +138,7 @@ public final class IngestService {
                 t.poster = "/media/titles/" + id + "/poster.jpg";
                 t.status = DemoJobStatus.QUEUED;
                 t.contentHash = hash;
+                t.jobId = Title.newJobId();
                 titles.add(t);
             });
             queued = CatalogStore.find(catalog.load(), idHolder[0]);

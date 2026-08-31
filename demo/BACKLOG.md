@@ -58,3 +58,15 @@ Leave it. Later pass: refetch on tab focus / `pageshow`, and/or a `BroadcastChan
 **Tabled.** Folder id is a slug of the filename (unique). Display title is cleaned from that name: `grok-video-<uuid>.mp4` → **Grok clip**, `My Holiday.mp4` → **My Holiday**. Two Grok exports therefore share the same rail label.
 
 Leave it. Later pass: a title field on upload, or disambiguate (`Grok clip 2`, date, duration). Do not put the raw UUID back on the card.
+
+## Packager: local vision model for title + summary
+
+The packager already calls Ollama after a ready job (`ollama_describe.py`, `OLLAMA_MODEL` default `llava`, poster.jpg → JSON `{title,summary}`). Skip the title unless `looks_generated`. Never fail the pack job if Ollama is down. `--enrich` backfills ready rows that have no summary.
+
+**Do not run `llava` on this WSL box.** `llava:latest` is 7B / 4.7 GB. WSL2 here is a 4044 MB VM on an 8 GB host. Three load attempts reset the VM (Java + packager + model the first time; model alone after that). Linux `dmesg` has no OOM line because the VM is torn down.
+
+Tried `moondream:1.8b-v2-q2_K` (smallest Ollama tag, 1.5 GB) on a GIFF Day 1 frame. It loaded (~1 GB RSS, WSL stayed up) but echoed the prompt as JSON keys and produced no usable title or summary.
+
+Both pulled models were deleted. The Ollama binary in `~/.local` can stay.
+
+Later pass, on a machine that can hold it: `OLLAMA_MODEL=moondream` (1.8B Q4, 1.7 GB) or another vision model that fits, then `--enrich` one short title. Do not default the packager to `llava` on a 4 GB WSL VM. Do not pull `llava` again here.

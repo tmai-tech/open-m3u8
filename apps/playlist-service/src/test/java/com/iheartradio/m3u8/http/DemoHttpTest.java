@@ -21,4 +21,12 @@ public class DemoHttpTest {
         assertNull(DemoHttp.httpsOriginFromQuickTunnelJson("{\"ok\":true}"));
         assertNull(DemoHttp.httpsOriginFromQuickTunnelJson(null));
     }
+
+    @Test
+    public void jsonStringValueDecodesUnicodeEscape() {
+        assertEquals("Local \u00b7 12s \u00b7 720p",
+                DemoHttp.jsonStringValue(
+                        "{\"sub\":\"Local \\u00b7 12s \\u00b7 720p\"}", "sub"));
+        assertEquals("ok", DemoHttp.jsonStringValue("{\"a\":\"ok\"}", "a"));
+    }
 }

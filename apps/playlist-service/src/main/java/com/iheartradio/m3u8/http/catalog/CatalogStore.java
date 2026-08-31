@@ -126,6 +126,13 @@ public final class CatalogStore {
             if (t == null) {
                 continue;
             }
+            if (t.ensureJobId()) {
+                changed = true;
+            }
+            if (t.sub != null && t.sub.indexOf("u00b7") >= 0) {
+                t.sub = t.sub.replace("u00b7", "\u00b7");
+                changed = true;
+            }
             if (TitleNames.looksGenerated(t.title)) {
                 String next = TitleNames.titleFromFilename(t.id + ".mp4");
                 if (next != null && !next.equals(t.title)) {
@@ -159,8 +166,10 @@ public final class CatalogStore {
         for (String obj : objs) {
             Title t = new Title();
             t.id = DemoHttp.jsonStringValue(obj, "id");
+            t.jobId = DemoHttp.jsonStringValue(obj, "jobId");
             t.title = DemoHttp.jsonStringValue(obj, "title");
             t.sub = DemoHttp.jsonStringValue(obj, "sub");
+            t.summary = DemoHttp.jsonStringValue(obj, "summary");
             t.url = DemoHttp.jsonStringValue(obj, "url");
             t.poster = DemoHttp.jsonStringValue(obj, "poster");
             String ad = DemoHttp.jsonStringValue(obj, "adUrl");
@@ -216,8 +225,14 @@ public final class CatalogStore {
     private static void writeTitle(StringBuilder sb, Title t) {
         sb.append('{');
         sb.append("\"id\":").append(DemoHttp.jsonString(t.id));
+        if (t.jobId != null && t.jobId.length() > 0) {
+            sb.append(",\"jobId\":").append(DemoHttp.jsonString(t.jobId));
+        }
         sb.append(",\"title\":").append(DemoHttp.jsonString(t.title));
         sb.append(",\"sub\":").append(DemoHttp.jsonString(t.sub));
+        if (t.summary != null && t.summary.length() > 0) {
+            sb.append(",\"summary\":").append(DemoHttp.jsonString(t.summary));
+        }
         sb.append(",\"url\":").append(DemoHttp.jsonString(t.url));
         if (t.poster != null && t.poster.length() > 0) {
             sb.append(",\"poster\":").append(DemoHttp.jsonString(t.poster));
@@ -299,6 +314,7 @@ public final class CatalogStore {
             }
             t.status = DemoJobStatus.READY;
             t.sub = "Local · 720p";
+            t.ensureJobId();
             out.add(t);
         }
         return out;
