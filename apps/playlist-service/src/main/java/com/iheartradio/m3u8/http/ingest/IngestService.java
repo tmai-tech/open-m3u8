@@ -73,7 +73,7 @@ public final class IngestService {
             try {
                 long n = Long.parseLong(cl.trim());
                 if (n > MAX_BYTES) {
-                    throw new IllegalArgumentException("file too large (max 200MB)");
+                    throw new IllegalArgumentException("file too large (max 512MB)");
                 }
             } catch (NumberFormatException ignored) {
                 // parse the stream with a running cap
@@ -93,7 +93,7 @@ public final class IngestService {
         }
         if (parsed.tempFile.length() > MAX_BYTES) {
             parsed.tempFile.delete();
-            throw new IllegalArgumentException("file too large (max 200MB)");
+            throw new IllegalArgumentException("file too large (max 512MB)");
         }
 
         String display = TitleNames.displayTitle(parsed.filename, parsed.title);
@@ -212,6 +212,42 @@ public final class IngestService {
             File cancel = catalog.cancelFile(id);
             if (cancel.isFile()) {
                 cancel.delete();
+            }
+        }
+        return gone;
+    }
+
+    /**
+     * Remove every catalog row and purge files. House-ad 409 does not apply:
+     * every consumer is going away in the same pass.
+     */
+    public List<Title> deleteAll() throws IOException {
+        final List<Title> gone = new ArrayList<Title>();
+        catalog.update(titles -> {
+            catalog.inboxDir().mkdirs();
+            for (int i = 0; i < titles.size(); i++) {
+                Title t = titles.get(i);
+                if (t == null || t.id == null || !JobLog.validId(t.id)) {
+                    continue;
+                }
+                File cancel = catalog.cancelFile(t.id);
+                if (!cancel.isFile()) {
+                    Files.write(cancel.toPath(), new byte[0]);
+                }
+                gone.add(t);
+            }
+            titles.clear();
+        });
+        for (int i = 0; i < gone.size(); i++) {
+            Title t = gone.get(i);
+            purgeJobFiles(t.id);
+            boolean inFlight = t.status == DemoJobStatus.QUEUED
+                    || t.status == DemoJobStatus.PACKAGING;
+            if (!inFlight) {
+                File cancel = catalog.cancelFile(t.id);
+                if (cancel.isFile()) {
+                    cancel.delete();
+                }
             }
         }
         return gone;

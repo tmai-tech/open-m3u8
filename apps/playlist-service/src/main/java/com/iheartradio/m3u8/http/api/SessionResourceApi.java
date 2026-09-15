@@ -80,6 +80,11 @@ public final class SessionResourceApi implements HttpHandler {
             return;
         }
 
+        if (DemoPlaylistPipeline.isWebVttUri(target)) {
+            handleVtt(ex, target);
+            return;
+        }
+
         String rangeHeader = DemoHttp.firstHeader(ex.getRequestHeaders(), "Range");
         boolean likelyPlaylist = DemoHttp.urlLooksLikePlaylist(target)
                 && (rangeHeader == null || rangeHeader.trim().isEmpty());
@@ -98,6 +103,30 @@ public final class SessionResourceApi implements HttpHandler {
             return;
         }
         handlePlaylist(ex, session, target);
+    }
+
+    private void handleVtt(HttpExchange ex, String target) throws IOException {
+        float shift = DemoPlaylistPipeline.parseVttShift(target);
+        String origin = DemoPlaylistPipeline.stripVttShift(target);
+        try {
+            DemoHttp.FetchResult remote = DemoHttp.fetchRemote(origin, null);
+            if (remote.status >= 400) {
+                DemoHttp.send(ex, remote.status > 0 ? remote.status : 502, "text/plain",
+                        "vtt origin HTTP " + remote.status);
+                return;
+            }
+            byte[] body = remote.body != null ? remote.body : new byte[0];
+            String text = new String(body, java.nio.charset.StandardCharsets.UTF_8);
+            if (shift != 0f && text.regionMatches(true, 0, "WEBVTT", 0, 6)) {
+                text = DemoPlaylistPipeline.shiftWebVttMpegts(text, shift);
+                body = text.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            }
+            DemoHttp.sendCors(ex, 200, body, "text/vtt; charset=utf-8");
+        } catch (Exception e) {
+            DemoHttp.send(ex, 502, "application/json; charset=utf-8",
+                    "{\"error\":" + DemoHttp.jsonString("vtt fetch failed: " + e.getMessage())
+                            + ",\"url\":" + DemoHttp.jsonString(origin) + "}");
+        }
     }
 
     private void handlePlaylist(HttpExchange ex, DemoSession session, String playlistUrl)

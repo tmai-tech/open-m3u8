@@ -4,16 +4,22 @@ import com.iheartradio.m3u8.Encoding;
 import com.iheartradio.m3u8.ads.PlaylistRewriteUtil;
 import com.iheartradio.m3u8.data.MediaPlaylist;
 import com.iheartradio.m3u8.data.Playlist;
+import com.iheartradio.m3u8.data.PlaylistData;
+import com.iheartradio.m3u8.data.Resolution;
 import com.iheartradio.m3u8.data.StartData;
+import com.iheartradio.m3u8.data.StreamInfo;
 import com.iheartradio.m3u8.data.TrackData;
 import com.iheartradio.m3u8.data.TrackInfo;
 import org.junit.Test;
 
+import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.List;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 public class DemoPlaylistPipelineTest {
@@ -331,6 +337,228 @@ public class DemoPlaylistPipelineTest {
     }
 
     @Test
+    public void ssaiStitchesEmptyVttDuringSubtitleAdBreaks() throws Exception {
+        Playlist subs = media(
+                track("subs_0.vtt", 4f),
+                track("subs_1.vtt", 4f),
+                track("subs_2.vtt", 4f),
+                track("subs_3.vtt", 4f),
+                track("subs_4.vtt", 4f),
+                track("subs_5.vtt", 4f),
+                track("subs_6.vtt", 4f),
+                track("subs_7.vtt", 4f));
+        Playlist ad = media(
+                track("http://ads/v720_0.m4s", 4f),
+                track("http://ads/v720_1.m4s", 4f),
+                track("http://ads/v720_2.m4s", 4f));
+        DemoSession session = DemoSession.fromJson("s-subs",
+                "{\"strategy\":\"ssai\",\"contentUrl\":\"http://cdn/subs.m3u8\","
+                        + "\"adUrl\":\"http://ads/ad.m3u8\","
+                        + "\"breaks\":[{\"offsetSec\":28,\"durationSec\":12}]}");
+        session.setCachedAdMedia(ad);
+
+        Playlist out = new DemoPlaylistPipeline().apply(session, subs);
+        String text = PlaylistRewriteUtil.writeToString(out, Encoding.UTF_8);
+
+        assertTrue(text.contains("#EXT-X-CUE-OUT:12"));
+        assertTrue(text.contains("#EXT-X-DISCONTINUITY"));
+        assertFalse(text.contains("#EXT-X-MAP"));
+        assertFalse(text.contains("v720_0.m4s"));
+        assertFalse(text.contains(".m4s"));
+        assertTrue(text.contains("empty.vtt"));
+        assertEquals(12, countOccurrences(text, "empty.vtt"));
+        assertTrue(text.contains("subs_0.vtt"));
+        assertTrue(text.contains("subs_7.vtt"));
+        assertFalse(text.contains("ssaiVttShift"));
+        int cue = text.indexOf("#EXT-X-CUE-OUT");
+        int empty = text.indexOf("empty.vtt");
+        int resume = text.indexOf("subs_7.vtt");
+        assertTrue(empty > cue);
+        assertTrue(resume > empty);
+    }
+
+    @Test
+    public void sgaiDoesNotInjectInterstitialsIntoSubtitlePlaylist() throws Exception {
+        Playlist subs = media(track("subs_0.vtt", 4f), track("subs_1.vtt", 4f));
+        DemoSession session = DemoSession.fromJson("s-subs-sgai",
+                "{\"strategy\":\"sgai\",\"contentUrl\":\"http://cdn/subs.m3u8\","
+                        + "\"adUrl\":\"http://ads/ad.m3u8\","
+                        + "\"breaks\":[{\"offsetSec\":4,\"durationSec\":12}]}");
+
+        Playlist out = new DemoPlaylistPipeline().apply(session, subs);
+        String text = PlaylistRewriteUtil.writeToString(out, Encoding.UTF_8);
+
+        assertFalse(text.contains("#EXT-X-DATERANGE"));
+        assertFalse(text.contains("com.apple.hls.interstitial"));
+        assertTrue(text.contains("subs_0.vtt"));
+    }
+
+    @Test
+    public void ssaiSkipsStitchWhenVttUriIsBehindProxyQuery() throws Exception {
+        Playlist subs = media(track(
+                "http://localhost:8765/s/x/proxy?url=http%3A%2F%2Flocalhost%3A8765%2Fmedia%2Ftitles%2Fx%2Fsubs_0.vtt",
+                4f));
+        DemoSession session = DemoSession.fromJson("s-proxy-vtt",
+                "{\"strategy\":\"ssai\",\"contentUrl\":\"http://cdn/subs.m3u8\","
+                        + "\"adUrl\":\"http://ads/ad.m3u8\",\"splices\":[0]}");
+        session.setCachedAdMedia(media(track("http://ads/a0.ts", 4f)));
+
+        Playlist out = new DemoPlaylistPipeline().apply(session, subs);
+        String text = PlaylistRewriteUtil.writeToString(out, Encoding.UTF_8);
+
+        assertTrue(text.contains("#EXT-X-CUE-OUT:4"));
+        assertEquals(4, countOccurrences(text, "empty.vtt"));
+        assertFalse(text.contains("http://ads/a0.ts"));
+        assertTrue(text.contains("subs_0.vtt"));
+    }
+
+    @Test
+    public void ssaiEmptyVttDurationMatchesTrimmedAdMediaNotPlanned15s() throws Exception {
+        Playlist subs = media(track("subs_0.vtt", 4f), track("subs_1.vtt", 4f), track("subs_2.vtt", 4f));
+        Playlist ad = media(
+                track("http://ads/v720_0.m4s", 4f),
+                track("http://ads/v720_1.m4s", 4f),
+                track("http://ads/v720_2.m4s", 4f));
+        DemoSession session = DemoSession.fromJson("s-subs-15",
+                "{\"strategy\":\"ssai\",\"contentUrl\":\"http://cdn/subs.m3u8\","
+                        + "\"adUrl\":\"http://ads/ad.m3u8\",\"splices\":[8]}");
+        session.setCachedAdMedia(ad);
+
+        Playlist out = new DemoPlaylistPipeline().apply(session, subs);
+        String text = PlaylistRewriteUtil.writeToString(out, Encoding.UTF_8);
+
+        assertTrue(text.contains("#EXT-X-CUE-OUT:12"));
+        assertTrue(text.contains("DURATION=12"));
+        assertFalse(text.contains("DURATION=15"));
+        assertFalse(text.contains("#EXT-X-CUE-OUT:15"));
+        assertEquals(12, countOccurrences(text, "empty.vtt"));
+        assertFalse(text.contains(".m4s"));
+        assertTrue(text.contains("subs_2.vtt"));
+        assertFalse(text.contains("ssaiVttShift"));
+    }
+
+    @Test
+    public void shiftWebVttMpegtsMovesMapByAdDuration() {
+        String src = "WEBVTT\nX-TIMESTAMP-MAP=LOCAL:00:00:00.000,MPEGTS:1620000\n\n"
+                + "00:00:00.000 --> 00:00:03.950\nDummy subtitle 3/46\n";
+        String out = DemoPlaylistPipeline.shiftWebVttMpegts(src, 15.041667f);
+        assertTrue(out.contains("MPEGTS:2973750"));
+        assertFalse(out.contains("MPEGTS:1620000"));
+        assertEquals("http://cdn/subs_2.vtt",
+                DemoPlaylistPipeline.stripVttShift(
+                        "http://cdn/subs_2.vtt?ssaiVttShift=15.041667"));
+        assertEquals(15.041667f,
+                DemoPlaylistPipeline.parseVttShift(
+                        "http://cdn/subs_2.vtt?ssaiVttShift=15.041667"), 1e-4f);
+    }
+
+    @Test
+    public void pickClosestVariantPrefersNearestResolution() {
+        List<PlaylistData> variants = Arrays.asList(
+                variant("a360.m3u8", 640, 360, 400000),
+                variant("a720.m3u8", 1280, 720, 1500000),
+                variant("a1080.m3u8", 1920, 1080, 4000000));
+        assertEquals("a720.m3u8",
+                DemoPlaylistPipeline.pickClosestVariant(variants, new Resolution(1280, 720)).getUri());
+        assertEquals("a1080.m3u8",
+                DemoPlaylistPipeline.pickClosestVariant(variants, new Resolution(1920, 1080)).getUri());
+        assertEquals("a360.m3u8",
+                DemoPlaylistPipeline.pickClosestVariant(variants, new Resolution(320, 184)).getUri());
+        assertEquals("a360.m3u8",
+                DemoPlaylistPipeline.pickClosestVariant(variants, null).getUri());
+    }
+
+    @Test
+    public void pickClosestVariantFallsBackWhenNoResolution() {
+        PlaylistData first = new PlaylistData.Builder()
+                .withUri("first.m3u8")
+                .withStreamInfo(new StreamInfo.Builder().withBandwidth(100000).build())
+                .build();
+        PlaylistData second = new PlaylistData.Builder()
+                .withUri("second.m3u8")
+                .withStreamInfo(new StreamInfo.Builder().withBandwidth(200000).build())
+                .build();
+        assertEquals("first.m3u8",
+                DemoPlaylistPipeline.pickClosestVariant(
+                        Arrays.asList(first, second), new Resolution(1280, 720)).getUri());
+    }
+
+    @Test
+    public void resolutionForPlaylistUrlMatchesRelativeChild() {
+        Playlist master = new Playlist.Builder()
+                .withExtended(true)
+                .withCompatibilityVersion(3)
+                .withMasterPlaylist(new com.iheartradio.m3u8.data.MasterPlaylist.Builder()
+                        .withPlaylists(Arrays.asList(
+                                variant("c480.m3u8", 854, 480, 800000),
+                                variant("c720.m3u8", 1280, 720, 2000000)))
+                        .build())
+                .build();
+        Resolution hit = DemoPlaylistPipeline.resolutionForPlaylistUrl(
+                master, "http://cdn/master.m3u8", "http://cdn/c720.m3u8");
+        assertEquals(1280, hit.width);
+        assertEquals(720, hit.height);
+        assertNull(DemoPlaylistPipeline.resolutionForPlaylistUrl(
+                master, "http://cdn/master.m3u8", "http://cdn/missing.m3u8"));
+    }
+
+    @Test
+    public void ssaiPicksClosestAdVariantForEachContentRung() throws Exception {
+        DemoHttp.OriginFetch fetch = url -> {
+            if ("http://cdn/master.m3u8".equals(url)) {
+                return ok("#EXTM3U\n"
+                        + "#EXT-X-STREAM-INF:BANDWIDTH=800000,RESOLUTION=854x480\n"
+                        + "c480.m3u8\n"
+                        + "#EXT-X-STREAM-INF:BANDWIDTH=2000000,RESOLUTION=1280x720\n"
+                        + "c720.m3u8\n"
+                        + "#EXT-X-STREAM-INF:BANDWIDTH=5000000,RESOLUTION=1920x1080\n"
+                        + "c1080.m3u8\n");
+            }
+            if ("http://ads/master.m3u8".equals(url)) {
+                return ok("#EXTM3U\n"
+                        + "#EXT-X-STREAM-INF:BANDWIDTH=400000,RESOLUTION=640x360\n"
+                        + "a360.m3u8\n"
+                        + "#EXT-X-STREAM-INF:BANDWIDTH=1500000,RESOLUTION=1280x720\n"
+                        + "a720.m3u8\n"
+                        + "#EXT-X-STREAM-INF:BANDWIDTH=4000000,RESOLUTION=1920x1080\n"
+                        + "a1080.m3u8\n");
+            }
+            if ("http://ads/a360.m3u8".equals(url)) {
+                return ok(mediaText("http://ads/seg360.ts"));
+            }
+            if ("http://ads/a720.m3u8".equals(url)) {
+                return ok(mediaText("http://ads/seg720.ts"));
+            }
+            if ("http://ads/a1080.m3u8".equals(url)) {
+                return ok(mediaText("http://ads/seg1080.ts"));
+            }
+            throw new java.io.IOException("unexpected fetch " + url);
+        };
+        DemoPlaylistPipeline pipe = new DemoPlaylistPipeline(fetch);
+        DemoSession session = DemoSession.fromJson("s-abr",
+                "{\"strategy\":\"ssai\",\"contentUrl\":\"http://cdn/master.m3u8\","
+                        + "\"adUrl\":\"http://ads/master.m3u8\",\"splices\":[4]}");
+        Playlist content = media(track("http://cdn/v0.ts", 4f), track("http://cdn/v1.ts", 4f));
+
+        String at720 = PlaylistRewriteUtil.writeToString(
+                pipe.apply(session, content, "http://cdn/c720.m3u8"), Encoding.UTF_8);
+        assertTrue(at720.contains("http://ads/seg720.ts"));
+        assertFalse(at720.contains("http://ads/seg360.ts"));
+        assertFalse(at720.contains("http://ads/seg1080.ts"));
+
+        String at1080 = PlaylistRewriteUtil.writeToString(
+                pipe.apply(session, content, "http://cdn/c1080.m3u8"), Encoding.UTF_8);
+        assertTrue(at1080.contains("http://ads/seg1080.ts"));
+        assertFalse(at1080.contains("http://ads/seg720.ts"));
+
+        String at480 = PlaylistRewriteUtil.writeToString(
+                pipe.apply(session, content, "http://cdn/c480.m3u8"), Encoding.UTF_8);
+        assertTrue(at480.contains("http://ads/seg360.ts"));
+        assertFalse(at480.contains("http://ads/seg720.ts"));
+        assertFalse(at480.contains("http://ads/seg1080.ts"));
+    }
+
+    @Test
     public void masterIsUnchangedByApply() throws Exception {
         Playlist master = new Playlist.Builder()
                 .withExtended(true)
@@ -371,5 +599,42 @@ public class DemoPlaylistPipelineTest {
                 .withUri(uri)
                 .withTrackInfo(new TrackInfo(dur, null))
                 .build();
+    }
+
+    private static PlaylistData variant(String uri, int width, int height, int bandwidth) {
+        return new PlaylistData.Builder()
+                .withUri(uri)
+                .withStreamInfo(new StreamInfo.Builder()
+                        .withBandwidth(bandwidth)
+                        .withResolution(new Resolution(width, height))
+                        .build())
+                .build();
+    }
+
+    private static DemoHttp.FetchResult ok(String text) {
+        return new DemoHttp.FetchResult(200, "application/vnd.apple.mpegurl",
+                text.getBytes(StandardCharsets.UTF_8));
+    }
+
+    private static int countOccurrences(String text, String needle) {
+        int n = 0;
+        int from = 0;
+        while (from < text.length()) {
+            int at = text.indexOf(needle, from);
+            if (at < 0) {
+                break;
+            }
+            n++;
+            from = at + needle.length();
+        }
+        return n;
+    }
+
+    private static String mediaText(String uri) {
+        try {
+            return PlaylistRewriteUtil.writeToString(media(track(uri, 4f)), Encoding.UTF_8);
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
     }
 }

@@ -138,6 +138,41 @@ public class DemoIngestTest {
         assertEquals(2, store.load().size());
     }
 
+    @Test
+    public void deleteAllPurgesEveryRowIncludingHouseAd() throws Exception {
+        File root = Files.createTempDirectory("ingest-all").toFile();
+        CatalogStore store = new CatalogStore(root);
+        File inbox = store.inboxDir();
+        inbox.mkdirs();
+        Files.write(new File(inbox, "queued.mp4").toPath(), new byte[] { 1 });
+        File houseDir = new File(store.titlesDir(), "house");
+        houseDir.mkdirs();
+        Files.write(new File(houseDir, "master.m3u8").toPath(), "#EXTM3U\n".getBytes(StandardCharsets.UTF_8));
+        Title queued = new Title();
+        queued.id = "queued";
+        queued.status = DemoJobStatus.QUEUED;
+        Title house = new Title();
+        house.id = "house";
+        house.status = DemoJobStatus.READY;
+        Title show = new Title();
+        show.id = "show";
+        show.status = DemoJobStatus.READY;
+        show.adUrl = "/media/titles/house/master.m3u8";
+        java.util.List<Title> list = new java.util.ArrayList<Title>();
+        list.add(queued);
+        list.add(house);
+        list.add(show);
+        store.save(list);
+
+        java.util.List<Title> gone = new IngestService(store).deleteAll();
+        assertEquals(3, gone.size());
+        assertTrue(store.load().isEmpty());
+        assertFalse(new File(inbox, "queued.mp4").exists());
+        assertFalse(houseDir.exists());
+        assertTrue(store.cancelFile("queued").isFile());
+        assertFalse(store.cancelFile("house").exists());
+    }
+
     static byte[] multipart(String boundary, String filename, String ct, byte[] payload, String title) {
         StringBuilder sb = new StringBuilder();
         sb.append("--").append(boundary).append("\r\n");

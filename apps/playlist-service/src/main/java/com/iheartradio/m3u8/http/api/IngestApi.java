@@ -12,6 +12,7 @@ import com.sun.net.httpserver.HttpHandler;
 
 import java.io.IOException;
 import java.util.Collections;
+import java.util.List;
 
 /** GET / POST / DELETE /api/ingest */
 public final class IngestApi implements HttpHandler {
@@ -105,7 +106,13 @@ public final class IngestApi implements HttpHandler {
     }
 
     private void deleteJob(HttpExchange ex) throws IOException {
-        String id = DemoHttp.decode(DemoHttp.queryParam(ex.getRequestURI().getRawQuery(), "id"));
+        String q = ex.getRequestURI().getRawQuery();
+        String all = DemoHttp.decode(DemoHttp.queryParam(q, "all"));
+        if ("1".equals(all) || "true".equalsIgnoreCase(all)) {
+            deleteAllJobs(ex);
+            return;
+        }
+        String id = DemoHttp.decode(DemoHttp.queryParam(q, "id"));
         if (id == null || id.length() == 0) {
             DemoHttp.send(ex, 400, "application/json; charset=utf-8",
                     "{\"error\":\"id is required\"}");
@@ -141,6 +148,30 @@ public final class IngestApi implements HttpHandler {
         } catch (IllegalArgumentException e) {
             DemoHttp.send(ex, 400, "application/json; charset=utf-8",
                     "{\"error\":" + DemoHttp.jsonString(e.getMessage()) + "}");
+        } catch (Exception e) {
+            e.printStackTrace();
+            DemoHttp.send(ex, 500, "application/json; charset=utf-8",
+                    "{\"error\":" + DemoHttp.jsonString(e.getMessage()) + "}");
+        }
+    }
+
+    private void deleteAllJobs(HttpExchange ex) throws IOException {
+        try {
+            List<Title> gone = ingest.deleteAll();
+            DemoLog.event("ingest")
+                    .put("status", "deleted-all")
+                    .put("count", gone.size())
+                    .write();
+            StringBuilder sb = new StringBuilder();
+            sb.append("{\"deleted\":true,\"count\":").append(gone.size()).append(",\"ids\":[");
+            for (int i = 0; i < gone.size(); i++) {
+                if (i > 0) {
+                    sb.append(',');
+                }
+                sb.append(DemoHttp.jsonString(gone.get(i).id));
+            }
+            sb.append("]}");
+            DemoHttp.send(ex, 200, "application/json; charset=utf-8", sb.toString());
         } catch (Exception e) {
             e.printStackTrace();
             DemoHttp.send(ex, 500, "application/json; charset=utf-8",

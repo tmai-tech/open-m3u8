@@ -181,6 +181,44 @@ public class DemoIngestApiTest {
     }
 
     @Test
+    public void deleteAllClearsCatalogAndInbox() throws Exception {
+        String boundary = "----junitbound";
+        byte[] a = DemoIngestTest.multipart(boundary, "One.mp4", "video/mp4",
+                new byte[] { 1, 1 }, "One");
+        byte[] b = DemoIngestTest.multipart(boundary, "Two.mp4", "video/mp4",
+                new byte[] { 2, 2 }, "Two");
+        HttpURLConnection postA = (HttpURLConnection) new URL(
+                "http://127.0.0.1:" + port + "/api/ingest").openConnection();
+        postA.setRequestMethod("POST");
+        postA.setDoOutput(true);
+        postA.setRequestProperty("Content-Type", "multipart/form-data; boundary=" + boundary);
+        postA.getOutputStream().write(a);
+        assertEquals(202, postA.getResponseCode());
+        HttpURLConnection postB = (HttpURLConnection) new URL(
+                "http://127.0.0.1:" + port + "/api/ingest").openConnection();
+        postB.setRequestMethod("POST");
+        postB.setDoOutput(true);
+        postB.setRequestProperty("Content-Type", "multipart/form-data; boundary=" + boundary);
+        postB.getOutputStream().write(b);
+        assertEquals(202, postB.getResponseCode());
+        assertTrue(new File(mediaRoot, "inbox/one.mp4").isFile());
+        assertTrue(new File(mediaRoot, "inbox/two.mp4").isFile());
+
+        HttpURLConnection del = (HttpURLConnection) new URL(
+                "http://127.0.0.1:" + port + "/api/ingest?all=1").openConnection();
+        del.setRequestMethod("DELETE");
+        assertEquals(200, del.getResponseCode());
+        String out = readFully(del.getInputStream());
+        assertTrue(out.contains("\"deleted\":true"));
+        assertTrue(out.contains("\"count\":2"));
+        assertFalse(new File(mediaRoot, "inbox/one.mp4").exists());
+        assertFalse(new File(mediaRoot, "inbox/two.mp4").exists());
+        HttpURLConnection cat = (HttpURLConnection) new URL(
+                "http://127.0.0.1:" + port + "/api/catalog").openConnection();
+        assertTrue(readFully(cat.getInputStream()).contains("\"titles\":[]"));
+    }
+
+    @Test
     public void ingestRejectsNonMp4() throws Exception {
         String boundary = "----junitbound";
         byte[] body = DemoIngestTest.multipart(boundary, "note.txt", "text/plain",

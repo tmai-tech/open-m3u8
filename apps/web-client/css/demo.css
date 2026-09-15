@@ -250,6 +250,23 @@ body.ott::before {
 .studio .manifest-box { max-height: 160px; margin-top: 8px; }
 body.live-mode:not(.snapshot-mode) .seek-ad-bar,
 body.live-mode:not(.snapshot-mode) #btnStudio { display: none !important; }
+.quality-bar {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 12px 10px; background: #0a0c10; border-top: 1px solid #1a1e28;
+}
+.quality-bar .seek-ad-label { color: var(--muted); }
+.quality-bar select {
+  width: auto; min-width: 148px; max-width: 240px; margin: 0;
+  padding: 6px 8px; font-size: .82rem;
+}
+.quality-bar select:disabled { opacity: .55; }
+.quality-hint {
+  font-size: .75rem; color: var(--muted); white-space: nowrap;
+}
+@media (max-width: 640px) {
+  .quality-bar { flex-wrap: wrap; }
+  .quality-bar select { min-width: 0; flex: 1 1 140px; }
+}
 .live-play-bar {
   display: none; align-items: center; gap: 8px;
   padding: 8px 12px 10px; background: #0a0c10; border-top: 1px solid #1a1e28;
@@ -298,6 +315,12 @@ body.uploads.is-log { overflow: hidden; }
 .upload-drop span { color: var(--muted); font-size: .8rem; }
 body.uploads .status { border: 0; padding: 0 2px; }
 .uploads-jobs { padding: 12px 14px 14px; }
+.uploads-jobs-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  margin-bottom: 12px;
+}
+.uploads-jobs-head .section-title { margin: 0; }
+.uploads-jobs-actions { display: flex; align-items: center; gap: 6px; }
 .job-list { display: flex; flex-direction: column; gap: 6px; }
 .log-modal {
   position: fixed; inset: 0; z-index: 40;

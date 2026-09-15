@@ -55,6 +55,10 @@ function setLogOpen(open) {
 
 function paintJobs() {
   const host = $("jobList");
+  const wipe = $("btnDeleteAll");
+  const refreshAll = $("btnRefreshAll");
+  if (wipe) wipe.hidden = !jobs.length;
+  if (refreshAll) refreshAll.hidden = !jobs.length;
   if (!host) return;
   host.innerHTML = "";
   if (!jobs.length) {
@@ -164,6 +168,64 @@ async function deleteJob(job) {
   }
 }
 
+async function deleteAllJobs() {
+  if (!jobs.length) return;
+  const n = jobs.length;
+  const ok = window.confirm("Delete all " + n + " job" + (n === 1 ? "" : "s")
+    + " and remove packaged files?");
+  if (!ok) return;
+  setStatus("Deleting all jobs…");
+  try {
+    const res = await fetch("/api/ingest?all=1", { method: "DELETE" });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      setStatus(data.error || ("Delete all failed (" + res.status + ")"), "err");
+      return;
+    }
+    selectedId = null;
+    setLogOpen(false);
+    if (location.hash) history.replaceState(null, "", location.pathname + location.search);
+    await loadJobs();
+    paintJobs();
+    paintDetail(null);
+    const count = data.count != null ? data.count : n;
+    setStatus(count + " job" + (count === 1 ? "" : "s") + " removed.", "ok");
+  } catch (e) {
+    setStatus("Delete all failed: " + e.message, "err");
+  }
+}
+
+async function refreshAllJobs() {
+  if (!jobs.length) return;
+  setStatus("Refreshing all jobs…");
+  try {
+    await loadJobs();
+    if (selectedId && !jobById(selectedId)) {
+      selectedId = null;
+      setLogOpen(false);
+    }
+    paintJobs();
+    if (selectedId && logOpen) {
+      const detail = await loadLog(selectedId);
+      const job = jobById(selectedId);
+      if (job) {
+        if (detail.status) job.status = detail.status;
+        if (detail.sub) job.sub = detail.sub;
+        if (detail.title) job.title = detail.title;
+        if (detail.error !== undefined) job.error = detail.error;
+      }
+      paintJobs();
+      paintDetail(detail);
+    } else {
+      paintDetail(selectedId ? jobById(selectedId) : null);
+    }
+    const n = jobs.length;
+    setStatus(n + " job" + (n === 1 ? "" : "s") + " refreshed.", "ok");
+  } catch (e) {
+    setStatus("Refresh all failed: " + e.message, "err");
+  }
+}
+
 async function refreshJob(id) {
   selectedId = id;
   if (id) history.replaceState(null, "", "#" + encodeURIComponent(id));
@@ -203,7 +265,7 @@ async function boot() {
   }
 }
 
-const MAX_FILES = 3;
+const MAX_FILES = 10;
 
 function pickFiles(list) {
   return Array.prototype.slice.call(list || []).slice(0, MAX_FILES);
@@ -298,6 +360,10 @@ if (backdrop) backdrop.addEventListener("click", () => setLogOpen(false));
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape" && logOpen) setLogOpen(false);
 });
+const refreshAll = $("btnRefreshAll");
+if (refreshAll) refreshAll.addEventListener("click", () => refreshAllJobs());
+const wipeAll = $("btnDeleteAll");
+if (wipeAll) wipeAll.addEventListener("click", () => deleteAllJobs());
 bindDrop();
 setLogOpen(false);
 boot();

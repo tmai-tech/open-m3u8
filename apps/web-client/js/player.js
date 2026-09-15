@@ -10,6 +10,7 @@ import { resetAdClock } from "./seek-sgai.js";
 import { startAdWatch, stopAdWatch, guardInterstitialMedia } from "./seek-guard.js";
 import { hidePoster, setPosterHint, showPoster } from "./ott.js";
 import { startSeekThumbs, stopSeekThumbs } from "./seek-thumbs.js";
+import { bindQuality, refreshQualityHint, resetQualityMenu, setQualityNative, syncQualityMenu } from "./quality.js";
 
 let onDestroyed = () => {};
 export function setOnDestroyed(fn) { onDestroyed = fn || (() => {}); }
@@ -40,6 +41,7 @@ export function destroyPlayer() {
     ? state.windowDuration
     : 0;
   setAdLabel(false);
+  resetQualityMenu();
   onDestroyed();
 }
 
@@ -85,10 +87,26 @@ export function playUrl(manifestUrl, enableInterstitials, staticSession) {
       state.hls.on(Hls.Events.INTERSTITIAL_ASSET_PLAYER_CREATED, hookInterstitial);
     }
     state.hls.on(Hls.Events.MANIFEST_PARSED, () => {
+      syncQualityMenu(state.hls);
       video.play().catch(() => {});
       hidePoster();
-    setStatus("Playing " + state.strategy.toUpperCase() + " — " + manifestUrl, "ok");
+      setStatus("Playing " + state.strategy.toUpperCase() + " — " + manifestUrl, "ok");
     });
+    if (Hls.Events.LEVEL_SWITCHED) {
+      state.hls.on(Hls.Events.LEVEL_SWITCHED, () => refreshQualityHint(state.hls));
+    }
+    if (Hls.Events.LEVELS_UPDATED) {
+      state.hls.on(Hls.Events.LEVELS_UPDATED, () => {
+        const sel = $("qualitySelect");
+        const keep = sel ? sel.value : "-1";
+        syncQualityMenu(state.hls);
+        if (sel && keep !== "-1" && sel.querySelector('option[value="' + keep + '"]')) {
+          sel.value = keep;
+          state.hls.currentLevel = Number(keep);
+        }
+        refreshQualityHint(state.hls);
+      });
+    }
     state.hls.on(Hls.Events.LEVEL_LOADED, (_, data) => {
       if (data && data.details && data.details.totalduration) {
         const fromLevel = data.details.totalduration;
@@ -121,6 +139,7 @@ export function playUrl(manifestUrl, enableInterstitials, staticSession) {
   video.src = manifestUrl;
   video.play().catch(() => {});
   hidePoster();
+  setQualityNative();
   setStatus("Playing via native HLS — " + manifestUrl, "ok");
 }
 
@@ -189,6 +208,7 @@ export async function apply(andPlay) {
 }
 
 export function bindPlayer() {
+  bindQuality();
   bind("btnApply", "click", () => apply(true));
   bind("btnGenerate", "click", () => apply(false));
   bind("btnStop", "click", () => { destroyPlayer(); setAdLabel(false); setStatus("Player stopped."); });

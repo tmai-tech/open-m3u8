@@ -10,10 +10,21 @@ import com.iheartradio.m3u8.data.MediaPlaylist;
 import com.iheartradio.m3u8.data.Playlist;
 import com.iheartradio.m3u8.data.PlaylistData;
 import com.iheartradio.m3u8.data.PlaylistType;
+import com.iheartradio.m3u8.data.Resolution;
+import com.iheartradio.m3u8.data.StreamInfo;
+import com.iheartradio.m3u8.data.TrackData;
+import com.iheartradio.m3u8.data.TrackInfo;
 
 import java.io.IOException;
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Shared demo rewrite: fetch → parse → apply(strategy) → rewrite URIs → write.
@@ -51,19 +62,42 @@ public final class DemoPlaylistPipeline {
      * Apply the session strategy to a media playlist. Masters are returned unchanged.
      */
     public Playlist apply(DemoSession session, Playlist playlist) throws Exception {
+        return apply(session, playlist, null);
+    }
+
+    /**
+     * @param playlistUrl origin URL of {@code playlist}, used to match a content
+     *                    {@code STREAM-INF} so SSAI can pick the closest ad variant
+     */
+    public Playlist apply(DemoSession session, Playlist playlist, String playlistUrl)
+            throws Exception {
+        return apply(session, playlist, playlistUrl, null);
+    }
+
+    public Playlist apply(DemoSession session, Playlist playlist, String playlistUrl,
+                          String publicBase) throws Exception {
         if (playlist == null || !playlist.hasMediaPlaylist()) {
             return playlist;
+        }
+        // Never splice video ads into WebVTT. SSAI inserts cue-less empty.vtt
+        // for the ad window so captions stay aligned and stay dark during ads.
+        if (looksLikeSubtitles(playlist)) {
+            if (session.strategy == DemoSession.Strategy.SGAI) {
+                return playlist;
+            }
+            return stitchEmptySubtitleBreaks(session, playlist, publicBase);
         }
         if (session.strategy == DemoSession.Strategy.SGAI) {
             return PlaylistRewriteUtil.injectMediaTags(playlist, session.toInjectConfig());
         }
+        Resolution target = resolveContentResolution(session, playlistUrl);
         java.util.Map<String, Playlist> ads = new java.util.HashMap<String, Playlist>();
         for (DemoSession.Break br : session.breaks) {
             String url = session.resolveAdUrl(br);
             if (url == null || url.length() == 0 || ads.containsKey(url)) {
                 continue;
             }
-            ads.put(url, loadAdMediaPlaylist(session, url));
+            ads.put(url, loadAdMediaPlaylist(session, url, target));
         }
         List<PlaylistSsaiUtil.AdBreak> breaks = session.toSsaiBreaks(ads);
         if (breaks.isEmpty()) {
@@ -131,7 +165,7 @@ public final class DemoPlaylistPipeline {
             if (session.forceVod) {
                 playlist = snapshotAsVod(playlist);
             }
-            Playlist transformed = apply(session, playlist);
+            Playlist transformed = apply(session, playlist, playlistUrl, publicBase);
             Playlist rewritten = PlaylistRewriteUtil.rewriteUris(transformed, playlistUrl, mapper);
             byte[] out = PlaylistRewriteUtil.write(rewritten, Encoding.UTF_8);
             String kind = rewritten.hasMasterPlaylist() ? "master"
@@ -198,52 +232,68 @@ public final class DemoPlaylistPipeline {
     }
 
     Playlist loadAdMediaPlaylist(DemoSession session) throws Exception {
-        return loadAdMediaPlaylist(session, session.adUrl);
+        return loadAdMediaPlaylist(session, session.adUrl, null);
     }
 
     Playlist loadAdMediaPlaylist(DemoSession session, String adUrl) throws Exception {
+        return loadAdMediaPlaylist(session, adUrl, null);
+    }
+
+    Playlist loadAdMediaPlaylist(DemoSession session, String adUrl, Resolution target)
+            throws Exception {
         if (adUrl == null || adUrl.length() == 0) {
             throw new DemoHttp.HttpException(400, "ad URL is required for ssai");
         }
         Playlist cached = session.getCachedAd(adUrl);
-        if (cached != null) {
+        if (cached != null && cached.hasMediaPlaylist()) {
             return cached;
         }
         synchronized (session.adLock()) {
             cached = session.getCachedAd(adUrl);
-            if (cached != null) {
+            if (cached != null && cached.hasMediaPlaylist()) {
                 return cached;
             }
-            if (session.getAdLoadError() != null) {
-                throw new DemoHttp.HttpException(502, session.getAdLoadError());
-            }
             try {
-                Playlist ad = fetchAndParse(adUrl);
-                Playlist resolved;
+                Playlist ad = cached;
+                if (ad == null) {
+                    if (session.getAdLoadError() != null) {
+                        throw new DemoHttp.HttpException(502, session.getAdLoadError());
+                    }
+                    ad = fetchAndParse(adUrl);
+                    session.putCachedAd(adUrl, ad);
+                }
                 if (ad.hasMediaPlaylist()) {
-                    resolved = PlaylistRewriteUtil.absolutizeUris(ad, adUrl);
-                } else if (ad.hasMasterPlaylist()) {
-                    List<PlaylistData> variants = ad.getMasterPlaylist().getPlaylists();
-                    if (variants == null || variants.isEmpty()) {
-                        throw new IllegalStateException("ad master playlist has no variants");
-                    }
-                    String child = PlaylistRewriteUtil.resolveUri(adUrl, variants.get(0).getUri());
-                    Playlist media = fetchAndParse(child);
-                    if (!media.hasMediaPlaylist()) {
-                        throw new IllegalStateException("ad variant is not a media playlist: " + child);
-                    }
-                    resolved = PlaylistRewriteUtil.absolutizeUris(media, child);
-                } else {
+                    Playlist resolved = PlaylistRewriteUtil.absolutizeUris(ad, adUrl);
+                    session.putCachedAd(adUrl, resolved);
+                    return resolved;
+                }
+                if (!ad.hasMasterPlaylist()) {
                     throw new IllegalStateException("ad URL is neither master nor media playlist");
                 }
-                session.putCachedAd(adUrl, resolved);
+                List<PlaylistData> variants = ad.getMasterPlaylist().getPlaylists();
+                if (variants == null || variants.isEmpty()) {
+                    throw new IllegalStateException("ad master playlist has no variants");
+                }
+                PlaylistData chosen = pickClosestVariant(variants, target);
+                String child = PlaylistRewriteUtil.resolveUri(adUrl, chosen.getUri());
+                Playlist mediaCached = session.getCachedAd(child);
+                if (mediaCached != null && mediaCached.hasMediaPlaylist()) {
+                    return mediaCached;
+                }
+                Playlist media = fetchAndParse(child);
+                if (!media.hasMediaPlaylist()) {
+                    throw new IllegalStateException("ad variant is not a media playlist: " + child);
+                }
+                Playlist resolved = PlaylistRewriteUtil.absolutizeUris(media, child);
+                session.putCachedAd(child, resolved);
                 return resolved;
             } catch (DemoHttp.HttpException e) {
-                session.setAdLoadError(e.getMessage());
                 throw e;
             } catch (Exception e) {
                 String msg = "failed to load ad playlist: " + e.getMessage();
-                session.setAdLoadError(msg);
+                if (cached == null) {
+                    session.setAdLoadError(msg);
+                }
                 DemoLog.event("error")
                         .sid(session.id)
                         .put("url", adUrl)
@@ -260,6 +310,114 @@ public final class DemoPlaylistPipeline {
             throw new IOException("HTTP " + remote.status + " for " + url);
         }
         return PlaylistRewriteUtil.parse(remote.body, Encoding.UTF_8);
+    }
+
+    Resolution resolveContentResolution(DemoSession session, String playlistUrl) {
+        if (session == null || playlistUrl == null || playlistUrl.length() == 0) {
+            return null;
+        }
+        String contentUrl = session.contentUrl;
+        if (contentUrl == null || contentUrl.length() == 0) {
+            return null;
+        }
+        Playlist master = session.getCachedContentMaster();
+        if (master == null || !master.hasMasterPlaylist()) {
+            try {
+                Playlist parsed = fetchAndParse(contentUrl);
+                if (parsed == null || !parsed.hasMasterPlaylist()) {
+                    return null;
+                }
+                session.setCachedContentMaster(parsed);
+                master = parsed;
+            } catch (Exception e) {
+                return null;
+            }
+        }
+        return resolutionForPlaylistUrl(master, contentUrl, playlistUrl);
+    }
+
+    static Resolution resolutionForPlaylistUrl(Playlist master, String masterUrl, String playlistUrl) {
+        if (master == null || !master.hasMasterPlaylist() || playlistUrl == null) {
+            return null;
+        }
+        List<PlaylistData> variants = master.getMasterPlaylist().getPlaylists();
+        if (variants == null) {
+            return null;
+        }
+        for (PlaylistData pd : variants) {
+            if (pd == null || pd.getUri() == null) {
+                continue;
+            }
+            String abs = PlaylistRewriteUtil.resolveUri(masterUrl, pd.getUri());
+            if (samePlaylistUrl(abs, playlistUrl)) {
+                return resolutionOf(pd);
+            }
+        }
+        return null;
+    }
+
+    static PlaylistData pickClosestVariant(List<PlaylistData> variants, Resolution target) {
+        if (variants == null || variants.isEmpty()) {
+            return null;
+        }
+        if (target == null) {
+            return variants.get(0);
+        }
+        PlaylistData best = null;
+        long bestDist = Long.MAX_VALUE;
+        int bestBw = Integer.MAX_VALUE;
+        for (PlaylistData pd : variants) {
+            Resolution res = resolutionOf(pd);
+            if (res == null) {
+                continue;
+            }
+            long dx = (long) res.width - target.width;
+            long dy = (long) res.height - target.height;
+            long dist = dx * dx + dy * dy;
+            int bw = Integer.MAX_VALUE;
+            if (pd.hasStreamInfo()) {
+                int raw = pd.getStreamInfo().getBandwidth();
+                if (raw > 0) {
+                    bw = raw;
+                }
+            }
+            if (best == null || dist < bestDist || (dist == bestDist && bw < bestBw)) {
+                best = pd;
+                bestDist = dist;
+                bestBw = bw;
+            }
+        }
+        return best != null ? best : variants.get(0);
+    }
+
+    static Resolution resolutionOf(PlaylistData pd) {
+        if (pd == null || !pd.hasStreamInfo()) {
+            return null;
+        }
+        StreamInfo info = pd.getStreamInfo();
+        return info.hasResolution() ? info.getResolution() : null;
+    }
+
+    static boolean samePlaylistUrl(String a, String b) {
+        if (a == null || b == null) {
+            return false;
+        }
+        if (a.equals(b)) {
+            return true;
+        }
+        return normalizePlaylistUrl(a).equals(normalizePlaylistUrl(b));
+    }
+
+    static String normalizePlaylistUrl(String url) {
+        String s = url.trim();
+        int hash = s.indexOf('#');
+        if (hash >= 0) {
+            s = s.substring(0, hash);
+        }
+        while (s.endsWith("/")) {
+            s = s.substring(0, s.length() - 1);
+        }
+        return s;
     }
 
     /**
@@ -337,6 +495,300 @@ public final class DemoPlaylistPipeline {
             sb.append(out.get(i));
         }
         return sb.toString();
+    }
+
+    static final String EMPTY_VTT_PATH = "/media/empty.vtt";
+    static final float EMPTY_VTT_SEGMENT_SEC = 1f;
+
+    Playlist stitchEmptySubtitleBreaks(DemoSession session, Playlist playlist, String publicBase)
+            throws Exception {
+        if (session == null || session.breaks == null || session.breaks.isEmpty()) {
+            return playlist;
+        }
+        String emptyUri = emptyVttUri(publicBase);
+        Map<String, Float> pods = new LinkedHashMap<String, Float>();
+        for (DemoSession.Break br : session.breaks) {
+            String url = session.resolveAdUrl(br);
+            if (url == null || url.length() == 0) {
+                continue;
+            }
+            float maxDur = br.durationSec > 0f ? br.durationSec : session.maxAdDurationSec;
+            if (maxDur <= 0f) {
+                maxDur = 15f;
+            }
+            float pod = actualAdPodDuration(session, url, maxDur);
+            Float prev = pods.get(url);
+            if (prev == null || pod > prev) {
+                pods.put(url, pod);
+            }
+        }
+        if (pods.isEmpty()) {
+            return playlist;
+        }
+        Map<String, Playlist> ads = new LinkedHashMap<String, Playlist>();
+        for (Map.Entry<String, Float> e : pods.entrySet()) {
+            ads.put(e.getKey(), emptySubtitleAdPlaylist(emptyUri, e.getValue(), EMPTY_VTT_SEGMENT_SEC));
+        }
+        List<PlaylistSsaiUtil.AdBreak> breaks = session.toSsaiBreaks(ads);
+        if (breaks.isEmpty()) {
+            return playlist;
+        }
+        Playlist stitched = PlaylistSsaiUtil.stitch(
+                playlist, breaks, PlaylistSsaiUtil.StitchOptions.defaults());
+        // Do not shift X-TIMESTAMP-MAP. After CUE-IN the video remounts
+        // content init and PTS is content time again; the empty.vtt hole
+        // already keeps captions dark during the ad. Adding ssaiVttShift
+        // double-counts the pod and cues resume ~ad-length late.
+        return ensureVodHints(stitched);
+    }
+
+    static final String SSAI_VTT_SHIFT = "ssaiVttShift";
+    private static final Pattern MPEGTS_ATTR =
+            Pattern.compile("(?i)(MPEGTS\\s*[=:]\\s*)(\\d+)");
+
+    /**
+     * Dummy / sidecar VTT uses X-TIMESTAMP-MAP on the content clock. After an SSAI
+     * hole those MPEGTS values still sit inside the ad window, so hls.js paints
+     * cues during the break. Shift post-break VTT maps by the ad pod duration.
+     */
+    static Playlist applyPostBreakVttShift(Playlist playlist) {
+        if (playlist == null || !playlist.hasMediaPlaylist()) {
+            return playlist;
+        }
+        List<TrackData> tracks = playlist.getMediaPlaylist().getTracks();
+        if (tracks == null || tracks.isEmpty()) {
+            return playlist;
+        }
+        List<TrackData> out = new ArrayList<TrackData>(tracks.size());
+        float shift = 0f;
+        float adAcc = 0f;
+        boolean inAd = false;
+        for (TrackData t : tracks) {
+            boolean empty = t != null && isEmptyVttUri(t.getUri());
+            if (empty) {
+                inAd = true;
+                if (t.hasTrackInfo() && t.getTrackInfo().duration > 0f) {
+                    adAcc += t.getTrackInfo().duration;
+                }
+                out.add(t);
+                continue;
+            }
+            if (inAd) {
+                shift += adAcc;
+                adAcc = 0f;
+                inAd = false;
+            }
+            if (shift > 1e-4f && t != null && isWebVttUri(t.getUri())) {
+                out.add(t.buildUpon().withUri(withVttShift(t.getUri(), shift)).build());
+            } else {
+                out.add(t);
+            }
+        }
+        return playlist.buildUpon()
+                .withMediaPlaylist(playlist.getMediaPlaylist().buildUpon().withTracks(out).build())
+                .build();
+    }
+
+    static boolean isEmptyVttUri(String uri) {
+        if (uri == null) {
+            return false;
+        }
+        String lower = uri.toLowerCase(Locale.US);
+        return lower.contains("empty.vtt") || lower.contains(EMPTY_VTT_PATH);
+    }
+
+    static String withVttShift(String uri, float shiftSec) {
+        if (uri == null || uri.length() == 0 || shiftSec <= 1e-4f) {
+            return uri;
+        }
+        if (uri.contains(SSAI_VTT_SHIFT + "=")) {
+            return uri;
+        }
+        String q = SSAI_VTT_SHIFT + "=" + String.format(Locale.US, "%.6f", shiftSec);
+        return uri + (uri.indexOf('?') >= 0 ? "&" : "?") + q;
+    }
+
+    public static float parseVttShift(String uri) {
+        if (uri == null) {
+            return 0f;
+        }
+        try {
+            String query = URI.create(uri).getRawQuery();
+            String raw = DemoHttp.queryParam(query, SSAI_VTT_SHIFT);
+            if (raw == null || raw.length() == 0) {
+                return 0f;
+            }
+            return Float.parseFloat(raw);
+        } catch (Exception e) {
+            return 0f;
+        }
+    }
+
+    public static String stripVttShift(String uri) {
+        if (uri == null || !uri.contains(SSAI_VTT_SHIFT)) {
+            return uri;
+        }
+        int q = uri.indexOf('?');
+        if (q < 0) {
+            return uri;
+        }
+        String base = uri.substring(0, q);
+        String[] parts = uri.substring(q + 1).split("&");
+        StringBuilder keep = new StringBuilder();
+        for (String part : parts) {
+            if (part.startsWith(SSAI_VTT_SHIFT + "=") || part.isEmpty()) {
+                continue;
+            }
+            if (keep.length() > 0) {
+                keep.append('&');
+            }
+            keep.append(part);
+        }
+        return keep.length() == 0 ? base : base + "?" + keep;
+    }
+
+    public static String shiftWebVttMpegts(String text, float shiftSec) {
+        if (text == null || shiftSec == 0f) {
+            return text;
+        }
+        long delta = Math.round(shiftSec * 90000.0);
+        if (delta == 0L) {
+            return text;
+        }
+        Matcher m = MPEGTS_ATTR.matcher(text);
+        StringBuffer sb = new StringBuffer();
+        while (m.find()) {
+            long next = Long.parseLong(m.group(2)) + delta;
+            m.appendReplacement(sb, Matcher.quoteReplacement(m.group(1) + next));
+        }
+        m.appendTail(sb);
+        return sb.toString();
+    }
+
+    float actualAdPodDuration(DemoSession session, String adUrl, float maxDur) {
+        try {
+            Playlist ad = loadAdMediaPlaylist(session, adUrl, firstContentResolution(session));
+            if (ad == null || !ad.hasMediaPlaylist()) {
+                return maxDur;
+            }
+            List<TrackData> trimmed = PlaylistSsaiUtil.trimTracksToMaxDuration(
+                    ad.getMediaPlaylist().getTracks(), maxDur);
+            float sum = 0f;
+            for (TrackData t : trimmed) {
+                if (t != null && t.hasTrackInfo() && t.getTrackInfo().duration > 0f) {
+                    sum += t.getTrackInfo().duration;
+                }
+            }
+            return sum > 0f ? sum : maxDur;
+        } catch (Exception e) {
+            return maxDur;
+        }
+    }
+
+    Resolution firstContentResolution(DemoSession session) {
+        if (session == null || session.contentUrl == null || session.contentUrl.length() == 0) {
+            return null;
+        }
+        Playlist master = session.getCachedContentMaster();
+        if (master == null || !master.hasMasterPlaylist()) {
+            try {
+                Playlist parsed = fetchAndParse(session.contentUrl);
+                if (parsed != null && parsed.hasMasterPlaylist()) {
+                    session.setCachedContentMaster(parsed);
+                    master = parsed;
+                }
+            } catch (Exception e) {
+                return null;
+            }
+        }
+        if (master == null || !master.hasMasterPlaylist()) {
+            return null;
+        }
+        List<PlaylistData> variants = master.getMasterPlaylist().getPlaylists();
+        if (variants == null) {
+            return null;
+        }
+        for (PlaylistData pd : variants) {
+            Resolution res = resolutionOf(pd);
+            if (res != null) {
+                return res;
+            }
+        }
+        return null;
+    }
+
+    static String emptyVttUri(String publicBase) {
+        if (publicBase == null || publicBase.length() == 0) {
+            return "empty.vtt";
+        }
+        String base = publicBase.endsWith("/")
+                ? publicBase.substring(0, publicBase.length() - 1) : publicBase;
+        return base + EMPTY_VTT_PATH;
+    }
+
+    static Playlist emptySubtitleAdPlaylist(String uri, float durationSec, float segmentSec) {
+        float seg = segmentSec > 0.05f ? segmentSec : EMPTY_VTT_SEGMENT_SEC;
+        float left = durationSec > 0f ? durationSec : seg;
+        List<TrackData> tracks = new ArrayList<TrackData>();
+        while (left > 1e-3f) {
+            float d = Math.min(seg, left);
+            tracks.add(new TrackData.Builder()
+                    .withUri(uri)
+                    .withTrackInfo(new TrackInfo(d, null))
+                    .build());
+            left -= d;
+        }
+        if (tracks.isEmpty()) {
+            tracks.add(new TrackData.Builder()
+                    .withUri(uri)
+                    .withTrackInfo(new TrackInfo(seg, null))
+                    .build());
+        }
+        int target = Math.max(1, (int) Math.ceil(seg));
+        return new Playlist.Builder()
+                .withExtended(true)
+                .withCompatibilityVersion(6)
+                .withMediaPlaylist(new MediaPlaylist.Builder()
+                        .withTargetDuration(target)
+                        .withMediaSequenceNumber(0)
+                        .withIsOngoing(false)
+                        .withTracks(tracks)
+                        .build())
+                .build();
+    }
+
+    static boolean looksLikeSubtitles(Playlist playlist) {
+        if (playlist == null || !playlist.hasMediaPlaylist()) {
+            return false;
+        }
+        List<TrackData> tracks = playlist.getMediaPlaylist().getTracks();
+        if (tracks == null || tracks.isEmpty()) {
+            return false;
+        }
+        for (TrackData track : tracks) {
+            if (track != null && isWebVttUri(track.getUri())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public static boolean isWebVttUri(String uri) {
+        if (uri == null || uri.isEmpty()) {
+            return false;
+        }
+        String lower = uri.toLowerCase(Locale.US);
+        int query = lower.indexOf('?');
+        String path = query >= 0 ? lower.substring(0, query) : lower;
+        int hash = path.indexOf('#');
+        if (hash >= 0) {
+            path = path.substring(0, hash);
+        }
+        if (path.endsWith(".vtt") || path.endsWith(".webvtt")) {
+            return true;
+        }
+        // Rewritten proxy URIs keep the .vtt suffix on the encoded origin URL.
+        return lower.contains(".vtt") || lower.contains(".webvtt");
     }
 
     static Playlist ensureVodHints(Playlist playlist) {

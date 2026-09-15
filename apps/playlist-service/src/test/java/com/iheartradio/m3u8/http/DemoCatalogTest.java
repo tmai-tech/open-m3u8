@@ -12,6 +12,7 @@ import java.util.List;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 public class DemoCatalogTest {
@@ -95,7 +96,7 @@ public class DemoCatalogTest {
         assertEquals("mars", back.get(0).id);
         assertEquals("Summer on Mars", back.get(0).title);
         assertEquals(DemoJobStatus.QUEUED, back.get(0).status);
-        assertEquals(Title.DEFAULT_AD_URL, back.get(0).adUrl);
+        assertNull(back.get(0).adUrl);
         assertEquals("A red rover on rust soil.", back.get(0).summary);
         assertTrue(back.get(0).durationSec > 73f);
     }
@@ -150,6 +151,14 @@ public class DemoCatalogTest {
             titles.add(t);
         });
         assertEquals(2, store.load().size());
+    }
+
+    @Test
+    public void newTitleHasNoHouseAd() {
+        Title t = new Title();
+        assertNull(t.adUrl);
+        assertEquals(0f, t.adOffset, 0.01f);
+        assertEquals(0f, t.adDuration, 0.01f);
     }
 
     @Test

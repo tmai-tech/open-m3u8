@@ -46,6 +46,13 @@
         <span class="seek-ad-label">Ads</span>
         <div class="seek-ad-marks" id="seekMarks"></div>
       </div>
+      <div class="quality-bar" id="qualityBar">
+        <span class="seek-ad-label">Quality</span>
+        <select id="qualitySelect" aria-label="Video quality" disabled title="Play to load variants from the master playlist">
+          <option value="-1">Auto</option>
+        </select>
+        <span id="qualityHint" class="quality-hint"></span>
+      </div>
       <div class="live-play-bar" id="livePlayBar" hidden>
         <span class="seek-ad-label">Play as</span>
         <button type="button" class="btn btn-ghost btn-sm" id="btnForceLive">Live</button>

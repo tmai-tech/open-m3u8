@@ -68,6 +68,7 @@ public final class DemoSession {
     public boolean forceVod;
 
     private volatile Playlist cachedAdMedia;
+    private volatile Playlist cachedContentMaster;
     private volatile String adLoadError;
     private final Object adLock = new Object();
     private final java.util.Map<String, Playlist> adCache =
@@ -121,6 +122,16 @@ public final class DemoSession {
     public void putCachedAd(String url, Playlist playlist) {
         if (url != null && playlist != null) {
             adCache.put(url, playlist);
+        }
+    }
+
+    public Playlist getCachedContentMaster() {
+        return cachedContentMaster;
+    }
+
+    public void setCachedContentMaster(Playlist playlist) {
+        if (playlist != null && playlist.hasMasterPlaylist()) {
+            this.cachedContentMaster = playlist;
         }
     }
 

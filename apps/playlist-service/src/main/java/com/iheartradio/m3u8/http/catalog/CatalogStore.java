@@ -313,11 +313,41 @@ public final class CatalogStore {
                 t.poster = "/media/titles/" + t.id + "/poster.jpg";
             }
             t.status = DemoJobStatus.READY;
-            t.sub = "Local · 720p";
+            t.sub = "Local · " + resolutionLabel(master);
             t.ensureJobId();
             out.add(t);
         }
         return out;
+    }
+
+    static String resolutionLabel(File master) {
+        if (master == null || !master.isFile()) {
+            return "HLS";
+        }
+        try {
+            for (String line : Files.readAllLines(master.toPath(), StandardCharsets.UTF_8)) {
+                int at = line.indexOf("RESOLUTION=");
+                if (at < 0) {
+                    continue;
+                }
+                String rest = line.substring(at + "RESOLUTION=".length());
+                int comma = rest.indexOf(',');
+                if (comma >= 0) {
+                    rest = rest.substring(0, comma);
+                }
+                int x = rest.indexOf('x');
+                if (x <= 0) {
+                    continue;
+                }
+                int h = Integer.parseInt(rest.substring(x + 1).trim());
+                if (h > 0) {
+                    return h + "p";
+                }
+            }
+        } catch (Exception ignored) {
+            // fall through
+        }
+        return "HLS";
     }
 
     public static boolean blocksTranscode(DemoJobStatus status) {

@@ -8,7 +8,8 @@ import java.util.UUID;
  * One catalog row. Disk and {@code /api/catalog} wire format.
  */
 public final class Title {
-    public static final String DEFAULT_AD_URL = "/media/titles/giff-day-1/master.m3u8";
+    /** Library titles do not get a house ad unless the user adds a break. */
+    public static final String DEFAULT_AD_URL = null;
     public static final float DEFAULT_AD_OFFSET = 10f;
     public static final float DEFAULT_AD_DURATION = 12f;
 
@@ -29,9 +30,9 @@ public final class Title {
     public String duplicateOf;
 
     public Title() {
-        this.adUrl = DEFAULT_AD_URL;
-        this.adOffset = DEFAULT_AD_OFFSET;
-        this.adDuration = DEFAULT_AD_DURATION;
+        this.adUrl = null;
+        this.adOffset = 0f;
+        this.adDuration = 0f;
         this.status = DemoJobStatus.READY;
     }
 

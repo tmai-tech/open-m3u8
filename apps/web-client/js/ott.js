@@ -12,7 +12,6 @@ export const CATALOG = [
   { id: "mux", title: "Big Buck Bunny", sub: "Mux · HLS", kicker: "Featured · Blender Foundation", url: SAMPLES.mux, poster: featuredPoster("mux") },
   { id: "apple", title: "BipBop", sub: "Apple · I-frame", kicker: "Featured · Apple HLS", url: SAMPLES.apple, poster: featuredPoster("apple") },
   { id: "tos", title: "Tears of Steel", sub: "Unified · 4s", kicker: "Featured · Blender Institute", url: SAMPLES.tos, poster: featuredPoster("tos") },
-  { id: "demo", title: "BBB + ads", sub: "Mux · breaks at 30s / 90s", kicker: "Featured · Blender Foundation", url: SAMPLES.mux, fillAds: true, poster: featuredPoster("mux") },
   { id: "elephants", title: "Elephants Dream", sub: "Longtail · multi-audio", kicker: "Blender Foundation", url: SAMPLES.elephants, poster: featuredPoster("elephants") },
   { id: "angel", title: "Angel One", sub: "Shaka · multi-audio", kicker: "Shaka Player demo", url: SAMPLES.angel, poster: featuredPoster("angel") },
   { id: "skate", title: "Skate Phantom Flex", sub: "Vodobox · up to 4K", kicker: "Vodobox sample", url: SAMPLES.skate, poster: featuredPoster("skate") },
@@ -347,9 +346,9 @@ function toLibraryItem(t) {
     url: t.url,
     poster: t.poster,
     library: true,
-    adUrl: t.adUrl || SAMPLES.giff,
-    adOffset: t.adOffset != null ? t.adOffset : 10,
-    adDuration: t.adDuration != null ? t.adDuration : 12,
+    adUrl: "",
+    adOffset: 0,
+    adDuration: 0,
     status,
     error: t.error,
   };
@@ -379,7 +378,7 @@ export async function renderCatalog() {
   paintRail($("catalog"), CATALOG.filter((c) => !c.live && !c.library));
   paintRail($("liveCatalog"), CATALOG.filter((c) => c.live));
   const current = ($("contentUrl") && $("contentUrl").value) || SAMPLES.mux;
-  const visible = allItems().filter((c) => !c.fillAds && (!c.library || c.status === "ready"));
+  const visible = allItems().filter((c) => !c.library || c.status === "ready");
   const match = visible.find((c) => c.url === current) || visible[0];
   if (match) {
     document.querySelectorAll(".thumb-card").forEach((el) => {

@@ -1,5 +1,5 @@
 import { $, bind } from "./dom.js";
-import { adsAllowed, DEFAULT_AD, HINTS, LENGTH_HINTS, SAMPLES, state } from "./state.js";
+import { adsAllowed, DEFAULT_AD, HINTS, LENGTH_HINTS, state } from "./state.js";
 import { setStatus } from "./status.js";
 import { renderTimeline } from "./ad-markers.js";
 import { fillPublicRow } from "./public-url.js";
@@ -78,7 +78,7 @@ export function addBreakRow(offsetSec, assetUri, durationSec) {
 export function defaultAdUrl() {
   const u = $("contentUrl") && $("contentUrl").value.trim();
   const item = findCatalogItem(u);
-  if (item && item.library) return item.adUrl || SAMPLES.giff;
+  if (item && item.library) return "";
   return DEFAULT_AD;
 }
 
@@ -174,20 +174,10 @@ export function applyCatalogPreset(item) {
     const fromLive = state.liveMode;
     state.windowDuration = 0;
     setLiveUi(false);
-    if (item.fillAds) {
-      savedBreaks = null;
-      $("breakList").innerHTML = "";
-      addBreakRow(30, DEFAULT_AD, 12);
-      addBreakRow(90, DEFAULT_AD, 12);
-      setStatus("BBB with two 12s Tears of Steel breaks. Click Play on the hero.", "ok");
-    } else if (item.library) {
+    if (item.library) {
       savedBreaks = null;
       if ($("breakList")) $("breakList").innerHTML = "";
-      const ad = item.adUrl || SAMPLES.giff;
-      const off = item.adOffset != null ? item.adOffset : 10;
-      const dur = item.adDuration != null ? item.adDuration : 12;
-      addBreakRow(off, ad, dur);
-      setStatus("Library title — SSAI uses GIFF Day 1 as the ad at 10s.");
+      setStatus("Library title — no house ad. Add a break if you want one.");
     } else if (fromLive) {
       $("breakList").innerHTML = "";
       (savedBreaks || []).forEach((b) => addBreakRow(b.offsetSec, b.assetUri, b.durationSec));

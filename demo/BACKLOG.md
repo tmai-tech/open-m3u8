@@ -70,3 +70,15 @@ Tried `moondream:1.8b-v2-q2_K` (smallest Ollama tag, 1.5 GB) on a GIFF Day 1 fra
 Both pulled models were deleted. The Ollama binary in `~/.local` can stay.
 
 Later pass, on a machine that can hold it: `OLLAMA_MODEL=moondream` (1.8B Q4, 1.7 GB) or another vision model that fits, then `--enrich` one short title. Do not default the packager to `llava` on a 4 GB WSL VM. Do not pull `llava` again here.
+
+## Packager: auto-captions / ASR
+
+**Do not add a speech model on this PC.** Whisper (even small) plus FFmpeg would saturate the i5-7200U and likely reset the 4 GB WSL VM, same class of risk as `llava`.
+
+Current titles have no embedded text tracks and no `.srt`/`.vtt` sidecars. The packager writes a **dummy** WebVTT SUBS rendition (`subs.m3u8` + `Dummy subtitle i/N`) so the master has `EXT-X-MEDIA:TYPE=SUBTITLES`. SSAI does not splice video into that playlist: the ad window is cue-less `empty.vtt` segments (`/media/empty.vtt`) so nothing renders during the break and content cues stay on the content timeline. Real captions later: user sidecar wins, then optional ASR on a bigger box, never fail the pack if ASR is down. Do not pull Whisper here.
+
+## Packager: ABR ladder for library titles
+
+**Done:** ingest encodes the source-size rung first, then **360p** if height > 360, then **480p** if height > 480, **one FFmpeg at a time**. `--ladder <id>` fills any missing 360/480 rungs. A 12-title 360-only backfill was ~8 minutes; 480 on the 12 taller titles is ~12–18 minutes.
+
+Do **not** add 480 or a 1080 / 4K extra rung on this PC. Do **not** run two FFmpegs at once. A 360/480/720/1080 ladder belongs on a bigger box.

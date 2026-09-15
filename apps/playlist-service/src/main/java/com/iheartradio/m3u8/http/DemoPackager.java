@@ -209,7 +209,8 @@ public final class DemoPackager {
                 t.status = DemoJobStatus.READY;
                 t.contentHash = CatalogStore.sha256(done);
                 t.durationSec = result.durationSec;
-                t.sub = "Local · " + Math.round(result.durationSec) + "s · 720p";
+                t.sub = "Local · " + Math.round(result.durationSec) + "s · "
+                        + (result.height > 0 ? result.height + "p" : "video");
                 t.url = "/media/titles/" + id + "/master.m3u8";
                 t.poster = "/media/titles/" + id + "/poster.jpg";
                 t.error = null;
@@ -245,6 +246,8 @@ public final class DemoPackager {
         float durationSec;
         int fps = 24;
         int bandwidth = 2_000_000;
+        int width;
+        int height;
     }
 
     PackageResult encode(String id, File src, File dest) throws IOException, InterruptedException {
@@ -344,20 +347,34 @@ public final class DemoPackager {
         logs.append(id, "poster done");
 
         r.bandwidth = estimateBandwidth(dest, r.durationSec);
+        int[] size = probeVideoSize(new File(dest, "init.m4s"));
+        r.width = size[0];
+        r.height = size[1];
         return r;
     }
 
     void writeMaster(File dest, PackageResult r) throws IOException {
         String codecs = "avc1.640029,mp4a.40.2";
-        String body = "#EXTM3U\n"
-                + "#EXT-X-VERSION:7\n"
-                + "#EXT-X-INDEPENDENT-SEGMENTS\n"
-                + "#EXT-X-STREAM-INF:BANDWIDTH=" + r.bandwidth
-                + ",AVERAGE-BANDWIDTH=" + Math.max(1, (int) (r.bandwidth * 0.9))
-                + ",RESOLUTION=1280x720,FRAME-RATE=" + r.fps
-                + ",CODECS=\"" + codecs + "\"\n"
-                + "v720.m3u8\n";
-        Files.write(new File(dest, "master.m3u8").toPath(), body.getBytes(StandardCharsets.UTF_8));
+        boolean hasSubs = new File(dest, "subs.m3u8").isFile();
+        StringBuilder sb = new StringBuilder();
+        sb.append("#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-INDEPENDENT-SEGMENTS\n");
+        if (hasSubs) {
+            sb.append("#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID=\"subs\",NAME=\"English\",")
+                    .append("DEFAULT=YES,AUTOSELECT=YES,FORCED=NO,LANGUAGE=\"en\",URI=\"subs.m3u8\"\n");
+        }
+        sb.append("#EXT-X-STREAM-INF:BANDWIDTH=").append(r.bandwidth)
+                .append(",AVERAGE-BANDWIDTH=").append(Math.max(1, (int) (r.bandwidth * 0.9)));
+        if (r.width > 0 && r.height > 0) {
+            sb.append(",RESOLUTION=").append(r.width).append("x").append(r.height);
+        }
+        sb.append(",FRAME-RATE=").append(r.fps)
+                .append(",CODECS=\"").append(codecs).append("\"");
+        if (hasSubs) {
+            sb.append(",SUBTITLES=\"subs\"");
+        }
+        sb.append("\nv720.m3u8\n");
+        Files.write(new File(dest, "master.m3u8").toPath(),
+                sb.toString().getBytes(StandardCharsets.UTF_8));
     }
 
     float probeDuration(File src) {
@@ -368,6 +385,26 @@ public final class DemoPackager {
         } catch (Exception e) {
             return 0f;
         }
+    }
+
+    int[] probeVideoSize(File src) {
+        try {
+            String out = runCapture(ffprobe, "-v", "error", "-select_streams", "v:0",
+                    "-show_entries", "stream=width,height", "-of", "csv=p=0:s=x",
+                    src.getAbsolutePath());
+            String s = out.trim();
+            int x = s.indexOf('x');
+            if (x > 0) {
+                int w = Integer.parseInt(s.substring(0, x).trim());
+                int h = Integer.parseInt(s.substring(x + 1).trim());
+                if (w > 0 && h > 0) {
+                    return new int[] { w, h };
+                }
+            }
+        } catch (Exception ignored) {
+            // leave unset; master omits RESOLUTION rather than lie
+        }
+        return new int[] { 0, 0 };
     }
 
     int probeFps(File src) {
