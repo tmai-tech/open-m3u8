@@ -591,18 +591,15 @@ public final class PlaylistRewriteUtil {
         public final List<Float> segmentStarts;
         public final String firstProgramDateTime;
         public final long firstProgramDateTimeMs;
-        /** End of last segment on the program clock (PDT resets honored). */
-        public final long liveEdgeMs;
-        /** PDT at the start of the last media segment. */
+        /** PDT at the start of the last media segment (resets honored). */
         public final long lastSegmentPdtMs;
 
         Timeline(float duration, List<Float> segmentStarts, String firstProgramDateTime,
-                 long firstProgramDateTimeMs, long liveEdgeMs, long lastSegmentPdtMs) {
+                 long firstProgramDateTimeMs, long lastSegmentPdtMs) {
             this.duration = duration;
             this.segmentStarts = segmentStarts;
             this.firstProgramDateTime = firstProgramDateTime;
             this.firstProgramDateTimeMs = firstProgramDateTimeMs;
-            this.liveEdgeMs = liveEdgeMs;
             this.lastSegmentPdtMs = lastSegmentPdtMs;
         }
     }
@@ -641,7 +638,7 @@ public final class PlaylistRewriteUtil {
         long base = firstPdtMs >= 0 ? firstPdtMs : DEFAULT_SYNTH_PDT_MS;
         long edge = clockMs >= 0 ? clockMs : base + Math.round(cumulative * 1000.0);
         long lastPdt = lastSegPdtMs >= 0 ? lastSegPdtMs : edge;
-        return new Timeline(cumulative, starts, firstPdt, base, edge, lastPdt);
+        return new Timeline(cumulative, starts, firstPdt, base, lastPdt);
     }
 
     static float snapOffset(float offset, List<Float> segmentStarts) {

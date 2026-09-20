@@ -1,5 +1,5 @@
 import { $, bind } from "./dom.js";
-import { adsAllowed, DEFAULT_AD, HINTS, LENGTH_HINTS, isLiveCadenceUrl, SAMPLES, state } from "./state.js";
+import { adsAllowed, DEFAULT_AD, HINTS, LENGTH_HINTS, isLiveCadenceSession, LIVE_CADENCE, SAMPLES, state } from "./state.js";
 import { setStatus } from "./status.js";
 import { renderTimeline } from "./ad-markers.js";
 import { fillPublicRow } from "./public-url.js";
@@ -158,9 +158,10 @@ function toAbsoluteUrl(url) {
 export function buildLocalSession() {
   const contentUrl = toAbsoluteUrl($("contentUrl").value);
   if (!contentUrl) throw new Error("Content URL is required");
-  const liveCadence = state.liveMode && !state.forceVod && isLiveCadenceUrl(contentUrl);
-  if (liveCadence) {
+  if (isLiveCadenceSession()) {
     const grok = toAbsoluteUrl(SAMPLES.grok8e30);
+    const restrictSkip = $("restrictSkip").checked;
+    const restrictJump = $("restrictJump").checked;
     return {
       strategy: "sgai",
       contentUrl,
@@ -168,22 +169,22 @@ export function buildLocalSession() {
       breaks: [],
       splices: [],
       offsets: [],
-      adLength: 15,
-      maxAdDurationSec: 15,
-      liveCadenceSec: 60,
-      livePlayoutLimit: 15,
+      adLength: LIVE_CADENCE.playoutLimit,
+      maxAdDurationSec: LIVE_CADENCE.playoutLimit,
+      liveCadenceSec: LIVE_CADENCE.intervalSec,
+      livePlayoutLimit: LIVE_CADENCE.playoutLimit,
       snapToSegment: true,
-      restrictSkip: $("restrictSkip").checked,
-      restrictJump: $("restrictJump").checked,
+      restrictSkip,
+      restrictJump,
       cueOnce: false,
       forceVod: false,
       sgai: {
         snapToSegment: true,
-        restrictSkip: $("restrictSkip").checked,
-        restrictJump: $("restrictJump").checked,
+        restrictSkip,
+        restrictJump,
         cueOnce: false,
-        liveCadenceSec: 60,
-        livePlayoutLimit: 15,
+        liveCadenceSec: LIVE_CADENCE.intervalSec,
+        livePlayoutLimit: LIVE_CADENCE.playoutLimit,
       },
     };
   }
@@ -272,7 +273,7 @@ export function applyCatalogPreset(item) {
       state.windowDuration = 0;
       state.mediaDuration = 0;
       renderTimeline();
-      if (isLiveCadenceUrl(item.url)) {
+      if (item.live && !item.asVod) {
         setStrategy("sgai", false);
         setStatus("Live SGAI — 15s grok ad every 1 min. Play.");
       } else {

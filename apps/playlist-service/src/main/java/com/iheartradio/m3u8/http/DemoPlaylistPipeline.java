@@ -5,7 +5,6 @@ import com.iheartradio.m3u8.ParseException;
 import com.iheartradio.m3u8.PlaylistException;
 import com.iheartradio.m3u8.ads.PlaylistRewriteUtil;
 import com.iheartradio.m3u8.ads.PlaylistRewriteUtil.InjectConfig;
-import com.iheartradio.m3u8.ads.PlaylistRewriteUtil.InterstitialBreak;
 import com.iheartradio.m3u8.ads.PlaylistRewriteUtil.UriMapper;
 import com.iheartradio.m3u8.ads.PlaylistSsaiUtil;
 import com.iheartradio.m3u8.data.MasterPlaylist;
@@ -92,8 +91,8 @@ public final class DemoPlaylistPipeline {
             return stitchEmptySubtitleBreaks(session, playlist, publicBase);
         }
         if (session.strategy == DemoSession.Strategy.SGAI) {
-            InjectConfig cfg = shouldInjectLiveCadence(session, playlist, playlistUrl)
-                    ? liveCadenceInjectConfig(session, playlist, publicBase)
+            InjectConfig cfg = LiveCadence.shouldInject(session, playlist, playlistUrl)
+                    ? LiveCadence.injectConfig(session, playlist, publicBase)
                     : session.toInjectConfig(publicBase);
             return PlaylistRewriteUtil.injectMediaTags(playlist, cfg);
         }
@@ -943,8 +942,8 @@ public final class DemoPlaylistPipeline {
             return null;
         }
         skipSilentAds(session);
-        if (isLiveCadenceBreak(session, breakId)) {
-            return cadenceAssetListJson(session, publicBase);
+        if (LiveCadence.isBreak(session, breakId)) {
+            return LiveCadence.assetListJson(this, session, publicBase);
         }
         DemoSession.Break found = session.findBreak(breakId);
         if (found == null) {
@@ -975,132 +974,5 @@ public final class DemoPlaylistPipeline {
         }
         sb.append("]}");
         return sb.toString();
-    }
-
-    static boolean usesLiveCadence(DemoSession session) {
-        return session != null
-                && session.strategy == DemoSession.Strategy.SGAI
-                && !session.forceVod
-                && session.liveCadenceSec > 0f;
-    }
-
-    static boolean isLiveCadenceBreak(DemoSession session, String breakId) {
-        return usesLiveCadence(session)
-                && breakId != null
-                && breakId.startsWith(PlaylistRewriteUtil.LIVE_BREAK_ID_PREFIX);
-    }
-
-    static boolean shouldInjectLiveCadence(DemoSession session, Playlist playlist, String playlistUrl) {
-        if (!usesLiveCadence(session) || playlist == null || !playlist.hasMediaPlaylist()) {
-            return false;
-        }
-        MediaPlaylist media = playlist.getMediaPlaylist();
-        if (!media.isOngoing() || media.isIframesOnly()) {
-            return false;
-        }
-        if (isAudioOrKeyframeUrl(playlistUrl)) {
-            return false;
-        }
-        if (playlistUrl != null && session.adUrl != null && session.adUrl.length() > 0) {
-            if (playlistUrl.equals(session.adUrl) || playlistUrl.startsWith(session.adUrl)) {
-                return false;
-            }
-            String adDir = session.adUrl.replaceAll("/[^/]+$", "/");
-            if (adDir.length() > 8 && playlistUrl.startsWith(adDir)) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    static boolean isAudioOrKeyframeUrl(String playlistUrl) {
-        if (playlistUrl == null) {
-            return false;
-        }
-        String u = playlistUrl.toLowerCase();
-        return u.contains("audio_") || u.contains("audio-") || u.contains("/audio")
-                || u.contains("keyframes/") || u.contains("iframe");
-    }
-
-    /**
-     * One live interstitial at last-segment PDT minus live hold-back
-     * (3 × TARGETDURATION) so START-DATE sits in the playing window.
-     * Id is keyed by cadence minute so the event does not reset every poll.
-     */
-    InjectConfig liveCadenceInjectConfig(DemoSession session, Playlist playlist, String publicBase) {
-        List<InterstitialBreak> injected = new ArrayList<InterstitialBreak>();
-        if (playlist == null || !playlist.hasMediaPlaylist()) {
-            return InjectConfig.builder().withBreaks(injected).withDefaultResumeOffset(null).build();
-        }
-        MediaPlaylist media = playlist.getMediaPlaylist();
-        PlaylistRewriteUtil.Timeline timeline = PlaylistRewriteUtil.parseTimeline(media.getTracks());
-        long baseMs;
-        String synth = null;
-        if (timeline.firstProgramDateTime != null) {
-            baseMs = timeline.firstProgramDateTimeMs;
-        } else {
-            long edge = System.currentTimeMillis();
-            baseMs = edge - Math.round(timeline.duration * 1000.0);
-            synth = PlaylistRewriteUtil.toIsoDate(baseMs);
-        }
-        long intervalMs = Math.round(session.liveCadenceSec * 1000.0);
-        if (intervalMs < 1000L) {
-            intervalMs = 60_000L;
-        }
-        float limit = session.livePlayoutLimit > 0f ? session.livePlayoutLimit : 15f;
-        long lastPdtMs = timeline.lastSegmentPdtMs;
-        if (lastPdtMs < 0) {
-            lastPdtMs = timeline.liveEdgeMs;
-        }
-        int target = media.getTargetDuration();
-        if (target <= 0) {
-            target = 6;
-        }
-        long startMs = lastPdtMs - 3L * target * 1000L;
-        if (startMs < baseMs) {
-            startMs = baseMs;
-        }
-        long idSec = (lastPdtMs / intervalMs) * (intervalMs / 1000L);
-        String id = PlaylistRewriteUtil.LIVE_BREAK_ID_PREFIX + idSec;
-        startMs = session.freezeLiveCadenceStart(id, startMs);
-        float off = (startMs - baseMs) / 1000f;
-        String base = publicBase == null ? "" : publicBase;
-        if (base.endsWith("/")) {
-            base = base.substring(0, base.length() - 1);
-        }
-        if (off >= -0.01f) {
-            String list = base + "/s/" + session.id + "/assets/" + id + ".json";
-            injected.add(new InterstitialBreak(id, off, limit, null, list,
-                    null, session.defaultRestrict, session.defaultSnap,
-                    limit, null, null, null, null));
-        }
-        InjectConfig.Builder b = InjectConfig.builder()
-                .withBreaks(injected)
-                .withSnapToSegment(false)
-                .withDefaultResumeOffset(null)
-                .withDefaultRestrict(session.defaultRestrict)
-                .withDefaultSnap(session.defaultSnap)
-                .withDefaultCue(null);
-        if (synth != null) {
-            b.withSynthProgramDateTime(synth);
-        }
-        return b.build();
-    }
-
-    String cadenceAssetListJson(DemoSession session, String publicBase) {
-        String uri = session.adUrl;
-        if (uri == null || uri.length() == 0 || session.isSkippedAd(uri)) {
-            return "{\"ASSETS\":[]}";
-        }
-        String base = publicBase == null ? "" : publicBase;
-        if (base.endsWith("/")) {
-            base = base.substring(0, base.length() - 1);
-        }
-        String proxyBase = base + "/s/" + session.id;
-        float maxDur = session.livePlayoutLimit > 0f ? session.livePlayoutLimit : 15f;
-        float dur = actualAdPodDuration(session, uri, maxDur);
-        String proxied = PlaylistRewriteUtil.toProxyUrl(proxyBase, uri);
-        return "{\"ASSETS\":[{\"URI\":" + DemoHttp.jsonString(proxied)
-                + ",\"DURATION\":" + dur + "}]}";
     }
 }

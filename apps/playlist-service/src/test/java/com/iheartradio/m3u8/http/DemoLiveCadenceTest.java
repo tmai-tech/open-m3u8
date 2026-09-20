@@ -17,7 +17,7 @@ import static org.junit.Assert.assertTrue;
 public class DemoLiveCadenceTest {
 
     @Test
-    public void liveCadencePlacesMinuteSlotsWithoutResumeOrCue() throws Exception {
+    public void oneDateRangeAtLastPdtMinusHoldBack() throws Exception {
         Playlist content = liveWindow("2020-01-01T00:00:10.000Z", 10f, 6);
         DemoSession session = DemoSession.fromJson("live-cad",
                 "{\"strategy\":\"sgai\",\"contentUrl\":\"http://cdn/live.m3u8\","
@@ -59,7 +59,7 @@ public class DemoLiveCadenceTest {
     }
 
     @Test
-    public void liveEdgeFollowsLastPdtNotDurationSum() throws Exception {
+    public void startDateHonorsPdtResetNotDurationSum() throws Exception {
         TrackData a = new TrackData.Builder()
                 .withUri("http://cdn/a.ts")
                 .withProgramDateTime("2020-01-01T00:00:00.000Z")
@@ -94,7 +94,7 @@ public class DemoLiveCadenceTest {
     }
 
     @Test
-    public void longDvrWindowDoesNotFillEveryMinute() throws Exception {
+    public void longDvrGetsOneFrozenRangeNotEveryMinute() throws Exception {
         Playlist content = liveWindow("2020-01-01T00:00:00.000Z", 10f, 150);
         DemoSession session = DemoSession.fromJson("live-dvr",
                 "{\"strategy\":\"sgai\",\"contentUrl\":\"http://cdn/live.m3u8\","

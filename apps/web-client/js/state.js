@@ -80,27 +80,16 @@ export function setPlayerEngine(name) {
   try { localStorage.setItem("hls-demo-player", state.playerEngine); } catch (e) { /* ignore */ }
 }
 
-/** Rolling-live SGAI cadence: Blender 24/7 and Unified Channel 1. */
-export function isLiveCadenceUrl(url) {
-  const u = url || "";
-  return /blender/i.test(u)
-      || /unified-streaming\.com/i.test(u)
-      || /channel1/i.test(u);
+/** Rolling-live SGAI: 15s grok, one frozen START-DATE per interval. */
+export const LIVE_CADENCE = { intervalSec: 60, playoutLimit: 15 };
+
+export function isLiveCadenceSession() {
+  return !!(state.liveMode && !state.forceVod && state.strategy === "sgai");
 }
 
-export function isBlenderLiveUrl(url) {
-  return isLiveCadenceUrl(url);
-}
-
-/** Ads on VOD, live Snapshot, and cadence live (Blender / Channel 1). */
+/** Ads on VOD, live Snapshot, and rolling live SGAI. */
 export function adsAllowed() {
   if (!state.liveMode) return true;
   if (state.forceVod) return true;
-  try {
-    const el = document.getElementById("contentUrl");
-    const u = (el && el.value) || "";
-    return state.strategy === "sgai" && isLiveCadenceUrl(u);
-  } catch (e) {
-    return false;
-  }
+  return state.strategy === "sgai";
 }
