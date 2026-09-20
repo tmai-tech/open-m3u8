@@ -15,6 +15,27 @@ export function ssaiRemaining() {
   return Math.max(0, w.end - t);
 }
 
+/** Adjacent CUE-OUT pods (no content between) count as one break: 1 of 2. */
+export function ssaiAdOrdinal() {
+  const t = $("video").currentTime || 0;
+  const wins = state.adWindows;
+  let i = -1;
+  for (let k = 0; k < wins.length; k++) {
+    if (t >= wins[k].start && t < wins[k].end + 0.2) {
+      i = k;
+      break;
+    }
+  }
+  if (i < 0) return null;
+  let lo = i;
+  let hi = i;
+  while (lo > 0 && wins[lo].start - wins[lo - 1].end < 0.5) lo--;
+  while (hi < wins.length - 1 && wins[hi + 1].start - wins[hi].end < 0.5) hi++;
+  const total = hi - lo + 1;
+  if (total < 2) return null;
+  return { index: i - lo + 1, total };
+}
+
 export function ssaiWindowAt(t) {
   for (let i = 0; i < state.adWindows.length; i++) {
     const w = state.adWindows[i];
@@ -71,6 +92,19 @@ export function resetSsaiSeek() {
   state.ssaiIgnoreSnapUntil = 0;
 }
 
+export function onSsaiTimeUpdate(media) {
+  if (state.strategy !== "ssai" || Date.now() < state.ssaiIgnoreSnapUntil) return false;
+  const t = nativeCurrentTime(media) || 0;
+  const prev = state.lastGoodTime.has(media) ? state.lastGoodTime.get(media) : t;
+  const w = ssaiWindowAt(prev);
+  if (w && prev > w.start + 1 && t <= w.start + 0.6) {
+    state.ssaiIgnoreSnapUntil = Date.now() + 1500;
+    snapTime(media, w.end + 0.05);
+    return true;
+  }
+  return false;
+}
+
 export function onSsaiSeeking(media, from, to) {
   if (Date.now() < state.ssaiIgnoreSnapUntil) {
     state.lastGoodTime.set(media, to);
@@ -82,6 +116,19 @@ export function onSsaiSeeking(media, from, to) {
   }
   const inAd = ssaiWindowAt(from);
   if (inAd) {
+    const naturalExit = to >= inAd.end && to <= inAd.end + 2 && from >= inAd.end - 2;
+    // Shaka remounts content MAP at CUE-IN; currentTime can jump to content
+    // PTS, which is the playlist time of the ad start. Resume after the ad.
+    const remountToStart = to <= inAd.start + 0.6 && from > inAd.start + 1;
+    if (naturalExit) {
+      state.lastGoodTime.set(media, to);
+      return true;
+    }
+    if (remountToStart) {
+      state.ssaiIgnoreSnapUntil = Date.now() + 1500;
+      snapTime(media, inAd.end + 0.05);
+      return true;
+    }
     if (to < inAd.start - 0.05 || to >= inAd.end || to > from + 0.4) {
       snapTime(media, Math.min(Math.max(from, inAd.start), Math.max(inAd.start, inAd.end - 0.05)));
     } else {

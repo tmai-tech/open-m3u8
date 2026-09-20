@@ -55,9 +55,63 @@ public class DemoPlaylistPipelineTest {
 
         assertTrue(text.contains("#EXT-X-DATERANGE"));
         assertTrue(text.contains("com.apple.hls.interstitial"));
-        assertTrue(text.contains("X-ASSET-URI=\"http://ads/ad.m3u8\""));
+        assertTrue(text.contains("X-ASSET-LIST="));
+        assertTrue(text.contains("/s/s1/assets/"));
+        assertTrue(text.contains(".json"));
+        assertFalse(text.contains("X-ASSET-URI="));
         assertTrue(text.contains("X-PLAYOUT-LIMIT=15"));
+        assertFalse(text.contains("X-RESTRICT="));
+        assertFalse(text.contains("CUE="));
         assertFalse(text.contains("#EXT-X-CUE-OUT"));
+    }
+
+    @Test
+    public void sgaiRestrictSkipAndJumpComposeXRestrict() throws Exception {
+        Playlist content = media(
+                track("http://cdn/c0.ts", 10f),
+                track("http://cdn/c1.ts", 10f));
+        DemoSession both = DemoSession.fromJson("s-rj",
+                "{\"strategy\":\"sgai\",\"contentUrl\":\"http://cdn/prog.m3u8\","
+                        + "\"adUrl\":\"http://ads/ad.m3u8\",\"restrictSkip\":true,\"restrictJump\":true,"
+                        + "\"breaks\":[{\"offsetSec\":10,\"durationSec\":15}]}");
+        String text = PlaylistRewriteUtil.writeToString(
+                new DemoPlaylistPipeline().apply(both, content), Encoding.UTF_8);
+        assertTrue(text.contains("X-RESTRICT=\"SKIP,JUMP\""));
+
+        DemoSession jump = DemoSession.fromJson("s-j",
+                "{\"strategy\":\"sgai\",\"contentUrl\":\"http://cdn/prog.m3u8\","
+                        + "\"adUrl\":\"http://ads/ad.m3u8\",\"restrictJump\":true,"
+                        + "\"breaks\":[{\"offsetSec\":10,\"durationSec\":15}]}");
+        String jumpText = PlaylistRewriteUtil.writeToString(
+                new DemoPlaylistPipeline().apply(jump, content), Encoding.UTF_8);
+        assertTrue(jumpText.contains("X-RESTRICT=\"JUMP\""));
+        assertFalse(jumpText.contains("SKIP"));
+    }
+
+    @Test
+    public void sgaiCueOnceEmitsOnDateRangeNotSsai() throws Exception {
+        Playlist content = media(
+                track("http://cdn/c0.ts", 10f),
+                track("http://cdn/c1.ts", 10f));
+        DemoSession sgai = DemoSession.fromJson("s-once",
+                "{\"strategy\":\"sgai\",\"contentUrl\":\"http://cdn/prog.m3u8\","
+                        + "\"adUrl\":\"http://ads/ad.m3u8\",\"cueOnce\":true,"
+                        + "\"breaks\":[{\"offsetSec\":10,\"durationSec\":15}]}");
+        String sgaiText = PlaylistRewriteUtil.writeToString(
+                new DemoPlaylistPipeline().apply(sgai, content), Encoding.UTF_8);
+        assertTrue(sgaiText.contains("CUE=\"ONCE\""));
+        assertTrue(sgaiText.contains("com.apple.hls.interstitial"));
+
+        DemoSession ssai = DemoSession.fromJson("s-once-ssai",
+                "{\"strategy\":\"ssai\",\"contentUrl\":\"http://cdn/prog.m3u8\","
+                        + "\"adUrl\":\"http://ads/ad.m3u8\",\"cueOnce\":true,"
+                        + "\"snapToSegment\":false,"
+                        + "\"breaks\":[{\"offsetSec\":10,\"durationSec\":8,\"assetUri\":\"http://ads/ad.m3u8\"}]}");
+        ssai.putCachedAd("http://ads/ad.m3u8", media(track("http://ads/a0.ts", 8f)));
+        String ssaiText = PlaylistRewriteUtil.writeToString(
+                new DemoPlaylistPipeline().apply(ssai, content), Encoding.UTF_8);
+        assertFalse(ssaiText.contains("CUE="));
+        assertTrue(ssaiText.contains("#EXT-X-CUE-OUT"));
     }
 
     @Test
@@ -435,6 +489,14 @@ public class DemoPlaylistPipelineTest {
         assertFalse(text.contains(".m4s"));
         assertTrue(text.contains("subs_2.vtt"));
         assertFalse(text.contains("ssaiVttShift"));
+    }
+
+    @Test
+    public void initLooksLikeItHasAudioDetectsSounHandler() {
+        assertFalse(DemoPlaylistPipeline.initLooksLikeItHasAudio(
+                "ftypiso5videavcC".getBytes(java.nio.charset.StandardCharsets.ISO_8859_1)));
+        assertTrue(DemoPlaylistPipeline.initLooksLikeItHasAudio(
+                "ftypiso5sounmp4a".getBytes(java.nio.charset.StandardCharsets.ISO_8859_1)));
     }
 
     @Test

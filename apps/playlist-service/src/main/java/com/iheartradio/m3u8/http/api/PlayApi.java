@@ -49,7 +49,7 @@ public final class PlayApi implements HttpHandler {
             DemoSession s = sessions.create(DemoSession.fromPlayQuery(
                     sessions.nextId(), strategy, content, ad, splices, maxAd));
             String base = DemoHttp.publicBase(ex, port);
-            String manifestUrl = base + "/s/" + s.id + "/manifest";
+            String manifestUrl = base + "/s/" + s.id + "/manifest.m3u8";
             if ("json".equalsIgnoreCase(format)) {
                 DemoHttp.send(ex, 200, "application/json; charset=utf-8",
                         "{\"ok\":true,\"session\":" + s.toJson(base) + "}");

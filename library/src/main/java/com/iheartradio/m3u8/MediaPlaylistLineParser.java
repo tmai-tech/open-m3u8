@@ -606,6 +606,12 @@ class MediaPlaylistLineParser implements LineParser {
                     builder.withStartDate(startDate);
                 }
             });
+            HANDLERS.put(Constants.CUE, new AttributeParser<DateRangeData.Builder>() {
+                @Override
+                public void parse(Attribute attribute, DateRangeData.Builder builder, ParseState state) throws ParseException {
+                    builder.withCue(ParseUtil.parseQuotedString(attribute.value, getTag()));
+                }
+            });
             HANDLERS.put(Constants.END_DATE, new AttributeParser<DateRangeData.Builder>() {
                 @Override
                 public void parse(Attribute attribute, DateRangeData.Builder builder, ParseState state) throws ParseException {

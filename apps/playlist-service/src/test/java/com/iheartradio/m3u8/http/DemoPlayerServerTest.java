@@ -125,8 +125,23 @@ public class DemoPlayerServerTest {
         assertTrue(playlist.contains("#EXT-X-DATERANGE"));
         assertTrue(playlist.contains("com.apple.hls.interstitial"));
         assertFalse(playlist.contains("#EXT-X-CUE-OUT"));
+        assertTrue(playlist.contains("X-ASSET-LIST="));
         assertTrue(playlist.contains("/s/"));
-        assertTrue(playlist.contains("/proxy?url="));
+        assertTrue(playlist.contains("/assets/"));
+        assertFalse(playlist.contains("X-ASSET-URI="));
+        assertFalse(playlist.contains("CUE="));
+    }
+
+    @Test
+    public void sgaiCueOnceWritesCueOnDateRange() throws Exception {
+        String json = "{\"strategy\":\"sgai\",\"cueOnce\":true,"
+                + "\"contentUrl\":\"http://127.0.0.1:" + originPort + "/content.m3u8\","
+                + "\"adUrl\":\"http://127.0.0.1:" + originPort + "/ad.m3u8\","
+                + "\"breaks\":[{\"offsetSec\":10,\"durationSec\":15}]}";
+        String playlist = createAndFetchManifest(json);
+        assertTrue(playlist.contains("CUE=\"ONCE\""));
+        assertTrue(playlist.contains("com.apple.hls.interstitial"));
+        assertFalse(playlist.contains("#EXT-X-CUE-OUT"));
     }
 
     @Test
@@ -151,7 +166,7 @@ public class DemoPlayerServerTest {
         c.setInstanceFollowRedirects(false);
         assertEquals(302, c.getResponseCode());
         String loc = c.getHeaderField("Location");
-        assertTrue(loc != null && loc.contains("/s/") && loc.endsWith("/manifest"));
+        assertTrue(loc != null && loc.contains("/s/") && loc.endsWith("/manifest.m3u8"));
     }
 
     @Test

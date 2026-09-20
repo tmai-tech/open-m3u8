@@ -149,7 +149,7 @@ public final class DemoPlayerServer {
         System.out.println("  Session:  POST http://127.0.0.1:" + port + "/api/session");
         System.out.println("  Play:     http://127.0.0.1:" + port
                 + "/play?strategy=ssai&content=<m3u8>&ad=<m3u8>&splices=30,90");
-        System.out.println("  Manifest: http://127.0.0.1:" + port + "/s/{id}/manifest");
+        System.out.println("  Manifest: http://127.0.0.1:" + port + "/s/{id}/manifest.m3u8");
         System.out.println("  Logs:     http://127.0.0.1:" + port + "/api/logs");
         System.out.println("  Catalog:  GET  http://127.0.0.1:" + port + "/api/catalog");
         System.out.println("  Ingest:   POST http://127.0.0.1:" + port + "/api/ingest");

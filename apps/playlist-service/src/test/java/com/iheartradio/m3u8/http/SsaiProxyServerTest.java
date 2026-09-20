@@ -141,7 +141,7 @@ public class SsaiProxyServerTest {
 
         String manifestUrl = extractJsonString(sessionBody, "manifestUrl");
         assertTrue(manifestUrl.contains("/s/"));
-        assertTrue(manifestUrl.endsWith("/manifest"));
+        assertTrue(manifestUrl.endsWith("/manifest.m3u8"));
 
         HttpURLConnection get = (HttpURLConnection) new URL(manifestUrl).openConnection();
         assertEquals(200, get.getResponseCode());

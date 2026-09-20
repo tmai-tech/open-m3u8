@@ -127,4 +127,61 @@ public class SgaiPlaylistTest {
         assertTrue(reparsed.getMediaPlaylist().getDateRanges().get(0).isInterstitial());
         assertTrue(reparsed.getMediaPlaylist().getTracks().get(1).hasDiscontinuity());
     }
+
+    @Test
+    public void parseAndWriteDateRangeCueOnce() throws Exception {
+        final String src = "#EXTM3U\n"
+                + "#EXT-X-VERSION:11\n"
+                + "#EXT-X-TARGETDURATION:10\n"
+                + "#EXT-X-MEDIA-SEQUENCE:0\n"
+                + "#EXT-X-DATERANGE:ID=\"ad-1\",CLASS=\"com.apple.hls.interstitial\","
+                + "START-DATE=2024-06-15T12:00:00.000Z,CUE=\"ONCE\",DURATION=15.0,"
+                + "X-ASSET-LIST=\"https://ads.example.com/list.json\",X-RESUME-OFFSET=0.0\n"
+                + "#EXTINF:10.0,\n"
+                + "http://example.com/seg0.ts\n"
+                + "#EXT-X-ENDLIST\n";
+
+        final Playlist parsed = new PlaylistParser(
+                new ByteArrayInputStream(src.getBytes(Encoding.UTF_8.value)),
+                Format.EXT_M3U,
+                Encoding.UTF_8).parse();
+        final DateRangeData dr = parsed.getMediaPlaylist().getDateRanges().get(0);
+        assertEquals("ONCE", dr.getCue());
+        assertTrue(dr.hasCue());
+
+        final DateRangeData writtenRange = new DateRangeData.Builder()
+                .withId("ad-1")
+                .withClassAttribute(Constants.INTERSTITIAL_CLASS)
+                .withStartDate("2024-06-15T12:00:00.000Z")
+                .withCue("ONCE")
+                .withDuration(15f)
+                .withAssetList("https://ads.example.com/list.json")
+                .withResumeOffset(0f)
+                .build();
+        final TrackData track = new TrackData.Builder()
+                .withUri("http://example.com/seg0.ts")
+                .withTrackInfo(new com.iheartradio.m3u8.data.TrackInfo(10f, null))
+                .build();
+        final Playlist out = new Playlist.Builder()
+                .withCompatibilityVersion(11)
+                .withExtended(true)
+                .withMediaPlaylist(new MediaPlaylist.Builder()
+                        .withTargetDuration(10)
+                        .withMediaSequenceNumber(0)
+                        .withIsOngoing(false)
+                        .withDateRanges(Arrays.asList(writtenRange))
+                        .withTracks(Arrays.asList(track))
+                        .build())
+                .build();
+        final ByteArrayOutputStream os = new ByteArrayOutputStream();
+        new PlaylistWriter(os, Format.EXT_M3U, Encoding.UTF_8).write(out);
+        final String text = os.toString(Encoding.UTF_8.value);
+        assertTrue(text.contains("CUE=\"ONCE\""));
+
+        final Playlist round = new PlaylistParser(
+                new ByteArrayInputStream(text.getBytes(Encoding.UTF_8.value)),
+                Format.EXT_M3U,
+                Encoding.UTF_8).parse();
+        assertEquals("ONCE", round.getMediaPlaylist().getDateRanges().get(0).getCue());
+    }
 }

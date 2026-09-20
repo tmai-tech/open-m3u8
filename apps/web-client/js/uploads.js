@@ -27,6 +27,7 @@ function jobLine(j) {
     parts.push(j.sub);
   }
   if (j.summary) parts.push(j.summary);
+  if (j.hasAudio === false) parts.push("no audio in source (silent AAC; skip as SSAI ad if still video-only)");
   return parts.join(" · ");
 }
 

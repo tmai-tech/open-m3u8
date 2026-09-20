@@ -28,6 +28,8 @@ public final class Title {
     public String error;
     public String contentHash;
     public String duplicateOf;
+    /** Null = unknown. False = source had no audio (silent AAC may still be muxed). */
+    public Boolean hasAudio;
 
     public Title() {
         this.adUrl = null;

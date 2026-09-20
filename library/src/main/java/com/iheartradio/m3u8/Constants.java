@@ -104,6 +104,10 @@ final class Constants {
     public static final String ID = "ID";
     public static final String CLASS = "CLASS";
     public static final String START_DATE = "START-DATE";
+    /**
+     * EXT-X-DATERANGE trigger list: PRE, POST, ONCE (quoted enumerated-string-list).
+     */
+    public static final String CUE = "CUE";
     public static final String END_DATE = "END-DATE";
     public static final String DURATION = "DURATION";
     public static final String PLANNED_DURATION = "PLANNED-DURATION";

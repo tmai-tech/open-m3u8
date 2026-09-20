@@ -66,6 +66,7 @@ public final class PlaylistRewriteUtil {
         public final Float defaultResumeOffset;
         public final String defaultRestrict; // e.g. "SKIP"
         public final String defaultSnap; // e.g. "IN" / "OUT"
+        public final String defaultCue; // e.g. "ONCE"
         public final String synthProgramDateTime;
 
         public InjectConfig(StartData startOverride,
@@ -75,6 +76,18 @@ public final class PlaylistRewriteUtil {
                             String defaultRestrict,
                             String defaultSnap,
                             String synthProgramDateTime) {
+            this(startOverride, breaks, snapToSegment, defaultResumeOffset, defaultRestrict,
+                    defaultSnap, null, synthProgramDateTime);
+        }
+
+        public InjectConfig(StartData startOverride,
+                            List<InterstitialBreak> breaks,
+                            boolean snapToSegment,
+                            Float defaultResumeOffset,
+                            String defaultRestrict,
+                            String defaultSnap,
+                            String defaultCue,
+                            String synthProgramDateTime) {
             this.startOverride = startOverride;
             this.breaks = breaks == null
                     ? Collections.<InterstitialBreak>emptyList()
@@ -83,6 +96,7 @@ public final class PlaylistRewriteUtil {
             this.defaultResumeOffset = defaultResumeOffset;
             this.defaultRestrict = defaultRestrict;
             this.defaultSnap = defaultSnap;
+            this.defaultCue = defaultCue;
             this.synthProgramDateTime = synthProgramDateTime == null ? DEFAULT_SYNTH_PDT : synthProgramDateTime;
         }
 
@@ -97,6 +111,7 @@ public final class PlaylistRewriteUtil {
             private Float defaultResumeOffset = 0f;
             private String defaultRestrict;
             private String defaultSnap;
+            private String defaultCue;
             private String synthProgramDateTime = DEFAULT_SYNTH_PDT;
 
             public Builder withStartOverride(StartData start) {
@@ -136,6 +151,11 @@ public final class PlaylistRewriteUtil {
                 return this;
             }
 
+            public Builder withDefaultCue(String cue) {
+                this.defaultCue = cue;
+                return this;
+            }
+
             public Builder withSynthProgramDateTime(String iso) {
                 this.synthProgramDateTime = iso;
                 return this;
@@ -143,7 +163,7 @@ public final class PlaylistRewriteUtil {
 
             public InjectConfig build() {
                 return new InjectConfig(startOverride, breaks, snapToSegment, defaultResumeOffset,
-                        defaultRestrict, defaultSnap, synthProgramDateTime);
+                        defaultRestrict, defaultSnap, defaultCue, synthProgramDateTime);
             }
         }
     }
@@ -164,15 +184,24 @@ public final class PlaylistRewriteUtil {
         public final Boolean contentMayVary;
         public final String timelineOccupies;
         public final String timelineStyle;
+        public final String cue;
 
         public InterstitialBreak(String id, float offsetSec, float durationSec, String assetUri) {
-            this(id, offsetSec, durationSec, assetUri, null, null, null, null, null, null, null, null);
+            this(id, offsetSec, durationSec, assetUri, null, null, null, null, null, null, null, null, null);
         }
 
         public InterstitialBreak(String id, float offsetSec, float durationSec, String assetUri,
                                  String assetList, Float resumeOffset, String restrict, String snap,
                                  Float playoutLimit, Boolean contentMayVary,
                                  String timelineOccupies, String timelineStyle) {
+            this(id, offsetSec, durationSec, assetUri, assetList, resumeOffset, restrict, snap,
+                    playoutLimit, contentMayVary, timelineOccupies, timelineStyle, null);
+        }
+
+        public InterstitialBreak(String id, float offsetSec, float durationSec, String assetUri,
+                                 String assetList, Float resumeOffset, String restrict, String snap,
+                                 Float playoutLimit, Boolean contentMayVary,
+                                 String timelineOccupies, String timelineStyle, String cue) {
             this.id = id;
             this.offsetSec = offsetSec;
             this.durationSec = durationSec;
@@ -185,6 +214,7 @@ public final class PlaylistRewriteUtil {
             this.contentMayVary = contentMayVary;
             this.timelineOccupies = timelineOccupies;
             this.timelineStyle = timelineStyle;
+            this.cue = cue;
         }
     }
 
@@ -278,6 +308,7 @@ public final class PlaylistRewriteUtil {
             Float resume = br.resumeOffset != null ? br.resumeOffset : config.defaultResumeOffset;
             String restrict = br.restrict != null ? br.restrict : config.defaultRestrict;
             String snap = br.snap != null ? br.snap : config.defaultSnap;
+            String cue = br.cue != null ? br.cue : config.defaultCue;
 
             DateRangeData.Builder b = new DateRangeData.Builder()
                     .withId(id)
@@ -300,6 +331,9 @@ public final class PlaylistRewriteUtil {
             }
             if (snap != null && snap.length() > 0) {
                 b.withSnap(snap);
+            }
+            if (cue != null && cue.length() > 0) {
+                b.withCue(cue);
             }
             // DURATION describes the date range. Players play the full X-ASSET-URI unless
             // X-PLAYOUT-LIMIT is set (Apple HLS Interstitials). Default it to the break

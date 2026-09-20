@@ -3,35 +3,34 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Uploads — HLS Demo</title>
+  <title>My list — Watch</title>
   <link rel="stylesheet" href="css/demo.css" />
   <script type="module" src="js/uploads.js"></script>
 </head>
 <body class="ott uploads">
   <div class="app uploads-app">
     <header class="ott-nav">
-      <div class="ott-brand">HLS Demo</div>
+      <a class="ott-brand" href="./">Watch</a>
       <nav class="ott-tabs">
-        <a href="./">Watch</a>
-        <a href="uploads.html" aria-current="page">Uploads</a>
+        <a href="./">Home</a>
+        <a href="uploads.html" aria-current="page">My list</a>
       </nav>
     </header>
 
     <p class="uploads-lead">
-      Drop up to 10 MP4s here. Packaging runs in the packager process. Refresh a job (or this page) to
-      see whether it finished — nothing is polled.
+      Add up to 10 videos. Refresh a title (or this page) when you want an updated status.
     </p>
 
     <label class="upload-drop" id="drop">
       <input id="file" type="file" accept="video/mp4,.mp4" multiple hidden />
-      <strong>Upload MP4</strong>
-      <span>Click or drop up to 10 files. Max 512MB each.</span>
+      <strong>Add videos</strong>
+      <span>Click or drop MP4 files. Up to 512MB each.</span>
     </label>
     <p class="status" id="status">Idle.</p>
 
     <section class="card uploads-jobs">
       <div class="uploads-jobs-head">
-        <h3 class="section-title">Jobs</h3>
+        <h3 class="section-title">Your titles</h3>
         <div class="uploads-jobs-actions">
           <button type="button" class="btn btn-ghost btn-sm" id="btnRefreshAll" hidden>Refresh all</button>
           <button type="button" class="btn btn-ghost btn-sm job-delete" id="btnDeleteAll" hidden>Delete all</button>

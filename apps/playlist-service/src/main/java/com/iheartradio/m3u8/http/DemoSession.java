@@ -39,17 +39,37 @@ public final class DemoSession {
         }
     }
 
+    public static final class Ad {
+        public final String assetUri;
+        public final float durationSec;
+
+        public Ad(String assetUri, float durationSec) {
+            this.assetUri = assetUri;
+            this.durationSec = durationSec;
+        }
+    }
+
     public static final class Break {
         public final String id;
         public final float offsetSec;
-        public final float durationSec;
-        public final String assetUri;
+        public final List<Ad> ads;
 
         public Break(String id, float offsetSec, float durationSec, String assetUri) {
+            this(id, offsetSec, Arrays.asList(new Ad(assetUri, durationSec)));
+        }
+
+        public Break(String id, float offsetSec, List<Ad> ads) {
             this.id = id;
             this.offsetSec = offsetSec;
-            this.durationSec = durationSec;
-            this.assetUri = assetUri;
+            this.ads = ads == null ? new ArrayList<Ad>() : new ArrayList<Ad>(ads);
+        }
+
+        public String firstAssetUri() {
+            return ads.isEmpty() ? null : ads.get(0).assetUri;
+        }
+
+        public float firstDurationSec() {
+            return ads.isEmpty() ? 0f : ads.get(0).durationSec;
         }
     }
 
@@ -64,6 +84,7 @@ public final class DemoSession {
     public final Float defaultResumeOffset;
     public final String defaultRestrict;
     public final String defaultSnap;
+    public final String defaultCue;
     public final long createdAtMs;
     public boolean forceVod;
 
@@ -75,11 +96,15 @@ public final class DemoSession {
             new java.util.concurrent.ConcurrentHashMap<String, Playlist>();
     private final java.util.Map<String, byte[]> forcedVodSnapshots =
             new java.util.concurrent.ConcurrentHashMap<String, byte[]>();
+    private final java.util.List<String> warnings =
+            new java.util.concurrent.CopyOnWriteArrayList<String>();
+    private final java.util.Set<String> skippedAds =
+            java.util.concurrent.ConcurrentHashMap.newKeySet();
 
     public DemoSession(String id, Strategy strategy, String contentUrl, String adUrl,
                        List<Break> breaks, float maxAdDurationSec, StartData startOverride,
                        boolean snapToSegment, Float defaultResumeOffset, String defaultRestrict,
-                       String defaultSnap) {
+                       String defaultSnap, String defaultCue) {
         this.id = id;
         this.strategy = strategy == null ? Strategy.SSAI : strategy;
         this.contentUrl = contentUrl;
@@ -93,6 +118,7 @@ public final class DemoSession {
         this.defaultResumeOffset = defaultResumeOffset;
         this.defaultRestrict = defaultRestrict;
         this.defaultSnap = defaultSnap;
+        this.defaultCue = defaultCue;
         this.createdAtMs = System.currentTimeMillis();
     }
 
@@ -129,6 +155,26 @@ public final class DemoSession {
         return cachedContentMaster;
     }
 
+    public void addWarning(String msg) {
+        if (msg != null && msg.length() > 0 && !warnings.contains(msg)) {
+            warnings.add(msg);
+        }
+    }
+
+    public java.util.List<String> getWarnings() {
+        return warnings;
+    }
+
+    public void skipAd(String url) {
+        if (url != null && url.length() > 0) {
+            skippedAds.add(url);
+        }
+    }
+
+    public boolean isSkippedAd(String url) {
+        return url != null && skippedAds.contains(url);
+    }
+
     public void setCachedContentMaster(Playlist playlist) {
         if (playlist != null && playlist.hasMasterPlaylist()) {
             this.cachedContentMaster = playlist;
@@ -158,23 +204,38 @@ public final class DemoSession {
     }
 
     public InjectConfig toInjectConfig() {
+        return toInjectConfig(null);
+    }
+
+    /**
+     * One DATERANGE per break. {@code publicBase} builds {@code X-ASSET-LIST}
+     * ({@code /s/{id}/assets/{breakId}.json}). Never emits {@code X-ASSET-URI}.
+     */
+    public InjectConfig toInjectConfig(String publicBase) {
         List<InterstitialBreak> injected = new ArrayList<InterstitialBreak>();
+        String base = publicBase == null ? "" : publicBase;
+        if (base.endsWith("/")) {
+            base = base.substring(0, base.length() - 1);
+        }
         int i = 0;
         for (Break br : breaks) {
             i++;
-            String uri = br.assetUri;
-            if (uri == null || uri.length() == 0) {
-                uri = adUrl;
-            }
-            if (uri == null || uri.length() == 0) {
+            List<Ad> live = liveAds(br);
+            if (live.isEmpty()) {
                 continue;
             }
             String bid = br.id;
             if (bid == null || bid.length() == 0) {
                 bid = PlaylistRewriteUtil.USER_AD_ID_PREFIX + i;
             }
-            float dur = br.durationSec > 0 ? br.durationSec : 15f;
-            injected.add(new InterstitialBreak(bid, br.offsetSec, dur, uri));
+            float dur = 0f;
+            for (Ad ad : live) {
+                dur += ad.durationSec > 0f ? ad.durationSec : 15f;
+            }
+            String list = base + "/s/" + id + "/assets/" + bid + ".json";
+            injected.add(new InterstitialBreak(bid, br.offsetSec, dur, null, list,
+                    defaultResumeOffset, defaultRestrict, defaultSnap,
+                    dur, null, null, null, defaultCue));
         }
         return InjectConfig.builder()
                 .withStartOverride(startOverride)
@@ -183,7 +244,41 @@ public final class DemoSession {
                 .withDefaultResumeOffset(defaultResumeOffset)
                 .withDefaultRestrict(defaultRestrict)
                 .withDefaultSnap(defaultSnap)
+                .withDefaultCue(defaultCue)
                 .build();
+    }
+
+    public List<Ad> liveAds(Break br) {
+        List<Ad> live = new ArrayList<Ad>();
+        if (br == null) {
+            return live;
+        }
+        for (Ad ad : br.ads) {
+            String uri = ad.assetUri != null && ad.assetUri.length() > 0 ? ad.assetUri : adUrl;
+            if (uri == null || uri.length() == 0 || isSkippedAd(uri)) {
+                continue;
+            }
+            live.add(new Ad(uri, ad.durationSec));
+        }
+        return live;
+    }
+
+    public Break findBreak(String breakId) {
+        if (breakId == null || breakId.length() == 0) {
+            return null;
+        }
+        int i = 0;
+        for (Break br : breaks) {
+            i++;
+            String bid = br.id;
+            if (bid == null || bid.length() == 0) {
+                bid = PlaylistRewriteUtil.USER_AD_ID_PREFIX + i;
+            }
+            if (breakId.equals(bid)) {
+                return br;
+            }
+        }
+        return null;
     }
 
     public List<PlaylistSsaiUtil.AdBreak> toSsaiBreaks(Playlist adMedia) {
@@ -201,35 +296,59 @@ public final class DemoSession {
         }
         int i = 0;
         for (Break br : breaks) {
-            i++;
-            String uri = br.assetUri != null && br.assetUri.length() > 0 ? br.assetUri : adUrl;
-            Playlist ad = adsByUrl != null ? adsByUrl.get(uri) : null;
-            if (ad == null) {
-                ad = getCachedAd(uri);
+            int j = 0;
+            for (Ad creative : liveAds(br)) {
+                i++;
+                j++;
+                String uri = creative.assetUri;
+                Playlist ad = adsByUrl != null ? adsByUrl.get(uri) : null;
+                if (ad == null) {
+                    ad = getCachedAd(uri);
+                }
+                if (ad == null || !ad.hasMediaPlaylist()) {
+                    continue;
+                }
+                float maxDur = creative.durationSec > 0f ? creative.durationSec : maxAdDurationSec;
+                String bid = br.id != null && br.id.length() > 0 ? br.id : ("ssai-" + i);
+                if (br.ads.size() > 1) {
+                    bid = bid + "-" + j;
+                }
+                PlaylistSsaiUtil.AdBreak.Builder b = PlaylistSsaiUtil.AdBreak.builder()
+                        .withId(bid)
+                        .withAdPlaylist(ad, maxDur)
+                        .withEmitDateRange(true);
+                if (br.offsetSec <= 0f) {
+                    b.preRoll();
+                } else {
+                    b.atOffsetSec(br.offsetSec);
+                }
+                out.add(b.build());
             }
-            if (ad == null) {
-                continue;
-            }
-            float maxDur = br.durationSec > 0f ? br.durationSec : maxAdDurationSec;
-            PlaylistSsaiUtil.AdBreak.Builder b = PlaylistSsaiUtil.AdBreak.builder()
-                    .withId(br.id != null && br.id.length() > 0 ? br.id : ("ssai-" + i))
-                    .withAdPlaylist(ad, maxDur)
-                    .withEmitDateRange(true);
-            if (br.offsetSec <= 0f) {
-                b.preRoll();
-            } else {
-                b.atOffsetSec(br.offsetSec);
-            }
-            out.add(b.build());
         }
         return out;
     }
 
     public String resolveAdUrl(Break br) {
-        if (br != null && br.assetUri != null && br.assetUri.length() > 0) {
-            return br.assetUri;
+        if (br != null) {
+            String u = br.firstAssetUri();
+            if (u != null && u.length() > 0) {
+                return u;
+            }
         }
         return adUrl;
+    }
+
+    public java.util.List<String> allAdUrls() {
+        java.util.LinkedHashSet<String> urls = new java.util.LinkedHashSet<String>();
+        for (Break br : breaks) {
+            for (Ad ad : br.ads) {
+                String u = ad.assetUri != null && ad.assetUri.length() > 0 ? ad.assetUri : adUrl;
+                if (u != null && u.length() > 0) {
+                    urls.add(u);
+                }
+            }
+        }
+        return new ArrayList<String>(urls);
     }
 
     public float[] spliceOffsets() {
@@ -263,19 +382,38 @@ public final class DemoSession {
             sb.append('{')
                     .append("\"id\":").append(DemoHttp.jsonString(b.id)).append(',')
                     .append("\"offsetSec\":").append(b.offsetSec).append(',')
-                    .append("\"durationSec\":").append(b.durationSec).append(',')
-                    .append("\"assetUri\":").append(DemoHttp.jsonString(b.assetUri))
-                    .append('}');
+                    .append("\"ads\":[");
+            for (int j = 0; j < b.ads.size(); j++) {
+                if (j > 0) {
+                    sb.append(',');
+                }
+                Ad a = b.ads.get(j);
+                sb.append('{')
+                        .append("\"assetUri\":").append(DemoHttp.jsonString(a.assetUri)).append(',')
+                        .append("\"durationSec\":").append(a.durationSec)
+                        .append('}');
+            }
+            sb.append("]}");
         }
         sb.append("],");
         sb.append("\"maxAdDurationSec\":").append(maxAdDurationSec).append(',');
         sb.append("\"forceVod\":").append(forceVod).append(',');
-        String localManifest = publicBase + "/s/" + id + "/manifest";
+        String localManifest = publicBase + "/s/" + id + "/manifest.m3u8";
         sb.append("\"manifestUrl\":").append(DemoHttp.jsonString(localManifest));
         String advertised = DemoHttp.advertisedPublicBase();
         if (advertised != null && advertised.length() > 0) {
             sb.append(",\"publicManifestUrl\":")
-                    .append(DemoHttp.jsonString(advertised + "/s/" + id + "/manifest"));
+                    .append(DemoHttp.jsonString(advertised + "/s/" + id + "/manifest.m3u8"));
+        }
+        if (!warnings.isEmpty()) {
+            sb.append(",\"warnings\":[");
+            for (int i = 0; i < warnings.size(); i++) {
+                if (i > 0) {
+                    sb.append(',');
+                }
+                sb.append(DemoHttp.jsonString(warnings.get(i)));
+            }
+            sb.append(']');
         }
         sb.append('}');
         return sb.toString();
@@ -307,7 +445,7 @@ public final class DemoSession {
         if (strategy == Strategy.SSAI && !breaks.isEmpty()) {
             boolean hasAd = ad != null && ad.length() > 0;
             for (int i = 0; !hasAd && i < breaks.size(); i++) {
-                String u = breaks.get(i).assetUri;
+                String u = breaks.get(i).firstAssetUri();
                 hasAd = u != null && u.length() > 0;
             }
             if (!hasAd) {
@@ -340,18 +478,48 @@ public final class DemoSession {
                 DemoHttp.jsonBool(json, "snapSegment", true));
         Float resume = (float) DemoHttp.jsonNumber(sgaiSrc, "resumeOffset",
                 DemoHttp.jsonNumber(json, "resumeOffset", 0));
-        boolean restrictSkip = DemoHttp.jsonBool(sgaiSrc, "restrictSkip",
-                DemoHttp.jsonBool(json, "restrictSkip", false));
-        String restrict = restrictSkip ? "SKIP" : null;
+        String restrict = DemoHttp.jsonStringValue(sgaiSrc, "restrict");
+        if (restrict == null) {
+            restrict = DemoHttp.jsonStringValue(json, "restrict");
+        }
+        if (restrict == null || restrict.length() == 0) {
+            boolean restrictSkip = DemoHttp.jsonBool(sgaiSrc, "restrictSkip",
+                    DemoHttp.jsonBool(json, "restrictSkip", false));
+            boolean restrictJump = DemoHttp.jsonBool(sgaiSrc, "restrictJump",
+                    DemoHttp.jsonBool(json, "restrictJump", false));
+            restrict = composeRestrict(restrictSkip, restrictJump);
+        }
         String snap = DemoHttp.jsonStringValue(sgaiSrc, "snap");
         if (snap == null) {
             snap = DemoHttp.jsonStringValue(json, "snap");
         }
+        String cue = DemoHttp.jsonStringValue(sgaiSrc, "cue");
+        if (cue == null || cue.length() == 0) {
+            cue = DemoHttp.jsonStringValue(json, "cue");
+        }
+        if (cue == null || cue.length() == 0) {
+            boolean cueOnce = DemoHttp.jsonBool(sgaiSrc, "cueOnce",
+                    DemoHttp.jsonBool(json, "cueOnce", false));
+            cue = cueOnce ? "ONCE" : null;
+        }
 
         DemoSession session = new DemoSession(id, strategy, content, ad, breaks, maxAd, start,
-                snapSeg, resume, restrict, snap);
+                snapSeg, resume, restrict, snap, cue);
         session.forceVod = DemoHttp.jsonBool(json, "forceVod", false);
         return session;
+    }
+
+    static String composeRestrict(boolean skip, boolean jump) {
+        if (skip && jump) {
+            return "SKIP,JUMP";
+        }
+        if (skip) {
+            return "SKIP";
+        }
+        if (jump) {
+            return "JUMP";
+        }
+        return null;
     }
 
     public static DemoSession fromPlayQuery(String id, Strategy strategy, String content, String ad,
@@ -375,7 +543,7 @@ public final class DemoSession {
             }
         }
         return new DemoSession(id, strategy, content, ad, breaks, maxAd, null,
-                true, 0f, null, null);
+                true, 0f, null, null, null);
     }
 
     private static List<Break> parseBreaks(String json, String defaultAd) {
@@ -389,24 +557,17 @@ public final class DemoSession {
             int i = 0;
             for (String item : items) {
                 i++;
-                String uri = DemoHttp.jsonStringValue(item, "assetUri");
-                if (uri == null || uri.isEmpty()) {
-                    uri = DemoHttp.jsonStringValue(item, "url");
-                }
-                if (uri == null || uri.isEmpty()) {
-                    uri = defaultAd;
-                }
-                if (uri != null && uri.length() > 0) {
-                    DemoHttp.requireHttpUrl(uri);
-                }
                 String bid = DemoHttp.jsonStringValue(item, "id");
                 if (bid == null || bid.isEmpty()) {
                     bid = "break-" + i;
                 }
                 float off = (float) DemoHttp.jsonNumber(item, "offsetSec",
                         DemoHttp.jsonNumber(item, "offset", 0));
-                float dur = (float) DemoHttp.jsonNumber(item, "durationSec", 15);
-                breaks.add(new Break(bid, off, dur, uri));
+                List<Ad> ads = parseAds(item, defaultAd);
+                if (ads.isEmpty()) {
+                    continue;
+                }
+                breaks.add(new Break(bid, off, ads));
             }
             return breaks;
         }
@@ -422,6 +583,44 @@ public final class DemoSession {
             breaks.add(new Break("ssai-" + (i + 1), splices[i], 15f, defaultAd));
         }
         return breaks;
+    }
+
+    private static List<Ad> parseAds(String breakJson, String defaultAd) {
+        List<Ad> ads = new ArrayList<Ad>();
+        String arr = DemoHttp.jsonArray(breakJson, "ads");
+        if (arr != null && arr.indexOf('{') >= 0) {
+            for (String item : DemoHttp.splitJsonObjects(arr)) {
+                String uri = DemoHttp.jsonStringValue(item, "assetUri");
+                if (uri == null || uri.isEmpty()) {
+                    uri = DemoHttp.jsonStringValue(item, "url");
+                }
+                if (uri == null || uri.isEmpty()) {
+                    uri = defaultAd;
+                }
+                if (uri != null && uri.length() > 0) {
+                    DemoHttp.requireHttpUrl(uri);
+                }
+                float dur = (float) DemoHttp.jsonNumber(item, "durationSec", 15);
+                ads.add(new Ad(uri, dur));
+            }
+            return ads;
+        }
+        String uri = DemoHttp.jsonStringValue(breakJson, "assetUri");
+        if (uri == null || uri.isEmpty()) {
+            uri = DemoHttp.jsonStringValue(breakJson, "url");
+        }
+        if (uri == null || uri.isEmpty()) {
+            uri = defaultAd;
+        }
+        if (uri != null && uri.length() > 0) {
+            DemoHttp.requireHttpUrl(uri);
+        }
+        if (uri == null || uri.length() == 0) {
+            return ads;
+        }
+        float dur = (float) DemoHttp.jsonNumber(breakJson, "durationSec", 15);
+        ads.add(new Ad(uri, dur));
+        return ads;
     }
 
     public static float[] parseSplices(String raw) {

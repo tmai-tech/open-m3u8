@@ -1,8 +1,10 @@
+import { $ } from "./dom.js";
 import { state } from "./state.js";
 import { configuredAdLength } from "./form.js";
 import { nativeCurrentTime, snapTime } from "./seek-media.js";
 
 export function isSgaiAdPlaying() {
+  if (state.shakaAdPlaying) return true;
   const im = state.hls && state.hls.interstitialsManager;
   if (!im) return false;
   if (im.playingAsset) return true;
@@ -30,17 +32,61 @@ export function sgaiPlayoutCap() {
 }
 
 export function sgaiRemaining() {
+  if (state.shakaAdPlaying) {
+    const ad = state.shakaAd;
+    if (ad && typeof ad.getRemainingTime === "function") {
+      const left = Number(ad.getRemainingTime());
+      if (isFinite(left)) return Math.max(0, left);
+    }
+    if (ad && typeof ad.getDuration === "function") {
+      const d = Number(ad.getDuration());
+      const t = Number(($("video") && $("video").currentTime) || 0);
+      if (isFinite(d) && d > 0) return Math.max(0, d - t);
+    }
+    return configuredAdLength();
+  }
   const im = state.hls && state.hls.interstitialsManager;
   if (!im) return configuredAdLength();
-  const ev = im.playingItem && (im.playingItem.event || im.playingItem.interstitial);
-  const cap = (ev && (ev.playoutLimit || ev.duration)) || configuredAdLength();
   const q = im.playerQueue || [];
   for (let i = 0; i < q.length; i++) {
     const media = q[i] && q[i].media;
     if (!media || media.paused || media.ended) continue;
-    return Math.max(0, cap - (media.currentTime || 0));
+    const d = Number(media.duration);
+    const t = Number(media.currentTime) || 0;
+    if (isFinite(d) && d > 0) return Math.max(0, d - t);
+    return Math.max(0, sgaiPlayoutCap() - t);
   }
-  return Math.max(0, cap);
+  const player = im.interstitialPlayer;
+  if (player) {
+    const d = Number(player.duration);
+    const t = Number(player.currentTime) || 0;
+    if (isFinite(d) && d > 0 && d < sgaiPlayoutCap() + 0.5) return Math.max(0, d - t);
+  }
+  return Math.max(0, sgaiPlayoutCap());
+}
+
+export function sgaiAdOrdinal() {
+  if (state.shakaAdPlaying && state.shakaAd) {
+    const ad = state.shakaAd;
+    const pos = typeof ad.getPositionInSequence === "function" ? Number(ad.getPositionInSequence()) : NaN;
+    const len = typeof ad.getSequenceLength === "function" ? Number(ad.getSequenceLength()) : NaN;
+    if (len >= 2 && pos >= 1) return { index: pos, total: len };
+  }
+  const im = state.hls && state.hls.interstitialsManager;
+  if (!im) return null;
+  const item = im.playingItem;
+  const ev = item && (item.event || item.interstitial);
+  let total = 0;
+  const list = ev && (ev.assetList || ev.assets
+      || (ev.assetListResponse && (ev.assetListResponse.ASSETS || ev.assetListResponse.assets)));
+  if (Array.isArray(list)) total = list.length;
+  const player = im.interstitialPlayer;
+  if (!total && player && Number.isFinite(player.assetCount)) total = player.assetCount;
+  let idx = 0;
+  if (player && Number.isFinite(player.playingIndex)) idx = player.playingIndex;
+  else if (im.playingAsset && Number.isFinite(im.playingAsset.index)) idx = im.playingAsset.index;
+  if (total < 2) return null;
+  return { index: Math.max(1, idx + 1), total };
 }
 
 export function sgaiSafeTime(media) {
@@ -62,6 +108,54 @@ export function shouldClampSgaiSeek(media, requested) {
 export function resetAdClock(media) {
   if (!media) return;
   state.lastGoodTime.set(media, 0);
+}
+
+export function resetSgaiOnce() {
+  if (state.sgaiPlayedOnce) state.sgaiPlayedOnce.clear();
+}
+
+function interstitialEvent(data) {
+  if (!data) return null;
+  return data.event || data.interstitial || data;
+}
+
+function interstitialId(ev) {
+  if (!ev) return "";
+  if (ev.identifier) return String(ev.identifier);
+  if (ev.id) return String(ev.id);
+  const dr = ev.dateRange;
+  if (dr && (dr.id || dr.ID)) return String(dr.id || dr.ID);
+  return "";
+}
+
+function isCueOnce(ev) {
+  const cue = ev && ev.cue;
+  if (cue && (cue.once === true || cue.once === "ONCE")) return true;
+  if (typeof cue === "string" && /ONCE/i.test(cue)) return true;
+  const dr = ev && ev.dateRange;
+  const attr = dr && (dr.cue || (dr.attr && (dr.attr.CUE || dr.attr.cue)));
+  if (typeof attr === "string" && /ONCE/i.test(attr)) return true;
+  const s = state.lastSession;
+  return !!(s && (s.cueOnce || (s.sgai && s.sgai.cueOnce) || s.cue === "ONCE"
+      || (s.sgai && s.sgai.cue === "ONCE")));
+}
+
+/** After a CUE=ONCE interstitial finishes, do not play it again (native seek / Shaka). */
+export function onSgaiInterstitialEnded(data) {
+  const ev = interstitialEvent(data);
+  const id = interstitialId(ev);
+  if (id && isCueOnce(ev)) state.sgaiPlayedOnce.add(id);
+}
+
+/** If hls.js starts a once-played break again, skip it. */
+export function onSgaiInterstitialStarted(data) {
+  const ev = interstitialEvent(data);
+  const id = interstitialId(ev);
+  if (!id || !isCueOnce(ev) || !state.sgaiPlayedOnce.has(id)) return;
+  const im = state.hls && state.hls.interstitialsManager;
+  if (im && typeof im.skip === "function") {
+    try { im.skip(); } catch (e) { /* ignore */ }
+  }
 }
 
 export function onSgaiSeeking(media, from, to) {

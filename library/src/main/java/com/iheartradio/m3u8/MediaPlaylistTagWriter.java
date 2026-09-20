@@ -293,6 +293,17 @@ abstract class MediaPlaylistTagWriter extends ExtTagWriter {
                     return attributes.getStartDate();
                 }
             });
+            HANDLERS.put(Constants.CUE, new AttributeWriter<DateRangeData>() {
+                @Override
+                public boolean containsAttribute(DateRangeData attributes) {
+                    return attributes.hasCue();
+                }
+
+                @Override
+                public String write(DateRangeData attributes) throws ParseException {
+                    return WriteUtil.writeQuotedString(attributes.getCue(), getTag());
+                }
+            });
             HANDLERS.put(Constants.END_DATE, new AttributeWriter<DateRangeData>() {
                 @Override
                 public boolean containsAttribute(DateRangeData attributes) {

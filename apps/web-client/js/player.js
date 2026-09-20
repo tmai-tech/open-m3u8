@@ -1,16 +1,17 @@
 import { $, bind } from "./dom.js";
-import { adsAllowed, state } from "./state.js";
+import { adsAllowed, setPlayerEngine, state } from "./state.js";
 import { highlight, setStatus } from "./status.js";
-import { createSession } from "./api.js";
+import { createSession, showSessionWarnings } from "./api.js";
 import { setManifestButtons } from "./form.js";
 import { parseCueWindows, rememberPlaylist } from "./cues.js";
 import { renderTimeline } from "./ad-markers.js";
-import { refreshAdLabel, setAdLabel } from "./ad-overlay.js";
-import { resetAdClock } from "./seek-sgai.js";
+import { refreshAdLabel, setAdLabel, stopAdLabelWatch } from "./ad-overlay.js";
+import { onSgaiInterstitialEnded, onSgaiInterstitialStarted, resetAdClock, resetSgaiOnce } from "./seek-sgai.js";
 import { startAdWatch, stopAdWatch, guardInterstitialMedia } from "./seek-guard.js";
 import { hidePoster, setPosterHint, showPoster } from "./ott.js";
 import { startSeekThumbs, stopSeekThumbs } from "./seek-thumbs.js";
 import { bindQuality, refreshQualityHint, resetQualityMenu, setQualityNative, syncQualityMenu } from "./quality.js";
+import { destroyShaka, playShaka, shakaAvailable } from "./shaka-player.js";
 
 let onDestroyed = () => {};
 export function setOnDestroyed(fn) { onDestroyed = fn || (() => {}); }
@@ -33,7 +34,10 @@ export function showSessionId(id) {
 export function destroyPlayer() {
   stopSeekThumbs();
   stopAdWatch();
+  stopAdLabelWatch();
+  resetSgaiOnce();
   if (state.hls) { state.hls.destroy(); state.hls = null; }
+  destroyShaka();
   const v = $("video");
   v.removeAttribute("src");
   v.load();
@@ -48,6 +52,16 @@ export function destroyPlayer() {
 export function playUrl(manifestUrl, enableInterstitials, staticSession) {
   destroyPlayer();
   const video = $("video");
+  if (state.playerEngine === "shaka") {
+    playShaka(manifestUrl).catch((e) => {
+      setStatus("Shaka failed — falling back to hls.js. " + (e && e.message ? e.message : e), "err");
+      setPlayerEngine("hls");
+      const sel = $("playerEngine");
+      if (sel) sel.value = "hls";
+      playUrl(manifestUrl, enableInterstitials, staticSession);
+    });
+    return;
+  }
   if (window.Hls && Hls.isSupported()) {
     const cfg = { enableWorker: true, lowLatencyMode: false };
     if ("enableInterstitialPlayback" in Hls.DefaultConfig) {
@@ -78,7 +92,13 @@ export function playUrl(manifestUrl, enableInterstitials, staticSession) {
       guardInterstitialMedia();
     };
     if (Hls.Events.INTERSTITIAL_STARTED) {
-      state.hls.on(Hls.Events.INTERSTITIAL_STARTED, hookInterstitial);
+      state.hls.on(Hls.Events.INTERSTITIAL_STARTED, (_, data) => {
+        onSgaiInterstitialStarted(data);
+        hookInterstitial();
+      });
+    }
+    if (Hls.Events.INTERSTITIAL_ENDED) {
+      state.hls.on(Hls.Events.INTERSTITIAL_ENDED, (_, data) => onSgaiInterstitialEnded(data));
     }
     if (Hls.Events.INTERSTITIAL_ASSET_STARTED) {
       state.hls.on(Hls.Events.INTERSTITIAL_ASSET_STARTED, hookInterstitial);
@@ -90,7 +110,7 @@ export function playUrl(manifestUrl, enableInterstitials, staticSession) {
       syncQualityMenu(state.hls);
       video.play().catch(() => {});
       hidePoster();
-      setStatus("Playing " + state.strategy.toUpperCase() + " — " + manifestUrl, "ok");
+      setStatus("Playing", "ok");
     });
     if (Hls.Events.LEVEL_SWITCHED) {
       state.hls.on(Hls.Events.LEVEL_SWITCHED, () => refreshQualityHint(state.hls));
@@ -108,6 +128,7 @@ export function playUrl(manifestUrl, enableInterstitials, staticSession) {
       });
     }
     state.hls.on(Hls.Events.LEVEL_LOADED, (_, data) => {
+      showSessionWarnings(state.lastSession && state.lastSession.id, setStatus);
       if (data && data.details && data.details.totalduration) {
         const fromLevel = data.details.totalduration;
         const fromVideo = video.duration;
@@ -140,7 +161,7 @@ export function playUrl(manifestUrl, enableInterstitials, staticSession) {
   video.play().catch(() => {});
   hidePoster();
   setQualityNative();
-  setStatus("Playing via native HLS — " + manifestUrl, "ok");
+  setStatus("Playing", "ok");
 }
 
 export async function apply(andPlay) {
@@ -159,7 +180,7 @@ export async function apply(andPlay) {
       setStatus("Direct mode — hls.js may inject client-side. Use Local rewrite to see tags in Network.", "ok");
       return;
     }
-    setStatus("Creating " + state.strategy.toUpperCase() + " session…");
+    setStatus("Starting…");
     const session = await createSession();
     state.lastSession = session;
     showSessionId(session && session.id);
@@ -180,7 +201,7 @@ export async function apply(andPlay) {
       $("sessionMeta").innerHTML =
         "<strong>GitHub Pages (static)</strong> · " + state.strategy.toUpperCase() +
         " · ads applied in the browser · CORS required on content/ad hosts";
-      setStatus(state.strategy.toUpperCase() + " ready (in-browser rewrite).", "ok");
+      setStatus("Ready.", "ok");
       if (andPlay) playUrl(session.contentUrl, adsAllowed() && state.strategy === "sgai", session);
       return;
     }
@@ -195,7 +216,7 @@ export async function apply(andPlay) {
     if (!res.ok) throw new Error(text);
     $("preview").innerHTML = highlight(text);
     state.adWindows = parseCueWindows(text);
-    setStatus(state.strategy.toUpperCase() + " manifest ready.", "ok");
+    setStatus("Ready.", "ok");
     if (andPlay) playUrl(session.manifestUrl, adsAllowed() && state.strategy === "sgai");
   } catch (e) {
     const msg = String(e.message || e);
@@ -209,6 +230,22 @@ export async function apply(andPlay) {
 
 export function bindPlayer() {
   bindQuality();
+  const engine = $("playerEngine");
+  if (engine) {
+    engine.value = state.playerEngine === "shaka" ? "shaka" : "hls";
+    engine.addEventListener("change", () => {
+      const next = engine.value === "shaka" ? "shaka" : "hls";
+      if (next === "shaka" && !shakaAvailable()) {
+        engine.value = "hls";
+        setStatus("Shaka UI script did not load.", "err");
+        return;
+      }
+      setPlayerEngine(next);
+      document.body.classList.toggle("shaka-mode", next === "shaka");
+      setStatus(next === "shaka" ? "Shaka." : "hls.js.");
+    });
+    if (state.playerEngine === "shaka") document.body.classList.add("shaka-mode");
+  }
   bind("btnApply", "click", () => apply(true));
   bind("btnGenerate", "click", () => apply(false));
   bind("btnStop", "click", () => { destroyPlayer(); setAdLabel(false); setStatus("Player stopped."); });

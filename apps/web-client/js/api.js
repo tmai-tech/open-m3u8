@@ -1,6 +1,22 @@
 import { state } from "./state.js";
 import { buildLocalSession } from "./form.js";
 
+export async function fetchSession(id) {
+  if (!id || id === "static") return null;
+  const res = await fetch("/api/session?id=" + encodeURIComponent(id), { cache: "no-store" });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) return null;
+  return data.session || null;
+}
+
+export function showSessionWarnings(id, setStatus) {
+  if (!id || id === "static" || !setStatus) return;
+  fetchSession(id).then((s) => {
+    const w = (s && s.warnings) || [];
+    if (w.length) setStatus(w.join(" · "), "warn");
+  }).catch(() => {});
+}
+
 export async function createSession() {
   const body = buildLocalSession();
   if (state.proxyKnown && !state.useProxy) {

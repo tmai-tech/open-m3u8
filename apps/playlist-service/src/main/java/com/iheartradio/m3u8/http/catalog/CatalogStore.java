@@ -183,6 +183,9 @@ public final class CatalogStore {
             t.error = DemoHttp.jsonStringValue(obj, "error");
             t.contentHash = DemoHttp.jsonStringValue(obj, "contentHash");
             t.duplicateOf = DemoHttp.jsonStringValue(obj, "duplicateOf");
+            if (obj.indexOf("\"hasAudio\"") >= 0) {
+                t.hasAudio = Boolean.valueOf(DemoHttp.jsonBool(obj, "hasAudio", true));
+            }
             if (t.id != null && t.id.length() > 0) {
                 out.add(t);
             }
@@ -251,6 +254,9 @@ public final class CatalogStore {
         }
         if (t.duplicateOf != null && t.duplicateOf.length() > 0) {
             sb.append(",\"duplicateOf\":").append(DemoHttp.jsonString(t.duplicateOf));
+        }
+        if (t.hasAudio != null) {
+            sb.append(",\"hasAudio\":").append(t.hasAudio.booleanValue() ? "true" : "false");
         }
         sb.append('}');
     }

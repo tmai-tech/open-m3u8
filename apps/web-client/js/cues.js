@@ -10,9 +10,14 @@ export function parseCueWindows(playlistText) {
   String(playlistText).replace(/\r/g, "").split("\n").forEach((raw) => {
     const line = raw.trim();
     if (/^#EXT-X-CUE-OUT(?!-CONT)/i.test(line)) {
-      if (adStart == null) adStart = t;
+      // Back-to-back pods (multi-ad break) emit a new CUE-OUT with no CUE-IN
+      // in between. Close the previous window so the badge counts one creative.
+      if (adStart != null) {
+        windows.push({ start: adStart, end: Math.max(adStart, t, adEnd || t) });
+      }
+      adStart = t;
       const dm = line.match(/:([0-9.]+)/) || line.match(/DURATION=([0-9.]+)/i);
-      if (dm) adEnd = t + (Number(dm[1]) || 0);
+      adEnd = dm ? t + (Number(dm[1]) || 0) : null;
       return;
     }
     if (/^#EXT-X-CUE-IN/i.test(line)) {

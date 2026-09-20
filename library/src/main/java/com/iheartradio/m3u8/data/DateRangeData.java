@@ -10,11 +10,13 @@ import java.util.Objects;
  * {@code X-ASSET-URI}, {@code X-ASSET-LIST}, {@code X-RESUME-OFFSET},
  * {@code X-PLAYOUT-LIMIT}, {@code X-SNAP}, {@code X-RESTRICT},
  * {@code X-CONTENT-MAY-VARY}, {@code X-TIMELINE-OCCUPIES}, {@code X-TIMELINE-STYLE}.
+ * Standard {@code CUE} (PRE / POST / ONCE) is also modeled.
  */
 public class DateRangeData {
     private final String mId;
     private final String mClassAttribute;
     private final String mStartDate;
+    private final String mCue;
     private final String mEndDate;
     private final Float mDuration;
     private final Float mPlannedDuration;
@@ -31,7 +33,7 @@ public class DateRangeData {
     private final String mTimelineOccupies;
     private final String mTimelineStyle;
 
-    private DateRangeData(String id, String classAttribute, String startDate, String endDate,
+    private DateRangeData(String id, String classAttribute, String startDate, String cue, String endDate,
                           Float duration, Float plannedDuration,
                           String scte35Out, String scte35In, String scte35Cmd,
                           String assetUri, String assetList, String restrict, Float resumeOffset,
@@ -40,6 +42,7 @@ public class DateRangeData {
         mId = id;
         mClassAttribute = classAttribute;
         mStartDate = startDate;
+        mCue = cue;
         mEndDate = endDate;
         mDuration = duration;
         mPlannedDuration = plannedDuration;
@@ -63,6 +66,11 @@ public class DateRangeData {
     public boolean isInterstitial() { return "com.apple.hls.interstitial".equals(mClassAttribute); }
     public String getStartDate() { return mStartDate; }
     public boolean hasStartDate() { return mStartDate != null; }
+    /**
+     * Value of {@code CUE} (quoted enumerated-string-list), e.g. {@code "ONCE"} or {@code "PRE,ONCE"}.
+     */
+    public String getCue() { return mCue; }
+    public boolean hasCue() { return mCue != null && mCue.length() > 0; }
     public String getEndDate() { return mEndDate; }
     public boolean hasEndDate() { return mEndDate != null; }
     public Float getDuration() { return mDuration; }
@@ -101,14 +109,14 @@ public class DateRangeData {
     public boolean hasTimelineStyle() { return mTimelineStyle != null; }
 
     public Builder buildUpon() {
-        return new Builder(mId, mClassAttribute, mStartDate, mEndDate, mDuration, mPlannedDuration,
+        return new Builder(mId, mClassAttribute, mStartDate, mCue, mEndDate, mDuration, mPlannedDuration,
                 mScte35Out, mScte35In, mScte35Cmd, mAssetUri, mAssetList, mRestrict, mResumeOffset,
                 mPlayoutLimit, mSnap, mContentMayVary, mTimelineOccupies, mTimelineStyle);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(mId, mClassAttribute, mStartDate, mEndDate, mDuration, mPlannedDuration,
+        return Objects.hash(mId, mClassAttribute, mStartDate, mCue, mEndDate, mDuration, mPlannedDuration,
                 mScte35Out, mScte35In, mScte35Cmd, mAssetUri, mAssetList, mRestrict, mResumeOffset,
                 mPlayoutLimit, mSnap, mContentMayVary, mTimelineOccupies, mTimelineStyle);
     }
@@ -122,6 +130,7 @@ public class DateRangeData {
         return Objects.equals(mId, other.mId) &&
                 Objects.equals(mClassAttribute, other.mClassAttribute) &&
                 Objects.equals(mStartDate, other.mStartDate) &&
+                Objects.equals(mCue, other.mCue) &&
                 Objects.equals(mEndDate, other.mEndDate) &&
                 Objects.equals(mDuration, other.mDuration) &&
                 Objects.equals(mPlannedDuration, other.mPlannedDuration) &&
@@ -142,7 +151,7 @@ public class DateRangeData {
     @Override
     public String toString() {
         return "DateRangeData{id='" + mId + "', classAttribute='" + mClassAttribute +
-                "', startDate='" + mStartDate + "', endDate='" + mEndDate +
+                "', startDate='" + mStartDate + "', cue='" + mCue + "', endDate='" + mEndDate +
                 "', duration=" + mDuration + ", plannedDuration=" + mPlannedDuration +
                 ", scte35Out='" + mScte35Out + "', scte35In='" + mScte35In +
                 "', scte35Cmd='" + mScte35Cmd + "', assetUri='" + mAssetUri +
@@ -156,6 +165,7 @@ public class DateRangeData {
         private String mId;
         private String mClassAttribute;
         private String mStartDate;
+        private String mCue;
         private String mEndDate;
         private Float mDuration;
         private Float mPlannedDuration;
@@ -174,7 +184,7 @@ public class DateRangeData {
 
         public Builder() {}
 
-        private Builder(String id, String classAttribute, String startDate, String endDate,
+        private Builder(String id, String classAttribute, String startDate, String cue, String endDate,
                         Float duration, Float plannedDuration,
                         String scte35Out, String scte35In, String scte35Cmd,
                         String assetUri, String assetList, String restrict, Float resumeOffset,
@@ -183,6 +193,7 @@ public class DateRangeData {
             mId = id;
             mClassAttribute = classAttribute;
             mStartDate = startDate;
+            mCue = cue;
             mEndDate = endDate;
             mDuration = duration;
             mPlannedDuration = plannedDuration;
@@ -203,6 +214,8 @@ public class DateRangeData {
         public Builder withId(String id) { mId = id; return this; }
         public Builder withClassAttribute(String classAttribute) { mClassAttribute = classAttribute; return this; }
         public Builder withStartDate(String startDate) { mStartDate = startDate; return this; }
+        /** Sets {@code CUE} (e.g. {@code "ONCE"} or {@code "PRE,ONCE"}). */
+        public Builder withCue(String cue) { mCue = cue; return this; }
         public Builder withEndDate(String endDate) { mEndDate = endDate; return this; }
         public Builder withDuration(Float duration) { mDuration = duration; return this; }
         public Builder withPlannedDuration(Float plannedDuration) { mPlannedDuration = plannedDuration; return this; }
@@ -222,7 +235,7 @@ public class DateRangeData {
         public Builder withTimelineStyle(String timelineStyle) { mTimelineStyle = timelineStyle; return this; }
 
         public DateRangeData build() {
-            return new DateRangeData(mId, mClassAttribute, mStartDate, mEndDate, mDuration, mPlannedDuration,
+            return new DateRangeData(mId, mClassAttribute, mStartDate, mCue, mEndDate, mDuration, mPlannedDuration,
                     mScte35Out, mScte35In, mScte35Cmd, mAssetUri, mAssetList, mRestrict, mResumeOffset,
                     mPlayoutLimit, mSnap, mContentMayVary, mTimelineOccupies, mTimelineStyle);
         }

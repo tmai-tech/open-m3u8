@@ -11,7 +11,7 @@ import com.sun.net.httpserver.HttpHandler;
 
 import java.io.IOException;
 
-/** GET /s/{id}/manifest and /s/{id}/proxy */
+/** GET /s/{id}/manifest, /s/{id}/proxy, and /s/{id}/assets/{breakId}.json */
 public final class SessionResourceApi implements HttpHandler {
 
     private final int port;
@@ -41,7 +41,7 @@ public final class SessionResourceApi implements HttpHandler {
         int slash = rest.indexOf('/');
         if (slash <= 0) {
             DemoHttp.send(ex, 404, "application/json; charset=utf-8",
-                    "{\"error\":\"expected /s/{id}/manifest or /s/{id}/proxy\"}");
+                    "{\"error\":\"expected /s/{id}/manifest, /s/{id}/proxy, or /s/{id}/assets/{breakId}.json\"}");
             return;
         }
         String id = rest.substring(0, slash);
@@ -61,8 +61,35 @@ public final class SessionResourceApi implements HttpHandler {
             handleProxy(ex, session);
             return;
         }
+        if (action.startsWith("assets/")) {
+            handleAssets(ex, session, action.substring("assets/".length()));
+            return;
+        }
         DemoHttp.send(ex, 404, "application/json; charset=utf-8",
-                "{\"error\":\"unknown session path; use manifest or proxy\"}");
+                "{\"error\":\"unknown session path; use manifest, proxy, or assets/{breakId}.json\"}");
+    }
+
+    private void handleAssets(HttpExchange ex, DemoSession session, String rest) throws IOException {
+        String breakId = rest == null ? "" : rest;
+        int q = breakId.indexOf('?');
+        if (q >= 0) {
+            breakId = breakId.substring(0, q);
+        }
+        if (breakId.endsWith(".json")) {
+            breakId = breakId.substring(0, breakId.length() - 5);
+        }
+        try {
+            breakId = java.net.URLDecoder.decode(breakId, "UTF-8");
+        } catch (Exception ignored) {
+            // keep raw
+        }
+        String json = pipeline.assetListJson(session, breakId, DemoHttp.publicBase(ex, port));
+        if (json == null) {
+            DemoHttp.send(ex, 404, "application/json; charset=utf-8",
+                    "{\"error\":\"break not found\"}");
+            return;
+        }
+        DemoHttp.send(ex, 200, "application/json; charset=utf-8", json);
     }
 
     private void handleProxy(HttpExchange ex, DemoSession session) throws IOException {

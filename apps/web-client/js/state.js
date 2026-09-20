@@ -14,8 +14,11 @@ export const SAMPLES = {
   blender: "https://ireplay.tv/test/blender.m3u8",
   unifiedLive: "https://demo.unified-streaming.com/k8s/low-latency/stable/channel1/channel1.isml/.m3u8",
   mars: "/media/titles/summer-on-mars/master.m3u8",
+  cave: "/media/titles/the-cave-charles-ancelle/master.m3u8",
   giff: "/media/titles/giff-day-1/master.m3u8",
   grok: "/media/titles/grok-clip/master.m3u8",
+  grok8e30: "/media/titles/grok-video-8e30b4bc-5d97-4e1e-ab64-129b5/master.m3u8",
+  grok27bf: "/media/titles/grok-video-27bf43d8-2faf-4e7e-b7a0-aaab9/master.m3u8",
   adMars: "/media/ads/mars-clip/master.m3u8",
   adGiff: "/media/ads/giff-day-1/master.m3u8",
   adGrok: "/media/ads/grok-clip/master.m3u8",
@@ -27,15 +30,20 @@ export const HINTS = {
 };
 
 export const LENGTH_HINTS = {
-  ssai: "Each row is offset + ad URL + max duration (whole segments). Tears of Steel ≈ 4s/seg.",
-  sgai: "Each row’s duration is DURATION + X-PLAYOUT-LIMIT for that interstitial.",
+  ssai: "Add break places a cue. Add ad on that card stitches another creative in the same pod.",
+  sgai: "Add break places one interstitial. Add ad appends another asset on that break’s list.",
 };
 
 export const DEFAULT_AD = SAMPLES.ad;
 
 export const state = {
   strategy: localStorage.getItem("hls-demo-strategy") || "ssai",
+  playerEngine: readPlayerEngine(),
   hls: null,
+  shaka: null,
+  shakaUi: null,
+  shakaAd: null,
+  shakaAdPlaying: false,
   lastSession: null,
   mediaDuration: 0,
   useProxy: false,
@@ -54,8 +62,23 @@ export const state = {
   ssaiIgnoreSnapUntil: 0,
   guardedMedia: [],
   lastGoodTime: new WeakMap(),
+  sgaiPlayedOnce: new Set(),
   mediaCurrentTime: Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, "currentTime"),
 };
+
+function readPlayerEngine() {
+  try {
+    const q = new URLSearchParams(location.search).get("player");
+    if (q === "shaka" || q === "hls") return q;
+  } catch (e) { /* ignore */ }
+  const stored = localStorage.getItem("hls-demo-player");
+  return stored === "shaka" ? "shaka" : "hls";
+}
+
+export function setPlayerEngine(name) {
+  state.playerEngine = name === "shaka" ? "shaka" : "hls";
+  try { localStorage.setItem("hls-demo-player", state.playerEngine); } catch (e) { /* ignore */ }
+}
 
 /** Ads are allowed on catalog VOD and on a live Snapshot — not on rolling Live. */
 export function adsAllowed() {

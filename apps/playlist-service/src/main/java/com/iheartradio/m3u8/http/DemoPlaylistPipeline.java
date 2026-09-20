@@ -81,6 +81,7 @@ public final class DemoPlaylistPipeline {
         }
         // Never splice video ads into WebVTT. SSAI inserts cue-less empty.vtt
         // for the ad window so captions stay aligned and stay dark during ads.
+        skipSilentAds(session);
         if (looksLikeSubtitles(playlist)) {
             if (session.strategy == DemoSession.Strategy.SGAI) {
                 return playlist;
@@ -88,13 +89,13 @@ public final class DemoPlaylistPipeline {
             return stitchEmptySubtitleBreaks(session, playlist, publicBase);
         }
         if (session.strategy == DemoSession.Strategy.SGAI) {
-            return PlaylistRewriteUtil.injectMediaTags(playlist, session.toInjectConfig());
+            return PlaylistRewriteUtil.injectMediaTags(playlist, session.toInjectConfig(publicBase));
         }
         Resolution target = resolveContentResolution(session, playlistUrl);
         java.util.Map<String, Playlist> ads = new java.util.HashMap<String, Playlist>();
-        for (DemoSession.Break br : session.breaks) {
-            String url = session.resolveAdUrl(br);
-            if (url == null || url.length() == 0 || ads.containsKey(url)) {
+        for (String url : session.allAdUrls()) {
+            if (url == null || url.length() == 0 || ads.containsKey(url)
+                    || session.isSkippedAd(url)) {
                 continue;
             }
             ads.put(url, loadAdMediaPlaylist(session, url, target));
@@ -156,6 +157,9 @@ public final class DemoPlaylistPipeline {
         UriMapper mapper = new UriMapper() {
             @Override
             public String map(String absoluteUri) {
+                if (isOwnSessionUrl(absoluteUri, proxyBase)) {
+                    return absoluteUri;
+                }
                 return PlaylistRewriteUtil.toProxyUrl(proxyBase, absoluteUri);
             }
         };
@@ -302,6 +306,73 @@ public final class DemoPlaylistPipeline {
                 throw new DemoHttp.HttpException(502, msg);
             }
         }
+    }
+
+    void skipSilentAds(DemoSession session) {
+        if (session == null || session.breaks == null) {
+            return;
+        }
+        Resolution target = firstContentResolution(session);
+        String kind = session.strategy == DemoSession.Strategy.SGAI ? "SGAI" : "SSAI";
+        for (String url : session.allAdUrls()) {
+            if (url == null || url.length() == 0 || session.isSkippedAd(url)) {
+                continue;
+            }
+            try {
+                Playlist adMedia = loadAdMediaPlaylist(session, url, target);
+                if (!playlistHasAudio(adMedia, url)) {
+                    session.skipAd(url);
+                    String warn = kind + " skipped ad (no audio): " + url;
+                    session.addWarning(warn);
+                    DemoLog.event("warn").sid(session.id).put("url", url)
+                            .put("msg", warn).write();
+                }
+            } catch (Exception e) {
+                DemoLog.event("warn").sid(session.id).put("url", url)
+                        .put("msg", "ad audio check failed: " + e.getMessage()).write();
+            }
+        }
+    }
+
+    /**
+     * Muxed fMP4 inits contain an audio {@code soun}/{@code mp4a} handler.
+     * MPEG-TS ads and unknown inits are treated as having audio (do not skip).
+     */
+    boolean playlistHasAudio(Playlist media, String mediaUrl) {
+        if (media == null || !media.hasMediaPlaylist()) {
+            return true;
+        }
+        String mapUri = null;
+        List<TrackData> tracks = media.getMediaPlaylist().getTracks();
+        if (tracks != null) {
+            for (TrackData t : tracks) {
+                if (t != null && t.hasMapInfo() && t.getMapInfo().getUri() != null) {
+                    mapUri = t.getMapInfo().getUri();
+                    break;
+                }
+            }
+        }
+        if (mapUri == null || mapUri.length() == 0) {
+            return true;
+        }
+        String abs = PlaylistRewriteUtil.resolveUri(mediaUrl, mapUri);
+        try {
+            DemoHttp.FetchResult remote = fetch.fetch(abs);
+            if (remote == null || remote.status >= 400 || remote.body == null) {
+                return true;
+            }
+            return initLooksLikeItHasAudio(remote.body);
+        } catch (Exception e) {
+            return true;
+        }
+    }
+
+    static boolean initLooksLikeItHasAudio(byte[] init) {
+        if (init == null || init.length < 8) {
+            return true;
+        }
+        String ascii = new String(init, java.nio.charset.StandardCharsets.ISO_8859_1);
+        return ascii.contains("soun") || ascii.contains("mp4a");
     }
 
     private Playlist fetchAndParse(String url) throws Exception {
@@ -508,18 +579,20 @@ public final class DemoPlaylistPipeline {
         String emptyUri = emptyVttUri(publicBase);
         Map<String, Float> pods = new LinkedHashMap<String, Float>();
         for (DemoSession.Break br : session.breaks) {
-            String url = session.resolveAdUrl(br);
-            if (url == null || url.length() == 0) {
-                continue;
-            }
-            float maxDur = br.durationSec > 0f ? br.durationSec : session.maxAdDurationSec;
-            if (maxDur <= 0f) {
-                maxDur = 15f;
-            }
-            float pod = actualAdPodDuration(session, url, maxDur);
-            Float prev = pods.get(url);
-            if (prev == null || pod > prev) {
-                pods.put(url, pod);
+            for (DemoSession.Ad ad : session.liveAds(br)) {
+                String url = ad.assetUri;
+                if (url == null || url.length() == 0) {
+                    continue;
+                }
+                float maxDur = ad.durationSec > 0f ? ad.durationSec : session.maxAdDurationSec;
+                if (maxDur <= 0f) {
+                    maxDur = 15f;
+                }
+                float pod = actualAdPodDuration(session, url, maxDur);
+                Float prev = pods.get(url);
+                if (prev == null || pod > prev) {
+                    pods.put(url, pod);
+                }
             }
         }
         if (pods.isEmpty()) {
@@ -803,5 +876,52 @@ public final class DemoPlaylistPipeline {
             return playlist.buildUpon().withMediaPlaylist(m2).build();
         }
         return playlist;
+    }
+
+    static boolean isOwnSessionUrl(String uri, String sessionBase) {
+        if (uri == null || sessionBase == null || sessionBase.length() == 0) {
+            return false;
+        }
+        return uri.equals(sessionBase) || uri.startsWith(sessionBase + "/");
+    }
+
+    /**
+     * Apple interstitial asset list for one break. Unknown break → {@code null} (404).
+     * Skipped creatives are omitted; an empty {@code ASSETS} array is still 200.
+     */
+    public String assetListJson(DemoSession session, String breakId, String publicBase) {
+        if (session == null || breakId == null) {
+            return null;
+        }
+        skipSilentAds(session);
+        DemoSession.Break found = session.findBreak(breakId);
+        if (found == null) {
+            return null;
+        }
+        String base = publicBase == null ? "" : publicBase;
+        if (base.endsWith("/")) {
+            base = base.substring(0, base.length() - 1);
+        }
+        String proxyBase = base + "/s/" + session.id;
+        StringBuilder sb = new StringBuilder();
+        sb.append("{\"ASSETS\":[");
+        List<DemoSession.Ad> live = session.liveAds(found);
+        for (int i = 0; i < live.size(); i++) {
+            DemoSession.Ad ad = live.get(i);
+            float maxDur = ad.durationSec > 0f ? ad.durationSec : session.maxAdDurationSec;
+            if (maxDur <= 0f) {
+                maxDur = 15f;
+            }
+            float dur = actualAdPodDuration(session, ad.assetUri, maxDur);
+            String uri = PlaylistRewriteUtil.toProxyUrl(proxyBase, ad.assetUri);
+            if (i > 0) {
+                sb.append(',');
+            }
+            sb.append("{\"URI\":").append(DemoHttp.jsonString(uri))
+                    .append(",\"DURATION\":").append(dur)
+                    .append('}');
+        }
+        sb.append("]}");
+        return sb.toString();
     }
 }

@@ -2,6 +2,8 @@
 
 Client-only ideas for a later pass. Library stitch/inject APIs stay unchanged.
 
+On this PC: no extra 1080 / 4K ladder rungs, no two FFmpegs at once, no Whisper, no `llava`.
+
 ## Custom player chrome (seek during ads)
 
 The page currently keeps native `<video controls>` and **snaps seeks** so ads are unskippable (SSAI cue windows + SGAI primary/interstitial media).
@@ -13,11 +15,7 @@ Replace native controls with a custom bar:
 - Keep play/pause, volume, fullscreen
 - Work in fullscreen and on mobile; do not rely on overlaying the native seek bar
 
-Until then, seek blocking is `apps/web-client/js/seek-ssai.js` and `seek-sgai.js`.
-
-## SSAI: resume at seek target after a forced mid-roll
-
-Implemented in `apps/web-client/js/seek-ssai.js` (`ssaiSeekQueue`). Jumping past cue windows plays **every** crossed ad in order, then seeks to the scrub time. SGAI still tabled below.
+Until then, seek blocking is `apps/web-client/js/seek-ssai.js` and `seek-sgai.js`. SSAI already queues every crossed ad then seeks to the scrub time (`ssaiSeekQueue`).
 
 ## SGAI: resume at the user's seek target after a forced mid-roll
 
@@ -75,10 +73,8 @@ Later pass, on a machine that can hold it: `OLLAMA_MODEL=moondream` (1.8B Q4, 1.
 
 **Do not add a speech model on this PC.** Whisper (even small) plus FFmpeg would saturate the i5-7200U and likely reset the 4 GB WSL VM, same class of risk as `llava`.
 
-Current titles have no embedded text tracks and no `.srt`/`.vtt` sidecars. The packager writes a **dummy** WebVTT SUBS rendition (`subs.m3u8` + `Dummy subtitle i/N`) so the master has `EXT-X-MEDIA:TYPE=SUBTITLES`. SSAI does not splice video into that playlist: the ad window is cue-less `empty.vtt` segments (`/media/empty.vtt`) so nothing renders during the break and content cues stay on the content timeline. Real captions later: user sidecar wins, then optional ASR on a bigger box, never fail the pack if ASR is down. Do not pull Whisper here.
+Masters already have dummy WebVTT SUBS (`subs.m3u8`) and SSAI uses cue-less `empty.vtt` holes. Real captions later: user sidecar wins, then optional ASR on a bigger box; never fail the pack if ASR is down. Do not pull Whisper here.
 
-## Packager: ABR ladder for library titles
+## Packager: resume leftover `{id}.work.mp4`
 
-**Done:** ingest encodes the source-size rung first, then **360p** if height > 360, then **480p** if height > 480, **one FFmpeg at a time**. `--ladder <id>` fills any missing 360/480 rungs. A 12-title 360-only backfill was ~8 minutes; 480 on the 12 taller titles is ~12–18 minutes.
-
-Do **not** add 480 or a 1080 / 4K extra rung on this PC. Do **not** run two FFmpegs at once. A 360/480/720/1080 ladder belongs on a bigger box.
+Tick claims by renaming `inbox/{id}.mp4` → `{id}.work.mp4`, then encodes. It **ignores** `*.work.mp4`. If the watch process dies after the rename (session SIGTERM / 143 — not an FFmpeg crash), the job stays queued and is never claimed again. Recovered once by renaming back by hand (`grok-video-27bf43d8-…`). Later: treat leftover `{id}.work.mp4` as a resume (or rename it back to `{id}.mp4` on startup). Not urgent.

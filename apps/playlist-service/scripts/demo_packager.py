@@ -197,18 +197,12 @@ def package(ffmpeg: str, ffprobe: str, src: Path, dest: Path, root: Path, tid: s
     gop = fps * 4
     cmd = [
         ffmpeg, "-y", "-hide_banner", "-loglevel", "info",
-        "-i", str(src),
-        "-map", "0:v:0",
-    ]
-    if audio:
-        cmd += ["-map", "0:a:0"]
-    cmd += [
+    ] + av_input_args(src, audio) + [
         "-pix_fmt", "yuv420p",
         "-c:v", "libx264", "-profile:v", "high", "-level", "4.1",
         "-g", str(gop), "-keyint_min", str(gop), "-sc_threshold", "0",
+        "-c:a", "aac", "-ar", "48000", "-ac", "2", "-b:a", "128k",
     ]
-    if audio:
-        cmd += ["-c:a", "aac", "-ar", "48000", "-ac", "2", "-b:a", "128k"]
     cmd += [
         "-f", "hls", "-hls_time", "4", "-hls_playlist_type", "vod",
         "-hls_flags", "independent_segments", "-hls_segment_type", "fmp4",
@@ -247,6 +241,7 @@ def package(ffmpeg: str, ffprobe: str, src: Path, dest: Path, root: Path, tid: s
     return {
         "durationSec": dur, "fps": fps, "width": width, "height": height,
         "variants": variants,
+        "hasAudio": bool(audio),
     }
 
 
@@ -266,6 +261,18 @@ def encode_missing_ladder_rungs(
         encode_rung(ffmpeg, src, dest, rung, fps, audio, root, tid)
 
 
+def av_input_args(src: Path, audio: bool) -> list[str]:
+    """Always emit muxed H.264+AAC so SSAI can append into a 2-track buffer."""
+    if audio:
+        return ["-i", str(src), "-map", "0:v:0", "-map", "0:a:0"]
+    return [
+        "-i", str(src),
+        "-f", "lavfi", "-t", "36000",
+        "-i", "anullsrc=channel_layout=stereo:sample_rate=48000",
+        "-map", "0:v:0", "-map", "1:a:0", "-shortest",
+    ]
+
+
 def rung_init_name(height: int) -> str:
     return "init.m4s" if height == 720 else f"init{height}.m4s"
 
@@ -278,19 +285,13 @@ def encode_rung(ffmpeg: str, src: Path, dest: Path, height: int, fps: int,
     init_name = rung_init_name(height)
     cmd = [
         ffmpeg, "-y", "-hide_banner", "-loglevel", "info",
-        "-i", str(src),
-        "-map", "0:v:0",
-    ]
-    if audio:
-        cmd += ["-map", "0:a:0"]
-    cmd += [
+    ] + av_input_args(src, audio) + [
         "-vf", f"scale=-2:{height}",
         "-pix_fmt", "yuv420p",
         "-c:v", "libx264", "-profile:v", "high", "-level", "4.1",
         "-g", str(gop), "-keyint_min", str(gop), "-sc_threshold", "0",
+        "-c:a", "aac", "-ar", "48000", "-ac", "2", "-b:a", "128k",
     ]
-    if audio:
-        cmd += ["-c:a", "aac", "-ar", "48000", "-ac", "2", "-b:a", "128k"]
     cmd += [
         "-f", "hls", "-hls_time", "4", "-hls_playlist_type", "vod",
         "-hls_flags", "independent_segments", "-hls_segment_type", "fmp4",
@@ -751,6 +752,7 @@ def tick(root: Path, ffmpeg: str, ffprobe: str) -> None:
                 "sub": f"Local · {round(info['durationSec'])}s · {ladder_label(info.get('variants') or [])}",
                 "error": None,
                 "contentHash": digest,
+                "hasAudio": bool(info.get("hasAudio")),
             })
             save_catalog(root, titles)
             job_log(root, tid, f"ready {info['durationSec']:.1f}s")

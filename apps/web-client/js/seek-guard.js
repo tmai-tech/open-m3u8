@@ -1,7 +1,7 @@
 import { $ } from "./dom.js";
 import { state } from "./state.js";
 import { nativeCurrentTime } from "./seek-media.js";
-import { onSsaiSeeking, resetSsaiSeek } from "./seek-ssai.js";
+import { onSsaiSeeking, onSsaiTimeUpdate, resetSsaiSeek } from "./seek-ssai.js";
 import {
   isSgaiAdPlaying,
   onSgaiEnded,
@@ -58,6 +58,7 @@ function onSeekingBlockAds(ev) {
 function onGuardedTimeUpdate(ev) {
   const media = ev.target;
   if (onSgaiTimeUpdate(media)) return;
+  if (onSsaiTimeUpdate(media)) return;
   if (!state.seekGuard) markGoodTime(media);
 }
 

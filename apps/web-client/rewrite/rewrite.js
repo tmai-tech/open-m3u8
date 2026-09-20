@@ -160,7 +160,16 @@
         "X-RESUME-OFFSET=0.0",
         "X-PLAYOUT-LIMIT=" + dur.toFixed(1),
       ];
-      if (session.restrictSkip) parts.push("X-RESTRICT=\"SKIP\"");
+      var restrictParts = [];
+      if (session.restrictSkip || (session.sgai && session.sgai.restrictSkip)) restrictParts.push("SKIP");
+      if (session.restrictJump || (session.sgai && session.sgai.restrictJump)) restrictParts.push("JUMP");
+      if (session.restrict) restrictParts = String(session.restrict).split(/[,\s]+/).filter(Boolean);
+      if (restrictParts.length) parts.push("X-RESTRICT=\"" + restrictParts.join(",") + "\"");
+      if (session.cueOnce || (session.sgai && session.sgai.cueOnce)
+          || (session.cue && String(session.cue).toUpperCase().indexOf("ONCE") >= 0)
+          || (session.sgai && session.sgai.cue && String(session.sgai.cue).toUpperCase().indexOf("ONCE") >= 0)) {
+        parts.push("CUE=\"ONCE\"");
+      }
       ranges.push("#EXT-X-DATERANGE:" + parts.join(","));
     }
 

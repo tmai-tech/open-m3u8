@@ -25,7 +25,7 @@ export function fillPublicRow() {
   if (!input) return;
   const httpsUrl = publicHttpsUrl();
   if (input.value !== httpsUrl) input.value = httpsUrl;
-  if (copyBtn) copyBtn.disabled = false;
+  if (copyBtn) copyBtn.disabled = !(httpsUrl && httpsUrl.indexOf("https://") === 0);
   if (watchBtn) watchBtn.disabled = !(httpsUrl && httpsUrl.indexOf("https://") === 0);
 }
 
