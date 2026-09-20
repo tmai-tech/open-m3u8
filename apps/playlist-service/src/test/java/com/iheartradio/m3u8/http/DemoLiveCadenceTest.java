@@ -40,6 +40,25 @@ public class DemoLiveCadenceTest {
     }
 
     @Test
+    public void liveCadenceFreezesStartDateWithinTheMinute() throws Exception {
+        DemoSession session = DemoSession.fromJson("live-frz",
+                "{\"strategy\":\"sgai\",\"contentUrl\":\"http://cdn/live.m3u8\","
+                        + "\"adUrl\":\"http://ads/grok.m3u8\",\"liveCadenceSec\":60,\"livePlayoutLimit\":15}");
+        DemoPlaylistPipeline pipeline = new DemoPlaylistPipeline();
+        String first = PlaylistRewriteUtil.writeToString(
+                pipeline.apply(session, liveWindow("2020-01-01T00:00:10.000Z", 10f, 6),
+                        "http://cdn/live.m3u8", "http://127.0.0.1:8765"),
+                Encoding.UTF_8);
+        assertTrue(first.contains("START-DATE=2020-01-01T00:00:30.000Z"));
+        String later = PlaylistRewriteUtil.writeToString(
+                pipeline.apply(session, liveWindow("2020-01-01T00:00:30.000Z", 10f, 6),
+                        "http://cdn/live.m3u8", "http://127.0.0.1:8765"),
+                Encoding.UTF_8);
+        assertTrue(later.contains("START-DATE=2020-01-01T00:00:30.000Z"));
+        assertFalse(later.contains("START-DATE=2020-01-01T00:00:50.000Z"));
+    }
+
+    @Test
     public void liveEdgeFollowsLastPdtNotDurationSum() throws Exception {
         TrackData a = new TrackData.Builder()
                 .withUri("http://cdn/a.ts")
@@ -110,6 +129,20 @@ public class DemoLiveCadenceTest {
                         + "\"adUrl\":\"http://ads/grok.m3u8\",\"liveCadenceSec\":60}");
         String text = PlaylistRewriteUtil.writeToString(
                 new DemoPlaylistPipeline().apply(session, ad, "http://ads/grok.m3u8",
+                        "http://127.0.0.1:8765"),
+                Encoding.UTF_8);
+        assertFalse(text.contains("#EXT-X-DATERANGE"));
+    }
+
+    @Test
+    public void audioRenditionDoesNotGetLiveCadence() throws Exception {
+        Playlist audio = liveWindow("2020-01-01T00:00:00.000Z", 2f, 10);
+        DemoSession session = DemoSession.fromJson("live-aud",
+                "{\"strategy\":\"sgai\",\"contentUrl\":\"http://cdn/live.m3u8\","
+                        + "\"adUrl\":\"http://ads/grok.m3u8\",\"liveCadenceSec\":60}");
+        String text = PlaylistRewriteUtil.writeToString(
+                new DemoPlaylistPipeline().apply(session, audio,
+                        "http://cdn/channel1-audio_eng=64000.m3u8",
                         "http://127.0.0.1:8765"),
                 Encoding.UTF_8);
         assertFalse(text.contains("#EXT-X-DATERANGE"));

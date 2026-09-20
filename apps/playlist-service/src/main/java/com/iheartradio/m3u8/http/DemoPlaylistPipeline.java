@@ -998,6 +998,9 @@ public final class DemoPlaylistPipeline {
         if (!media.isOngoing() || media.isIframesOnly()) {
             return false;
         }
+        if (isAudioOrKeyframeUrl(playlistUrl)) {
+            return false;
+        }
         if (playlistUrl != null && session.adUrl != null && session.adUrl.length() > 0) {
             if (playlistUrl.equals(session.adUrl) || playlistUrl.startsWith(session.adUrl)) {
                 return false;
@@ -1008,6 +1011,15 @@ public final class DemoPlaylistPipeline {
             }
         }
         return true;
+    }
+
+    static boolean isAudioOrKeyframeUrl(String playlistUrl) {
+        if (playlistUrl == null) {
+            return false;
+        }
+        String u = playlistUrl.toLowerCase();
+        return u.contains("audio_") || u.contains("audio-") || u.contains("/audio")
+                || u.contains("keyframes/") || u.contains("iframe");
     }
 
     /**
@@ -1048,14 +1060,15 @@ public final class DemoPlaylistPipeline {
         if (startMs < baseMs) {
             startMs = baseMs;
         }
+        long idSec = (lastPdtMs / intervalMs) * (intervalMs / 1000L);
+        String id = PlaylistRewriteUtil.LIVE_BREAK_ID_PREFIX + idSec;
+        startMs = session.freezeLiveCadenceStart(id, startMs);
         float off = (startMs - baseMs) / 1000f;
         String base = publicBase == null ? "" : publicBase;
         if (base.endsWith("/")) {
             base = base.substring(0, base.length() - 1);
         }
         if (off >= -0.01f) {
-            long idSec = (lastPdtMs / intervalMs) * (intervalMs / 1000L);
-            String id = PlaylistRewriteUtil.LIVE_BREAK_ID_PREFIX + idSec;
             String list = base + "/s/" + session.id + "/assets/" + id + ".json";
             injected.add(new InterstitialBreak(id, off, limit, null, list,
                     null, session.defaultRestrict, session.defaultSnap,

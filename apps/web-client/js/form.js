@@ -1,5 +1,5 @@
 import { $, bind } from "./dom.js";
-import { adsAllowed, DEFAULT_AD, HINTS, LENGTH_HINTS, isBlenderLiveUrl, SAMPLES, state } from "./state.js";
+import { adsAllowed, DEFAULT_AD, HINTS, LENGTH_HINTS, isLiveCadenceUrl, SAMPLES, state } from "./state.js";
 import { setStatus } from "./status.js";
 import { renderTimeline } from "./ad-markers.js";
 import { fillPublicRow } from "./public-url.js";
@@ -158,7 +158,7 @@ function toAbsoluteUrl(url) {
 export function buildLocalSession() {
   const contentUrl = toAbsoluteUrl($("contentUrl").value);
   if (!contentUrl) throw new Error("Content URL is required");
-  const liveCadence = state.liveMode && !state.forceVod && isBlenderLiveUrl(contentUrl);
+  const liveCadence = state.liveMode && !state.forceVod && isLiveCadenceUrl(contentUrl);
   if (liveCadence) {
     const grok = toAbsoluteUrl(SAMPLES.grok8e30);
     return {
@@ -272,7 +272,7 @@ export function applyCatalogPreset(item) {
       state.windowDuration = 0;
       state.mediaDuration = 0;
       renderTimeline();
-      if (isBlenderLiveUrl(item.url)) {
+      if (isLiveCadenceUrl(item.url)) {
         setStrategy("sgai", false);
         setStatus("Live SGAI — 15s grok ad every 1 min. Play.");
       } else {

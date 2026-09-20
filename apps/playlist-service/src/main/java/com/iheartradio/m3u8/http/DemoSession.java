@@ -90,6 +90,20 @@ public final class DemoSession {
     /** Rolling-live SGAI: place a pod every N seconds of program time. 0 = off. */
     public float liveCadenceSec;
     public float livePlayoutLimit = 15f;
+    /** Frozen START-DATE (epoch ms) for the current {@code live-*} id. */
+    public String liveFrozenId;
+    public long liveFrozenStartMs;
+
+    public long freezeLiveCadenceStart(String id, long startMs) {
+        synchronized (this) {
+            if (id != null && id.equals(liveFrozenId) && liveFrozenStartMs > 0L) {
+                return liveFrozenStartMs;
+            }
+            liveFrozenId = id;
+            liveFrozenStartMs = startMs;
+            return startMs;
+        }
+    }
 
     private volatile Playlist cachedAdMedia;
     private volatile Playlist cachedContentMaster;
