@@ -4,8 +4,11 @@ import com.iheartradio.m3u8.Encoding;
 import com.iheartradio.m3u8.ParseException;
 import com.iheartradio.m3u8.PlaylistException;
 import com.iheartradio.m3u8.ads.PlaylistRewriteUtil;
+import com.iheartradio.m3u8.ads.PlaylistRewriteUtil.InjectConfig;
+import com.iheartradio.m3u8.ads.PlaylistRewriteUtil.InterstitialBreak;
 import com.iheartradio.m3u8.ads.PlaylistRewriteUtil.UriMapper;
 import com.iheartradio.m3u8.ads.PlaylistSsaiUtil;
+import com.iheartradio.m3u8.data.MasterPlaylist;
 import com.iheartradio.m3u8.data.MediaPlaylist;
 import com.iheartradio.m3u8.data.Playlist;
 import com.iheartradio.m3u8.data.PlaylistData;
@@ -89,7 +92,10 @@ public final class DemoPlaylistPipeline {
             return stitchEmptySubtitleBreaks(session, playlist, publicBase);
         }
         if (session.strategy == DemoSession.Strategy.SGAI) {
-            return PlaylistRewriteUtil.injectMediaTags(playlist, session.toInjectConfig(publicBase));
+            InjectConfig cfg = shouldInjectLiveCadence(session, playlist, playlistUrl)
+                    ? liveCadenceInjectConfig(session, playlist, publicBase)
+                    : session.toInjectConfig(publicBase);
+            return PlaylistRewriteUtil.injectMediaTags(playlist, cfg);
         }
         Resolution target = resolveContentResolution(session, playlistUrl);
         java.util.Map<String, Playlist> ads = new java.util.HashMap<String, Playlist>();
@@ -171,6 +177,7 @@ public final class DemoPlaylistPipeline {
             }
             Playlist transformed = apply(session, playlist, playlistUrl, publicBase);
             Playlist rewritten = PlaylistRewriteUtil.rewriteUris(transformed, playlistUrl, mapper);
+            rewritten = stripStartTag(rewritten);
             byte[] out = PlaylistRewriteUtil.write(rewritten, Encoding.UTF_8);
             String kind = rewritten.hasMasterPlaylist() ? "master"
                     : rewritten.hasMediaPlaylist() ? "media" : "playlist";
@@ -217,6 +224,7 @@ public final class DemoPlaylistPipeline {
         try {
             String text = new String(body, StandardCharsets.UTF_8);
             String fixed = DemoHttp.rewritePlaylistUrisText(text, playlistUrl, mapper);
+            fixed = stripStartTagText(fixed);
             if (session != null && session.forceVod) {
                 fixed = snapshotAsVodText(fixed);
             }
@@ -489,6 +497,47 @@ public final class DemoPlaylistPipeline {
             s = s.substring(0, s.length() - 1);
         }
         return s;
+    }
+
+    /**
+     * Drop {@code EXT-X-START} so live players join the edge instead of
+     * {@code TIME-OFFSET} into the DVR (Blender uses {@code TIME-OFFSET=36}).
+     */
+    static Playlist stripStartTag(Playlist playlist) {
+        if (playlist == null) {
+            return playlist;
+        }
+        Playlist.Builder b = playlist.buildUpon();
+        boolean changed = false;
+        if (playlist.hasMediaPlaylist() && playlist.getMediaPlaylist().hasStartData()) {
+            b.withMediaPlaylist(playlist.getMediaPlaylist().buildUpon().withStartData(null).build());
+            changed = true;
+        }
+        if (playlist.hasMasterPlaylist() && playlist.getMasterPlaylist().hasStartData()) {
+            b.withMasterPlaylist(playlist.getMasterPlaylist().buildUpon().withStartData(null).build());
+            changed = true;
+        }
+        return changed ? b.build() : playlist;
+    }
+
+    static String stripStartTagText(String text) {
+        if (text == null || text.indexOf("#EXT-X-START") < 0) {
+            return text;
+        }
+        boolean crlf = text.contains("\r\n");
+        String nl = crlf ? "\r\n" : "\n";
+        String[] lines = text.split("\\r?\\n", -1);
+        StringBuilder out = new StringBuilder(text.length());
+        for (int i = 0; i < lines.length; i++) {
+            if (lines[i].trim().startsWith("#EXT-X-START")) {
+                continue;
+            }
+            if (out.length() > 0) {
+                out.append(nl);
+            }
+            out.append(lines[i]);
+        }
+        return out.toString();
     }
 
     /**
@@ -894,6 +943,9 @@ public final class DemoPlaylistPipeline {
             return null;
         }
         skipSilentAds(session);
+        if (isLiveCadenceBreak(session, breakId)) {
+            return cadenceAssetListJson(session, publicBase);
+        }
         DemoSession.Break found = session.findBreak(breakId);
         if (found == null) {
             return null;
@@ -923,5 +975,119 @@ public final class DemoPlaylistPipeline {
         }
         sb.append("]}");
         return sb.toString();
+    }
+
+    static boolean usesLiveCadence(DemoSession session) {
+        return session != null
+                && session.strategy == DemoSession.Strategy.SGAI
+                && !session.forceVod
+                && session.liveCadenceSec > 0f;
+    }
+
+    static boolean isLiveCadenceBreak(DemoSession session, String breakId) {
+        return usesLiveCadence(session)
+                && breakId != null
+                && breakId.startsWith(PlaylistRewriteUtil.LIVE_BREAK_ID_PREFIX);
+    }
+
+    static boolean shouldInjectLiveCadence(DemoSession session, Playlist playlist, String playlistUrl) {
+        if (!usesLiveCadence(session) || playlist == null || !playlist.hasMediaPlaylist()) {
+            return false;
+        }
+        MediaPlaylist media = playlist.getMediaPlaylist();
+        if (!media.isOngoing() || media.isIframesOnly()) {
+            return false;
+        }
+        if (playlistUrl != null && session.adUrl != null && session.adUrl.length() > 0) {
+            if (playlistUrl.equals(session.adUrl) || playlistUrl.startsWith(session.adUrl)) {
+                return false;
+            }
+            String adDir = session.adUrl.replaceAll("/[^/]+$", "/");
+            if (adDir.length() > 8 && playlistUrl.startsWith(adDir)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * One live interstitial at last-segment PDT minus live hold-back
+     * (3 × TARGETDURATION) so START-DATE sits in the playing window.
+     * Id is keyed by cadence minute so the event does not reset every poll.
+     */
+    InjectConfig liveCadenceInjectConfig(DemoSession session, Playlist playlist, String publicBase) {
+        List<InterstitialBreak> injected = new ArrayList<InterstitialBreak>();
+        if (playlist == null || !playlist.hasMediaPlaylist()) {
+            return InjectConfig.builder().withBreaks(injected).withDefaultResumeOffset(null).build();
+        }
+        MediaPlaylist media = playlist.getMediaPlaylist();
+        PlaylistRewriteUtil.Timeline timeline = PlaylistRewriteUtil.parseTimeline(media.getTracks());
+        long baseMs;
+        String synth = null;
+        if (timeline.firstProgramDateTime != null) {
+            baseMs = timeline.firstProgramDateTimeMs;
+        } else {
+            long edge = System.currentTimeMillis();
+            baseMs = edge - Math.round(timeline.duration * 1000.0);
+            synth = PlaylistRewriteUtil.toIsoDate(baseMs);
+        }
+        long intervalMs = Math.round(session.liveCadenceSec * 1000.0);
+        if (intervalMs < 1000L) {
+            intervalMs = 60_000L;
+        }
+        float limit = session.livePlayoutLimit > 0f ? session.livePlayoutLimit : 15f;
+        long lastPdtMs = timeline.lastSegmentPdtMs;
+        if (lastPdtMs < 0) {
+            lastPdtMs = timeline.liveEdgeMs;
+        }
+        int target = media.getTargetDuration();
+        if (target <= 0) {
+            target = 6;
+        }
+        long startMs = lastPdtMs - 3L * target * 1000L;
+        if (startMs < baseMs) {
+            startMs = baseMs;
+        }
+        float off = (startMs - baseMs) / 1000f;
+        String base = publicBase == null ? "" : publicBase;
+        if (base.endsWith("/")) {
+            base = base.substring(0, base.length() - 1);
+        }
+        if (off >= -0.01f) {
+            long idSec = (lastPdtMs / intervalMs) * (intervalMs / 1000L);
+            String id = PlaylistRewriteUtil.LIVE_BREAK_ID_PREFIX + idSec;
+            String list = base + "/s/" + session.id + "/assets/" + id + ".json";
+            injected.add(new InterstitialBreak(id, off, limit, null, list,
+                    null, session.defaultRestrict, session.defaultSnap,
+                    limit, null, null, null, null));
+        }
+        InjectConfig.Builder b = InjectConfig.builder()
+                .withBreaks(injected)
+                .withSnapToSegment(false)
+                .withDefaultResumeOffset(null)
+                .withDefaultRestrict(session.defaultRestrict)
+                .withDefaultSnap(session.defaultSnap)
+                .withDefaultCue(null);
+        if (synth != null) {
+            b.withSynthProgramDateTime(synth);
+        }
+        return b.build();
+    }
+
+    String cadenceAssetListJson(DemoSession session, String publicBase) {
+        String uri = session.adUrl;
+        if (uri == null || uri.length() == 0 || session.isSkippedAd(uri)) {
+            return "{\"ASSETS\":[]}";
+        }
+        String base = publicBase == null ? "" : publicBase;
+        if (base.endsWith("/")) {
+            base = base.substring(0, base.length() - 1);
+        }
+        String proxyBase = base + "/s/" + session.id;
+        float maxDur = session.livePlayoutLimit > 0f ? session.livePlayoutLimit : 15f;
+        float dur = actualAdPodDuration(session, uri, maxDur);
+        String proxied = PlaylistRewriteUtil.toProxyUrl(proxyBase, uri);
+        return "{\"ASSETS\":[{\"URI\":" + DemoHttp.jsonString(proxied)
+                + ",\"DURATION\":" + dur + "}]}";
     }
 }

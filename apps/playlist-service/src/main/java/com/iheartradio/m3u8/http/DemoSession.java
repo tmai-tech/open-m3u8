@@ -87,6 +87,9 @@ public final class DemoSession {
     public final String defaultCue;
     public final long createdAtMs;
     public boolean forceVod;
+    /** Rolling-live SGAI: place a pod every N seconds of program time. 0 = off. */
+    public float liveCadenceSec;
+    public float livePlayoutLimit = 15f;
 
     private volatile Playlist cachedAdMedia;
     private volatile Playlist cachedContentMaster;
@@ -348,6 +351,9 @@ public final class DemoSession {
                 }
             }
         }
+        if (urls.isEmpty() && adUrl != null && adUrl.length() > 0) {
+            urls.add(adUrl);
+        }
         return new ArrayList<String>(urls);
     }
 
@@ -398,6 +404,10 @@ public final class DemoSession {
         sb.append("],");
         sb.append("\"maxAdDurationSec\":").append(maxAdDurationSec).append(',');
         sb.append("\"forceVod\":").append(forceVod).append(',');
+        if (liveCadenceSec > 0f) {
+            sb.append("\"liveCadenceSec\":").append(liveCadenceSec).append(',');
+            sb.append("\"livePlayoutLimit\":").append(livePlayoutLimit).append(',');
+        }
         String localManifest = publicBase + "/s/" + id + "/manifest.m3u8";
         sb.append("\"manifestUrl\":").append(DemoHttp.jsonString(localManifest));
         String advertised = DemoHttp.advertisedPublicBase();
@@ -506,6 +516,16 @@ public final class DemoSession {
         DemoSession session = new DemoSession(id, strategy, content, ad, breaks, maxAd, start,
                 snapSeg, resume, restrict, snap, cue);
         session.forceVod = DemoHttp.jsonBool(json, "forceVod", false);
+        float cadence = (float) DemoHttp.jsonNumber(sgaiSrc, "liveCadenceSec",
+                DemoHttp.jsonNumber(json, "liveCadenceSec", 0));
+        if (cadence > 0f) {
+            session.liveCadenceSec = cadence;
+        }
+        float liveLimit = (float) DemoHttp.jsonNumber(sgaiSrc, "livePlayoutLimit",
+                DemoHttp.jsonNumber(json, "livePlayoutLimit", Double.NaN));
+        if (!Double.isNaN(liveLimit) && liveLimit > 0f) {
+            session.livePlayoutLimit = liveLimit;
+        }
         return session;
     }
 

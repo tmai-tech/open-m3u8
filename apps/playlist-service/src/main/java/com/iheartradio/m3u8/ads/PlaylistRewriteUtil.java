@@ -49,6 +49,8 @@ public final class PlaylistRewriteUtil {
     public static final String DEFAULT_SYNTH_PDT = "2020-01-01T00:00:00.000Z";
     public static final long DEFAULT_SYNTH_PDT_MS = 1577836800000L;
     public static final String USER_AD_ID_PREFIX = "user-ad-";
+    /** Live SGAI cadence avails ({@code live-{epochSec}}). */
+    public static final String LIVE_BREAK_ID_PREFIX = "live-";
     /** Minimum EXT-X-VERSION for DATERANGE / interstitials. */
     public static final int INTERSTITIAL_MIN_VERSION = 7;
     public static final String INTERSTITIAL_CLASS = "com.apple.hls.interstitial";
@@ -279,7 +281,8 @@ public final class PlaylistRewriteUtil {
         // Keep non-user-ad date ranges from the original playlist
         if (media.hasDateRanges()) {
             for (DateRangeData dr : media.getDateRanges()) {
-                if (dr.getId() != null && dr.getId().startsWith(USER_AD_ID_PREFIX)) {
+                if (dr.getId() != null && (dr.getId().startsWith(USER_AD_ID_PREFIX)
+                        || dr.getId().startsWith(LIVE_BREAK_ID_PREFIX))) {
                     continue;
                 }
                 dateRanges.add(dr);
@@ -583,40 +586,62 @@ public final class PlaylistRewriteUtil {
 
     // ---------- timeline helpers ----------
 
-    static final class Timeline {
-        final float duration;
-        final List<Float> segmentStarts;
-        final String firstProgramDateTime;
-        final long firstProgramDateTimeMs;
+    public static final class Timeline {
+        public final float duration;
+        public final List<Float> segmentStarts;
+        public final String firstProgramDateTime;
+        public final long firstProgramDateTimeMs;
+        /** End of last segment on the program clock (PDT resets honored). */
+        public final long liveEdgeMs;
+        /** PDT at the start of the last media segment. */
+        public final long lastSegmentPdtMs;
 
-        Timeline(float duration, List<Float> segmentStarts, String firstProgramDateTime, long firstProgramDateTimeMs) {
+        Timeline(float duration, List<Float> segmentStarts, String firstProgramDateTime,
+                 long firstProgramDateTimeMs, long liveEdgeMs, long lastSegmentPdtMs) {
             this.duration = duration;
             this.segmentStarts = segmentStarts;
             this.firstProgramDateTime = firstProgramDateTime;
             this.firstProgramDateTimeMs = firstProgramDateTimeMs;
+            this.liveEdgeMs = liveEdgeMs;
+            this.lastSegmentPdtMs = lastSegmentPdtMs;
         }
     }
 
-    static Timeline parseTimeline(List<TrackData> tracks) {
+    public static Timeline parseTimeline(List<TrackData> tracks) {
         List<Float> starts = new ArrayList<Float>();
         starts.add(0f);
         float cumulative = 0f;
         String firstPdt = null;
         long firstPdtMs = -1;
+        long clockMs = -1;
+        long lastSegPdtMs = -1;
         if (tracks != null) {
             for (TrackData t : tracks) {
-                if (firstPdt == null && t.hasProgramDateTime()) {
-                    firstPdt = t.getProgramDateTime();
-                    firstPdtMs = parseIsoToMs(firstPdt);
+                if (t.hasProgramDateTime()) {
+                    long ms = parseIsoToMs(t.getProgramDateTime());
+                    if (ms >= 0) {
+                        clockMs = ms;
+                        if (firstPdt == null) {
+                            firstPdt = t.getProgramDateTime();
+                            firstPdtMs = ms;
+                        }
+                    }
                 }
                 if (t.hasTrackInfo()) {
                     TrackInfo info = t.getTrackInfo();
+                    if (clockMs >= 0) {
+                        lastSegPdtMs = clockMs;
+                        clockMs += Math.round(info.duration * 1000.0);
+                    }
                     cumulative += info.duration;
                     starts.add(cumulative);
                 }
             }
         }
-        return new Timeline(cumulative, starts, firstPdt, firstPdtMs >= 0 ? firstPdtMs : DEFAULT_SYNTH_PDT_MS);
+        long base = firstPdtMs >= 0 ? firstPdtMs : DEFAULT_SYNTH_PDT_MS;
+        long edge = clockMs >= 0 ? clockMs : base + Math.round(cumulative * 1000.0);
+        long lastPdt = lastSegPdtMs >= 0 ? lastSegPdtMs : edge;
+        return new Timeline(cumulative, starts, firstPdt, base, edge, lastPdt);
     }
 
     static float snapOffset(float offset, List<Float> segmentStarts) {
@@ -635,7 +660,7 @@ public final class PlaylistRewriteUtil {
         return best;
     }
 
-    static String toIsoDate(long ms) {
+    public static String toIsoDate(long ms) {
         SimpleDateFormat fmt = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US);
         fmt.setTimeZone(TimeZone.getTimeZone("UTC"));
         return fmt.format(new Date(ms));

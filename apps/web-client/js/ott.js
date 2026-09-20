@@ -20,7 +20,7 @@ export const CATALOG = [
   { id: "atmos", title: "Apple TV Trailer", sub: "Apple · Dolby Vision / Atmos", kicker: "Apple HLS examples", url: SAMPLES.atmos, poster: featuredPoster("atmos") },
   { id: "av1", title: "Apple AV1 Trailer", sub: "Apple · AV1", kicker: "Apple HLS examples", url: SAMPLES.av1, poster: featuredPoster("av1") },
   { id: "fdr", title: "FDR", sub: "JW Player · 4s", kicker: "JW Player CDN", url: SAMPLES.fdr, poster: featuredPoster("fdr") },
-  { id: "blender", title: "Blender 24/7", sub: "Ireplay · I-frame", kicker: "Live · Ireplay", url: SAMPLES.blender, live: true, asVod: true, poster: featuredPoster("blender") },
+  { id: "blender", title: "Blender 24/7", sub: "Ireplay · I-frame", kicker: "Live · Ireplay", url: SAMPLES.blender, live: true, poster: featuredPoster("blender") },
   { id: "unifiedLive", title: "Channel 1", sub: "Unified · low-latency", kicker: "Live · Unified Streaming", url: SAMPLES.unifiedLive, live: true, poster: featuredPoster("unifiedLive") },
 ];
 
@@ -58,13 +58,18 @@ export function syncSnapshotAdUi() {
   document.body.classList.toggle("snapshot-mode", snapshot);
   const btn = $("btnStudio");
   const studio = $("studio");
-  if (!state.liveMode) {
+  const cadence = state.liveMode && !state.forceVod && adsAllowed();
+  const list = $("breakList");
+  const toolbar = document.querySelector(".breaks-toolbar");
+  const tl = $("timeline");
+  const hint = $("liveCadenceHint");
+  if (toolbar) toolbar.hidden = !!cadence;
+  if (list) list.hidden = !!cadence;
+  if (tl) tl.hidden = !!cadence;
+  if (hint) hint.hidden = !cadence;
+  if (!state.liveMode || snapshot || cadence) {
     if (btn) btn.hidden = false;
-    syncAdsLayout();
-    return;
-  }
-  if (snapshot) {
-    if (btn) btn.hidden = false;
+    if (studio && cadence) studio.hidden = false;
     syncAdsLayout();
     return;
   }
@@ -142,7 +147,9 @@ function setForceVod(on) {
   }
   durationToken++;
   clearWindowDuration();
-  setStatus("Live — ads are not available on this rail.");
+  setStatus(adsAllowed()
+    ? "Live SGAI — 15s grok ad every 1 min. Play."
+    : "Live — ads are not available on this rail.");
   if (isVideoPlaying()) playFn();
 }
 

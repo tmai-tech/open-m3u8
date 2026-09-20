@@ -167,6 +167,30 @@ public class DemoPlaylistPipelineTest {
     }
 
     @Test
+    public void processStripsExtXStartOnLiveMedia() throws Exception {
+        final String live = "#EXTM3U\n"
+                + "#EXT-X-VERSION:7\n"
+                + "#EXT-X-TARGETDURATION:7\n"
+                + "#EXT-X-START:PRECISE=NO,TIME-OFFSET=36.0\n"
+                + "#EXT-X-MEDIA-SEQUENCE:1\n"
+                + "#EXT-X-PROGRAM-DATE-TIME:2026-09-20T15:07:28+02:00\n"
+                + "#EXTINF:6.0,\nhttp://cdn/a.ts\n"
+                + "#EXTINF:6.0,\nhttp://cdn/b.ts\n";
+        DemoPlaylistPipeline pipeline = new DemoPlaylistPipeline(url ->
+                new DemoHttp.FetchResult(200, "application/vnd.apple.mpegurl",
+                        live.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+        DemoSession session = DemoSession.fromJson("s-start",
+                "{\"strategy\":\"sgai\",\"contentUrl\":\"http://cdn/live.m3u8\","
+                        + "\"adUrl\":\"http://ads/a.m3u8\",\"liveCadenceSec\":60}");
+        DemoPlaylistPipeline.Result result = pipeline.process(session, "http://cdn/live.m3u8",
+                "http://127.0.0.1:8765");
+        String text = new String(result.body, java.nio.charset.StandardCharsets.UTF_8);
+        assertFalse(text.contains("#EXT-X-START"));
+        assertFalse(text.contains("TIME-OFFSET"));
+        assertTrue(text.contains("#EXTINF"));
+    }
+
+    @Test
     public void snapshotAsVodAddsEndlistAndDropsStart() throws Exception {
         Playlist live = new Playlist.Builder()
                 .withExtended(true)

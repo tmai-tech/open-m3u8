@@ -70,6 +70,9 @@ export function playUrl(manifestUrl, enableInterstitials, staticSession) {
     if ("interstitialAppendInPlace" in Hls.DefaultConfig) {
       cfg.interstitialAppendInPlace = false;
     }
+    if (state.liveMode && !state.forceVod && "interstitialLiveLookAhead" in Hls.DefaultConfig) {
+      cfg.interstitialLiveLookAhead = 60;
+    }
     if (staticSession && window.HlsDemoRewrite) {
       cfg.pLoader = window.HlsDemoRewrite.createLoader(Hls, staticSession, {
         onRewritten: (text) => {

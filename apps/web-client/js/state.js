@@ -80,7 +80,20 @@ export function setPlayerEngine(name) {
   try { localStorage.setItem("hls-demo-player", state.playerEngine); } catch (e) { /* ignore */ }
 }
 
-/** Ads are allowed on catalog VOD and on a live Snapshot — not on rolling Live. */
+/** Blender rolling live uses SGAI cadence; other live rails need Snapshot. */
+export function isBlenderLiveUrl(url) {
+  return /blender/i.test(url || "");
+}
+
+/** Ads on VOD, live Snapshot, and Blender rolling live (SGAI cadence). */
 export function adsAllowed() {
-  return !state.liveMode || !!state.forceVod;
+  if (!state.liveMode) return true;
+  if (state.forceVod) return true;
+  try {
+    const el = document.getElementById("contentUrl");
+    const u = (el && el.value) || "";
+    return state.strategy === "sgai" && isBlenderLiveUrl(u);
+  } catch (e) {
+    return false;
+  }
 }

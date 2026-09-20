@@ -1,9 +1,9 @@
 import { $, bind } from "./dom.js";
-import { adsAllowed, DEFAULT_AD, HINTS, LENGTH_HINTS, state } from "./state.js";
+import { adsAllowed, DEFAULT_AD, HINTS, LENGTH_HINTS, isBlenderLiveUrl, SAMPLES, state } from "./state.js";
 import { setStatus } from "./status.js";
 import { renderTimeline } from "./ad-markers.js";
 import { fillPublicRow } from "./public-url.js";
-import { findCatalogItem, loadSnapshotTimeline, refreshPoster, setLiveUi } from "./ott.js";
+import { findCatalogItem, loadSnapshotTimeline, refreshPoster, setLiveUi, syncSnapshotAdUi } from "./ott.js";
 
 let destroyPlayerFn = () => {};
 
@@ -29,6 +29,7 @@ export function setStrategy(next, announce) {
     $("sessionMeta").textContent = "Strategy: " + state.strategy.toUpperCase() + " — apply to create a new session.";
     setStatus("Switched to " + state.strategy.toUpperCase() + ".");
   }
+  syncSnapshotAdUi();
 }
 
 let breakSeq = 0;
@@ -157,6 +158,35 @@ function toAbsoluteUrl(url) {
 export function buildLocalSession() {
   const contentUrl = toAbsoluteUrl($("contentUrl").value);
   if (!contentUrl) throw new Error("Content URL is required");
+  const liveCadence = state.liveMode && !state.forceVod && isBlenderLiveUrl(contentUrl);
+  if (liveCadence) {
+    const grok = toAbsoluteUrl(SAMPLES.grok8e30);
+    return {
+      strategy: "sgai",
+      contentUrl,
+      adUrl: grok,
+      breaks: [],
+      splices: [],
+      offsets: [],
+      adLength: 15,
+      maxAdDurationSec: 15,
+      liveCadenceSec: 60,
+      livePlayoutLimit: 15,
+      snapToSegment: true,
+      restrictSkip: $("restrictSkip").checked,
+      restrictJump: $("restrictJump").checked,
+      cueOnce: false,
+      forceVod: false,
+      sgai: {
+        snapToSegment: true,
+        restrictSkip: $("restrictSkip").checked,
+        restrictJump: $("restrictJump").checked,
+        cueOnce: false,
+        liveCadenceSec: 60,
+        livePlayoutLimit: 15,
+      },
+    };
+  }
   const breaks = adsAllowed() ? readBreaksFromDom() : [];
   breaks.forEach((b) => {
     b.ads.forEach((a) => {
@@ -242,7 +272,12 @@ export function applyCatalogPreset(item) {
       state.windowDuration = 0;
       state.mediaDuration = 0;
       renderTimeline();
-      setStatus("Live — ads are not available on this rail.");
+      if (isBlenderLiveUrl(item.url)) {
+        setStrategy("sgai", false);
+        setStatus("Live SGAI — 15s grok ad every 1 min. Play.");
+      } else {
+        setStatus("Live — ads are not available on this rail.");
+      }
     }
   } else {
     const fromLive = state.liveMode;
