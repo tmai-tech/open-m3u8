@@ -86,13 +86,16 @@ public final class MpdSsaiUtil {
         }
 
         Duration total = Duration.ZERO;
+        List<Period> timed = new ArrayList<Period>();
+        Duration start = Duration.ZERO;
         for (Period p : periods) {
-            if (p.getDuration() != null) {
-                total = total.plus(p.getDuration());
-            }
+            Duration d = p.getDuration() != null ? p.getDuration() : Duration.ZERO;
+            timed.add(p.buildUpon().withStart(start).withDuration(d).build());
+            start = start.plus(d);
+            total = total.plus(d);
         }
         return content.buildUpon()
-                .withPeriods(periods)
+                .withPeriods(timed)
                 .withMediaPresentationDuration(total)
                 .build();
     }
@@ -234,9 +237,13 @@ public final class MpdSsaiUtil {
             }
             long start = (st.getStartNumber() != null ? st.getStartNumber() : startNumber) + from;
             List<Segment> sliced = compress(flats.subList(from, to));
+            // T and PTO use the CMAF movie time of the first included segment
+            // (v720_3 tfdt=12s). EPT=(T-PTO)/timescale is then 0 at Period@start.
+            long pto = flats.get(from).t;
             SegmentTemplate next = st.buildUpon()
                     .withStartNumber(start)
                     .withSegmentTimeline(sliced)
+                    .withPresentationTimeOffset(pto)
                     .build();
             return r.buildUpon().withSegmentTemplate(next).build();
         }
@@ -300,7 +307,7 @@ public final class MpdSsaiUtil {
             }
             Segment.Builder b = Segment.builder().withD(d);
             if (first) {
-                b.withT(0L);
+                b.withT(flats.get(i).t);
                 first = false;
             }
             if (r > 0) {

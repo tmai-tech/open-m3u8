@@ -79,11 +79,19 @@ public class MpdSsaiUtilTest {
         assertEquals(8_000L, out.getPeriods().get(0).getDuration().toMillis());
         assertEquals(8_000L, out.getPeriods().get(1).getDuration().toMillis());
         assertEquals(8_000L, out.getPeriods().get(2).getDuration().toMillis());
+        assertEquals(0L, out.getPeriods().get(0).getStart().toMillis());
+        assertEquals(8_000L, out.getPeriods().get(1).getStart().toMillis());
+        assertEquals(16_000L, out.getPeriods().get(2).getStart().toMillis());
         assertEquals(16_000L + 8_000L, out.getMediaPresentationDuration().toMillis());
         String xml = io.write(out);
         assertTrue(xml.contains("startNumber=\"0\""));
         assertTrue(xml.contains("startNumber=\"2\""));
         assertFalse(xml.contains("text/vtt"));
+        Long pto = out.getPeriods().get(2).getAdaptationSets().get(0)
+                .getRepresentations().get(0).getSegmentTemplate().getPresentationTimeOffset();
+        assertEquals(Long.valueOf(8000L), pto);
+        assertEquals(Long.valueOf(8000L), out.getPeriods().get(2).getAdaptationSets().get(0)
+                .getRepresentations().get(0).getSegmentTemplate().getSegmentTimeline().get(0).getT());
     }
 
     @Test
@@ -102,5 +110,11 @@ public class MpdSsaiUtilTest {
         assertEquals("c1", out.getPeriods().get(3).getId());
         assertEquals(12_000L, out.getPeriods().get(0).getDuration().toMillis());
         assertEquals(4_000L, out.getPeriods().get(3).getDuration().toMillis());
+        assertEquals(12_000L + 8_000L + 8_000L, out.getPeriods().get(3).getStart().toMillis());
+        Long pto = out.getPeriods().get(3).getAdaptationSets().get(0)
+                .getRepresentations().get(0).getSegmentTemplate().getPresentationTimeOffset();
+        assertEquals(Long.valueOf(12_000L), pto);
+        assertEquals(Long.valueOf(12_000L), out.getPeriods().get(3).getAdaptationSets().get(0)
+                .getRepresentations().get(0).getSegmentTemplate().getSegmentTimeline().get(0).getT());
     }
 }
