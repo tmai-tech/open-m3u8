@@ -313,6 +313,28 @@ def segment_timeline_xml(durs: list[float]) -> str:
     return "\n".join(lines)
 
 
+def write_dash_subs_vtt(dest: Path) -> Path | None:
+    """One sidecar VTT with period timestamps. HLS keeps segment-local subs_*.vtt."""
+    playlist = dest / "subs.m3u8"
+    if not playlist.is_file():
+        return None
+    durs = parse_extinf(playlist)
+    if not durs:
+        return None
+    n = len(durs)
+    t = 0.0
+    lines = ["WEBVTT", ""]
+    for i, dur in enumerate(durs):
+        cue_end = t + max(0.05, float(dur) - 0.05)
+        lines.append(f"{_fmt_vtt_ts(t)} --> {_fmt_vtt_ts(cue_end)}")
+        lines.append(f"Dummy subtitle {i + 1}/{n}")
+        lines.append("")
+        t += float(dur)
+    out = dest / "subs-dash.vtt"
+    out.write_text("\n".join(lines), encoding="utf-8")
+    return out
+
+
 def write_dash_mpd(dest: Path, info: dict | None = None) -> Path:
     """Write manifest.mpd pointing at existing HLS CMAF (no second encode)."""
     info = info or {}
@@ -373,22 +395,16 @@ def write_dash_mpd(dest: Path, info: dict | None = None) -> Path:
         as_attrs.append(f'maxHeight="{max_h}"')
     as_attrs.append(f'maxFrameRate="{fps_i}"')
     text_as = ""
-    subs = dest / "subs.m3u8"
-    if subs.is_file():
-        sub_durs = parse_extinf(subs)
-        if sub_durs:
-            sub_tl = segment_timeline_xml(sub_durs)
-            text_as = (
-                '    <AdaptationSet id="1" contentType="text" mimeType="text/vtt" lang="en">\n'
-                '      <Role schemeIdUri="urn:mpeg:dash:role:2011" value="subtitle"/>\n'
-                '      <Representation id="subs" bandwidth="256">\n'
-                '        <SegmentTemplate timescale="1000" media="subs_$Number$.vtt" startNumber="0">\n'
-                f"          <SegmentTimeline>\n{sub_tl}\n"
-                "          </SegmentTimeline>\n"
-                "        </SegmentTemplate>\n"
-                "      </Representation>\n"
-                "    </AdaptationSet>\n"
-            )
+    dash_vtt = write_dash_subs_vtt(dest)
+    if dash_vtt:
+        text_as = (
+            '    <AdaptationSet id="1" contentType="text" mimeType="text/vtt" lang="en">\n'
+            '      <Role schemeIdUri="urn:mpeg:dash:role:2011" value="subtitle"/>\n'
+            '      <Representation id="subs" bandwidth="256">\n'
+            f'        <BaseURL>{xml_esc(dash_vtt.name)}</BaseURL>\n'
+            "      </Representation>\n"
+            "    </AdaptationSet>\n"
+        )
     xml = (
         '<?xml version="1.0" encoding="UTF-8"?>\n'
         '<MPD xmlns="urn:mpeg:dash:schema:mpd:2011"\n'

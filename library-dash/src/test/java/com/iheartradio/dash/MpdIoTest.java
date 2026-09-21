@@ -13,6 +13,7 @@ import java.util.List;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 public class MpdIoTest {
@@ -122,8 +123,8 @@ public class MpdIoTest {
         assertNotNull(text);
         assertEquals("text", text.getContentType());
         assertEquals("subs", text.getRepresentations().get(0).getId());
-        assertTrue(text.getRepresentations().get(0).getSegmentTemplate().getMedia()
-                .contains("subs_$Number$"));
+        assertNull(text.getRepresentations().get(0).getSegmentTemplate());
+        assertTrue(xml.contains("<BaseURL>subs-dash.vtt</BaseURL>"));
         Representation r0 = video.getRepresentations().get(0);
         Representation r1 = video.getRepresentations().get(1);
         assertEquals("v360", r0.getId());

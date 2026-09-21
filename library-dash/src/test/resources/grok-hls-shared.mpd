@@ -28,12 +28,7 @@
     <AdaptationSet id="1" contentType="text" mimeType="text/vtt" lang="en">
       <Role schemeIdUri="urn:mpeg:dash:role:2011" value="subtitle"/>
       <Representation id="subs" bandwidth="256">
-        <SegmentTemplate timescale="1000" media="subs_$Number$.vtt" startNumber="0">
-          <SegmentTimeline>
-            <S t="0" d="4000" r="2"/>
-            <S d="3042"/>
-          </SegmentTimeline>
-        </SegmentTemplate>
+        <BaseURL>subs-dash.vtt</BaseURL>
       </Representation>
     </AdaptationSet>
   </Period>
