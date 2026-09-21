@@ -38,6 +38,11 @@ export function setCatalogApply(fn) {
   applyPreset = fn || (() => {});
 }
 
+let catalogReadyFn = () => {};
+export function setCatalogReady(fn) {
+  catalogReadyFn = fn || (() => {});
+}
+
 export function setLiveUi(on) {
   state.liveMode = !!on;
   document.body.classList.toggle("live-mode", state.liveMode);
@@ -419,4 +424,5 @@ export async function renderCatalog() {
     });
   }
   refreshHeroCopy();
+  catalogReadyFn();
 }
