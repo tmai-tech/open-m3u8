@@ -181,11 +181,13 @@ public class DemoLiveCadenceTest {
         DemoPlaylistPipeline pipeline = new DemoPlaylistPipeline();
         String withAds = pipeline.assetListJson(session, "live-1", "http://127.0.0.1:8765", 0d);
         assertTrue(withAds.contains("grok.m3u8"));
-        String skipped = pipeline.assetListJson(session, "live-1", "http://127.0.0.1:8765", 12d);
+        String skipped = pipeline.assetListJson(session, "live-1", "http://127.0.0.1:8765", 12d,
+                "sess-abc");
         assertEquals("{\"ASSETS\":[]}", skipped);
         String dump = DemoLog.dumpJson("live-off", 20);
         assertTrue(dump.contains("_HLS_start_offset greater than 0"));
         assertTrue(dump.contains("\"startOffset\":12"));
+        assertTrue(dump.contains("\"primaryId\":\"sess-abc\""));
     }
 
     @Test
@@ -196,6 +198,8 @@ public class DemoLiveCadenceTest {
         assertEquals(0d, DemoHttp.hlsStartOffset("_HLS_start_offset=0"), 0d);
         assertEquals(12.5d, DemoHttp.hlsStartOffset("_HLS_start_offset=12.5&_HLS_primary_id=x"), 0d);
         assertTrue(Double.isNaN(DemoHttp.hlsStartOffset("_HLS_start_offset=nope")));
+        assertEquals("abc", DemoHttp.hlsPrimaryId("_HLS_primary_id=abc&_HLS_start_offset=12"));
+        assertEquals(null, DemoHttp.hlsPrimaryId("_HLS_start_offset=0"));
     }
 
     private static Playlist liveWindow(String pdt, float seg, int n) {

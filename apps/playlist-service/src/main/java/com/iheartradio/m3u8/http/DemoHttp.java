@@ -268,6 +268,15 @@ public final class DemoHttp {
         }
     }
 
+    /** {@code _HLS_primary_id} on an interstitial request, or {@code null} if absent. */
+    public static String hlsPrimaryId(String rawQuery) {
+        String v = queryParam(rawQuery, "_HLS_primary_id");
+        if (v == null || v.length() == 0) {
+            return null;
+        }
+        return decode(v);
+    }
+
     public static String decode(String s) {
         if (s == null) {
             return null;

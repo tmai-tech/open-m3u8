@@ -943,12 +943,17 @@ public final class DemoPlaylistPipeline {
 
     public String assetListJson(DemoSession session, String breakId, String publicBase,
                                 double hlsStartOffset) {
+        return assetListJson(session, breakId, publicBase, hlsStartOffset, null);
+    }
+
+    public String assetListJson(DemoSession session, String breakId, String publicBase,
+                                double hlsStartOffset, String hlsPrimaryId) {
         if (session == null || breakId == null) {
             return null;
         }
         skipSilentAds(session);
         if (LiveCadence.isBreak(session, breakId)) {
-            return LiveCadence.assetListJson(this, session, publicBase, hlsStartOffset);
+            return LiveCadence.assetListJson(this, session, publicBase, hlsStartOffset, hlsPrimaryId);
         }
         DemoSession.Break found = session.findBreak(breakId);
         if (found == null) {

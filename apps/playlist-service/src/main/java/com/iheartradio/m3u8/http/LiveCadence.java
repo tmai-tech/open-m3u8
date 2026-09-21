@@ -120,9 +120,15 @@ final class LiveCadence {
 
     static String assetListJson(DemoPlaylistPipeline pipeline, DemoSession session, String publicBase,
                                 double hlsStartOffset) {
+        return assetListJson(pipeline, session, publicBase, hlsStartOffset, null);
+    }
+
+    static String assetListJson(DemoPlaylistPipeline pipeline, DemoSession session, String publicBase,
+                                double hlsStartOffset, String hlsPrimaryId) {
         if (hlsStartOffset > 0d || Double.isNaN(hlsStartOffset)) {
             DemoLog.event("assets").sid(session.id)
                     .put("break", "live")
+                    .put("primaryId", hlsPrimaryId)
                     .put("startOffset", hlsStartOffset)
                     .put("skipAds", true)
                     .put("msg", "_HLS_start_offset greater than 0; returning empty ASSETS")

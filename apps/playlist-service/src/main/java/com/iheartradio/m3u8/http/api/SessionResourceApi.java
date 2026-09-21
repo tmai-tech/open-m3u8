@@ -83,9 +83,11 @@ public final class SessionResourceApi implements HttpHandler {
         } catch (Exception ignored) {
             // keep raw
         }
-        double startOffset = DemoHttp.hlsStartOffset(ex.getRequestURI().getRawQuery());
+        String rawQuery = ex.getRequestURI().getRawQuery();
+        double startOffset = DemoHttp.hlsStartOffset(rawQuery);
+        String primaryId = DemoHttp.hlsPrimaryId(rawQuery);
         String json = pipeline.assetListJson(session, breakId, DemoHttp.publicBase(ex, port),
-                startOffset);
+                startOffset, primaryId);
         if (json == null) {
             DemoHttp.send(ex, 404, "application/json; charset=utf-8",
                     "{\"error\":\"break not found\"}");
