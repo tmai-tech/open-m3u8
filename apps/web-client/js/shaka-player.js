@@ -24,9 +24,14 @@ export function destroyShaka() {
   stopAdLabelWatch();
   document.body.classList.remove("shaka-mode");
   const video = $("video");
-  if (video) video.controls = true;
+  restoreVideoMount(video);
   if (ui && ui.destroy) {
-    try { ui.destroy(); } catch (e) { /* ignore */ }
+    try {
+      const p = ui.destroy();
+      if (p && typeof p.then === "function") {
+        p.catch(() => {}).finally(() => restoreVideoMount($("video")));
+      }
+    } catch (e) { /* ignore */ }
   }
   if (player && player.destroy) {
     try {
@@ -34,6 +39,23 @@ export function destroyShaka() {
       if (p && p.catch) p.catch(() => {});
     } catch (e) { /* ignore */ }
   }
+  restoreVideoMount($("video"));
+}
+
+/** Put #video back under #shakaMount; drop leftover Shaka chrome/cursor. */
+function restoreVideoMount(video) {
+  const mount = $("shakaMount");
+  if (!video) return;
+  video.controls = true;
+  video.style.cursor = "";
+  if (!mount) return;
+  mount.style.cursor = "";
+  if (video.parentElement && video.parentElement !== mount) {
+    mount.insertBefore(video, mount.firstChild);
+  }
+  Array.from(mount.children).forEach((el) => {
+    if (el !== video) el.remove();
+  });
 }
 
 export async function playShaka(manifestUrl) {
@@ -56,6 +78,12 @@ export async function playShaka(manifestUrl) {
 
   const player = new shaka.Player();
   await player.attach(video);
+  try {
+    player.configure({
+      preferredTextLanguage: "en",
+      streaming: { alwaysStreamText: true },
+    });
+  } catch (e) { /* ignore older Shaka */ }
   const ui = new shaka.ui.Overlay(player, mount, video);
   state.shaka = player;
   state.shakaUi = ui;
@@ -85,6 +113,7 @@ export async function playShaka(manifestUrl) {
   if (!isMpdUrl(manifestUrl)) {
     await loadCueWindowsFromMaster(manifestUrl);
   }
+  try { player.setTextTrackVisibility(true); } catch (e) { /* ignore */ }
   syncShakaQuality(player);
   showSessionWarnings(state.lastSession && state.lastSession.id, setStatus);
   hidePoster();

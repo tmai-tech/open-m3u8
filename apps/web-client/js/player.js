@@ -289,7 +289,11 @@ export function bindPlayer() {
       }
       setPlayerEngine(next);
       document.body.classList.toggle("shaka-mode", next === "shaka");
-      setStatus(next === "shaka" ? "Shaka." : "hls.js.");
+      if (($("manifestUrl") && $("manifestUrl").value) || ($("contentUrl") && $("contentUrl").value)) {
+        apply(true);
+      } else {
+        setStatus(next === "shaka" ? "Shaka." : "hls.js.");
+      }
     });
     if (state.playerEngine === "shaka") document.body.classList.add("shaka-mode");
   }
