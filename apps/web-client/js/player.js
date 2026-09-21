@@ -3,7 +3,7 @@ import { adsAllowed, isMpdUrl, protocolForItem, setPlayerEngine, setProtocolPref
 import { highlight, setStatus } from "./status.js";
 import { createSession, showSessionWarnings } from "./api.js";
 import { setManifestButtons, syncProtocolSelect } from "./form.js";
-import { parseCueWindows, rememberPlaylist } from "./cues.js";
+import { parseCueWindows, parseDashAdWindows, rememberPlaylist } from "./cues.js";
 import { renderTimeline } from "./ad-markers.js";
 import { refreshAdLabel, setAdLabel, stopAdLabelWatch } from "./ad-overlay.js";
 import { onSgaiInterstitialEnded, onSgaiInterstitialStarted, resetAdClock, resetSgaiOnce } from "./seek-sgai.js";
@@ -179,25 +179,29 @@ export async function apply(andPlay) {
     $("btnApply").disabled = true;
     const item = findCatalogItem(($("contentUrl") && $("contentUrl").value) || "");
     if (protocolForItem(item) === "dash") {
-      const dashUrl = item.dashUrl;
+      const dashUrl = item && item.dashUrl;
       if (!dashUrl) throw new Error("DASH is not packed for this title");
-      state.lastSession = null;
-      showSessionId(null);
-      $("manifestUrl").value = dashUrl;
-      setManifestButtons(true);
-      $("sessionMeta").innerHTML = "<strong>DASH</strong> · static MPD · no ads";
-      try {
-        const res = await fetch(dashUrl, { cache: "no-store" });
-        const text = await res.text();
-        $("preview").innerHTML = highlight(text);
-      } catch (_) {
-        $("preview").textContent = dashUrl;
+      const hasBreaks = $("breakList") && $("breakList").querySelector(".break-card");
+      const ssai = state.strategy === "ssai" && adsAllowed() && hasBreaks;
+      if (!ssai) {
+        state.lastSession = null;
+        showSessionId(null);
+        $("manifestUrl").value = dashUrl;
+        setManifestButtons(true);
+        $("sessionMeta").innerHTML = "<strong>DASH</strong> · static MPD · no ads";
+        try {
+          const res = await fetch(dashUrl, { cache: "no-store" });
+          const text = await res.text();
+          $("preview").innerHTML = highlight(text);
+        } catch (_) {
+          $("preview").textContent = dashUrl;
+        }
+        state.adWindows = [];
+        setAdLabel(false);
+        setStatus("Ready.", "ok");
+        if (andPlay) playUrl(dashUrl, false);
+        return;
       }
-      state.adWindows = [];
-      setAdLabel(false);
-      setStatus("Ready.", "ok");
-      if (andPlay) playUrl(dashUrl, false);
-      return;
     }
     if (state.strategy === "sgai" && $("playPath").value === "direct") {
       const url = $("contentUrl").value.trim();
@@ -246,7 +250,8 @@ export async function apply(andPlay) {
     const text = await res.text();
     if (!res.ok) throw new Error(text);
     $("preview").innerHTML = highlight(text);
-    state.adWindows = parseCueWindows(text);
+    state.adWindows = /<MPD[\s>]|<Period[\s>]/i.test(text)
+      ? parseDashAdWindows(text) : parseCueWindows(text);
     setStatus("Ready.", "ok");
     if (andPlay) playUrl(session.manifestUrl, adsAllowed() && state.strategy === "sgai");
   } catch (e) {

@@ -134,7 +134,8 @@ public final class DemoPlayerServer {
         server.createContext("/api/catalog", new CatalogApi(catalog));
         server.createContext("/api/ingest", new IngestApi(ingest));
         server.createContext("/play", new PlayApi(port, sessions));
-        server.createContext("/s/", new SessionResourceApi(port, sessions, pipeline));
+        server.createContext("/s/", new SessionResourceApi(port, sessions, pipeline,
+                new DemoMpdPipeline()));
         server.createContext("/media/", new MediaApi(mediaRoot));
         server.setExecutor(Executors.newFixedThreadPool(16));
         server.start();

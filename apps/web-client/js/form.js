@@ -156,7 +156,11 @@ function toAbsoluteUrl(url) {
 }
 
 export function buildLocalSession() {
-  const contentUrl = toAbsoluteUrl($("contentUrl").value);
+  const item = findCatalogItem(($("contentUrl") && $("contentUrl").value) || "");
+  let contentUrl = toAbsoluteUrl($("contentUrl").value);
+  if (protocolForItem(item) === "dash" && item && item.dashUrl) {
+    contentUrl = toAbsoluteUrl(item.dashUrl);
+  }
   if (!contentUrl) throw new Error("Content URL is required");
   if (isLiveCadenceSession()) {
     const grok = toAbsoluteUrl(SAMPLES.grok8e30);

@@ -422,12 +422,14 @@ public final class DemoSession {
             sb.append("\"liveCadenceSec\":").append(liveCadenceSec).append(',');
             sb.append("\"livePlayoutLimit\":").append(livePlayoutLimit).append(',');
         }
-        String localManifest = publicBase + "/s/" + id + "/manifest.m3u8";
+        String ext = contentUrl != null && contentUrl.toLowerCase().contains(".mpd")
+                ? "manifest.mpd" : "manifest.m3u8";
+        String localManifest = publicBase + "/s/" + id + "/" + ext;
         sb.append("\"manifestUrl\":").append(DemoHttp.jsonString(localManifest));
         String advertised = DemoHttp.advertisedPublicBase();
         if (advertised != null && advertised.length() > 0) {
             sb.append(",\"publicManifestUrl\":")
-                    .append(DemoHttp.jsonString(advertised + "/s/" + id + "/manifest.m3u8"));
+                    .append(DemoHttp.jsonString(advertised + "/s/" + id + "/" + ext));
         }
         if (!warnings.isEmpty()) {
             sb.append(",\"warnings\":[");

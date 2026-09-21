@@ -1,6 +1,31 @@
 import { state } from "./state.js";
 import { renderSeekMarks } from "./ad-markers.js";
 
+export function parseIsoDuration(iso) {
+  if (!iso) return 0;
+  const m = String(iso).match(/^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+(?:\.\d+)?)S)?$/i);
+  if (!m) return 0;
+  return (Number(m[1]) || 0) * 3600 + (Number(m[2]) || 0) * 60 + (Number(m[3]) || 0);
+}
+
+/** Periods whose id looks like an SSAI ad (ad-*, ssai-*, *-ad-*). */
+export function parseDashAdWindows(xml) {
+  const windows = [];
+  if (!xml) return windows;
+  let t = 0;
+  const re = /<Period\b([^>]*)>/gi;
+  let m;
+  while ((m = re.exec(xml))) {
+    const attrs = m[1] || "";
+    const id = ((attrs.match(/\bid\s*=\s*"([^"]*)"/i) || [])[1]) || "";
+    const dur = parseIsoDuration((attrs.match(/\bduration\s*=\s*"([^"]*)"/i) || [])[1] || "");
+    const isAd = /^(ad|ssai)[-_]/i.test(id) || /[-_]ad[-_]/i.test(id) || /^ssai-/i.test(id);
+    if (isAd && dur > 0) windows.push({ start: t, end: t + dur });
+    t += dur;
+  }
+  return windows;
+}
+
 export function parseCueWindows(playlistText) {
   const windows = [];
   if (!playlistText) return windows;

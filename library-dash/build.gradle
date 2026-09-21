@@ -1,5 +1,5 @@
 plugins {
-    id 'java'
+    id 'java-library'
     id 'idea'
 }
 
@@ -10,7 +10,7 @@ targetCompatibility = '11'
 dependencies {
     // 0.15+ publishes Java 21 Gradle metadata; 0.14 is the newest Central jar
     // that resolves on JDK 17. Fork/upgrade when we run JDK 21.
-    implementation 'io.lindstrom:mpd-parser:0.14'
+    api 'io.lindstrom:mpd-parser:0.14'
     testImplementation 'junit:junit:4.13.2'
 }
 

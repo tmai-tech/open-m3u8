@@ -2,6 +2,7 @@ package com.iheartradio.m3u8.http.api;
 
 import com.iheartradio.m3u8.http.DemoHttp;
 import com.iheartradio.m3u8.http.DemoLog;
+import com.iheartradio.m3u8.http.DemoMpdPipeline;
 import com.iheartradio.m3u8.http.DemoPlaylistPipeline;
 import com.iheartradio.m3u8.http.DemoSession;
 import com.iheartradio.m3u8.http.session.SessionRegistry;
@@ -17,11 +18,18 @@ public final class SessionResourceApi implements HttpHandler {
     private final int port;
     private final SessionRegistry sessions;
     private final DemoPlaylistPipeline pipeline;
+    private final DemoMpdPipeline mpdPipeline;
 
     public SessionResourceApi(int port, SessionRegistry sessions, DemoPlaylistPipeline pipeline) {
+        this(port, sessions, pipeline, new DemoMpdPipeline());
+    }
+
+    public SessionResourceApi(int port, SessionRegistry sessions, DemoPlaylistPipeline pipeline,
+                              DemoMpdPipeline mpdPipeline) {
         this.port = port;
         this.sessions = sessions;
         this.pipeline = pipeline;
+        this.mpdPipeline = mpdPipeline != null ? mpdPipeline : new DemoMpdPipeline();
     }
 
     @Override
@@ -54,6 +62,10 @@ public final class SessionResourceApi implements HttpHandler {
         }
 
         if ("manifest".equals(action) || action.startsWith("manifest")) {
+            if (isDashSession(session, action)) {
+                handleMpd(ex, session, dashContentUrl(session));
+                return;
+            }
             handlePlaylist(ex, session, session.contentUrl);
             return;
         }
@@ -157,6 +169,67 @@ public final class SessionResourceApi implements HttpHandler {
             DemoHttp.send(ex, 502, "application/json; charset=utf-8",
                     "{\"error\":" + DemoHttp.jsonString("vtt fetch failed: " + e.getMessage())
                             + ",\"url\":" + DemoHttp.jsonString(origin) + "}");
+        }
+    }
+
+    static boolean isDashSession(DemoSession session, String action) {
+        if (action != null && action.toLowerCase().contains(".mpd")) {
+            return true;
+        }
+        String url = session != null ? session.contentUrl : null;
+        return url != null && url.toLowerCase().contains(".mpd");
+    }
+
+    static String dashContentUrl(DemoSession session) {
+        String url = session.contentUrl;
+        if (url != null && url.toLowerCase().contains(".mpd")) {
+            return url;
+        }
+        return siblingMpd(url);
+    }
+
+    static String siblingMpd(String url) {
+        if (url == null) {
+            return url;
+        }
+        if (url.toLowerCase().contains(".mpd")) {
+            return url;
+        }
+        int q = url.indexOf('?');
+        String base = q >= 0 ? url.substring(0, q) : url;
+        int slash = base.lastIndexOf('/');
+        String dir = slash >= 0 ? base.substring(0, slash + 1) : "";
+        return dir + "manifest.mpd";
+    }
+
+    private void handleMpd(HttpExchange ex, DemoSession session, String mpdUrl)
+            throws IOException {
+        try {
+            DemoMpdPipeline.Result result = mpdPipeline.process(
+                    session, mpdUrl, DemoHttp.publicBase(ex, port));
+            DemoHttp.writePlaylistResponse(ex, result.body, mpdUrl, "mpd",
+                    session.strategy.wireName());
+        } catch (DemoHttp.HttpException e) {
+            DemoLog.event("error")
+                    .sid(session.id)
+                    .put("url", mpdUrl)
+                    .put("status", e.status)
+                    .put("msg", e.getMessage())
+                    .write();
+            DemoHttp.send(ex, e.status, "application/json; charset=utf-8",
+                    "{\"error\":" + DemoHttp.jsonString(e.getMessage())
+                            + ",\"url\":" + DemoHttp.jsonString(mpdUrl) + "}");
+        } catch (Exception e) {
+            e.printStackTrace();
+            DemoLog.event("error")
+                    .sid(session.id)
+                    .put("url", mpdUrl)
+                    .put("status", 502)
+                    .put("msg", e.getMessage())
+                    .write();
+            DemoHttp.send(ex, 502, "application/json; charset=utf-8",
+                    "{\"error\":" + DemoHttp.jsonString("mpd rewrite failed: " + e.getMessage())
+                            + ",\"url\":" + DemoHttp.jsonString(mpdUrl) + "}");
         }
     }
 

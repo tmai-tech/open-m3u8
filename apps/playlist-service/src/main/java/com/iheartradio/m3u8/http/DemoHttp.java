@@ -606,7 +606,11 @@ public final class DemoHttp {
         Headers outHeaders = ex.getResponseHeaders();
         applyCorsHeaders(ex);
         outHeaders.set("Cache-Control", "no-store");
-        outHeaders.set("Content-Type", "application/vnd.apple.mpegurl; charset=utf-8");
+        if (target != null && target.toLowerCase().contains(".mpd")) {
+            outHeaders.set("Content-Type", "application/dash+xml; charset=utf-8");
+        } else {
+            outHeaders.set("Content-Type", "application/vnd.apple.mpegurl; charset=utf-8");
+        }
         outHeaders.set("X-Proxy-Target", target == null ? "" : target);
         outHeaders.set("X-Rewrite-Engine", ENGINE);
         outHeaders.set("X-Rewrite-Strategy", strategy == null ? "" : strategy);
