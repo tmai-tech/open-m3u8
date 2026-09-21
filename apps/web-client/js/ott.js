@@ -376,6 +376,7 @@ function toLibraryItem(t) {
     summary: t.summary || "",
     kicker: "Your library",
     url: t.url,
+    dashUrl: t.dashUrl || "",
     poster: t.poster,
     library: true,
     adUrl: "",

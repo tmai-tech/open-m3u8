@@ -39,6 +39,7 @@ export const DEFAULT_AD = SAMPLES.ad;
 export const state = {
   strategy: localStorage.getItem("hls-demo-strategy") || "ssai",
   playerEngine: readPlayerEngine(),
+  protocolPreference: readProtocolPreference(),
   hls: null,
   shaka: null,
   shakaUi: null,
@@ -78,6 +79,37 @@ function readPlayerEngine() {
 export function setPlayerEngine(name) {
   state.playerEngine = name === "shaka" ? "shaka" : "hls";
   try { localStorage.setItem("hls-demo-player", state.playerEngine); } catch (e) { /* ignore */ }
+}
+
+function readProtocolPreference() {
+  try {
+    const q = new URLSearchParams(location.search).get("protocol");
+    if (q === "dash" || q === "hls") return q;
+  } catch (e) { /* ignore */ }
+  try {
+    const stored = localStorage.getItem("hls-demo-protocol");
+    if (stored === "dash" || stored === "hls") return stored;
+  } catch (e) { /* ignore */ }
+  return "hls";
+}
+
+export function setProtocolPreference(name) {
+  state.protocolPreference = name === "dash" ? "dash" : "hls";
+  try { localStorage.setItem("hls-demo-protocol", state.protocolPreference); } catch (e) { /* ignore */ }
+}
+
+export function itemHasDash(item) {
+  return !!(item && item.dashUrl);
+}
+
+/** Effective protocol for this title: DASH only if the pack exists. */
+export function protocolForItem(item) {
+  if (state.protocolPreference === "dash" && itemHasDash(item)) return "dash";
+  return "hls";
+}
+
+export function isMpdUrl(url) {
+  return /\.mpd(\?|#|$)/i.test(url || "");
 }
 
 /** Rolling-live SGAI: 15s grok, one frozen START-DATE per interval. */

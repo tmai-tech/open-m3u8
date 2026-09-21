@@ -1,3 +1,4 @@
 rootProject.name = 'open-m3u8'
 include 'library'
+include 'library-dash'
 include 'apps:playlist-service'

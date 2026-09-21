@@ -1,10 +1,10 @@
 import { $ } from "./dom.js";
-import { state } from "./state.js";
+import { isMpdUrl, state } from "./state.js";
 import { setStatus } from "./status.js";
 import { showSessionWarnings } from "./api.js";
 import { hidePoster } from "./ott.js";
 import { renderTimeline } from "./ad-markers.js";
-import { resetQualityMenu } from "./quality.js";
+import { resetQualityMenu, syncShakaQuality } from "./quality.js";
 import { rememberPlaylist } from "./cues.js";
 import { refreshAdLabel, startAdLabelWatch, stopAdLabelWatch } from "./ad-overlay.js";
 
@@ -73,12 +73,19 @@ export async function playShaka(manifestUrl) {
     const hint = $("tlHint");
     if (hint) hint.textContent = "Duration " + Math.round(state.mediaDuration) + "s — click to add a break.";
     renderTimeline();
+    syncShakaQuality(player);
   });
+  player.addEventListener("adaptation", () => syncShakaQuality(player));
+  player.addEventListener("variantchanged", () => syncShakaQuality(player));
 
   hookShakaAds(player);
   startAdLabelWatch();
-  await player.load(manifestUrl, /* startTime= */ null, HLS_MIME);
-  await loadCueWindowsFromMaster(manifestUrl);
+  const mime = isMpdUrl(manifestUrl) ? "application/dash+xml" : HLS_MIME;
+  await player.load(manifestUrl, /* startTime= */ null, mime);
+  if (!isMpdUrl(manifestUrl)) {
+    await loadCueWindowsFromMaster(manifestUrl);
+  }
+  syncShakaQuality(player);
   showSessionWarnings(state.lastSession && state.lastSession.id, setStatus);
   hidePoster();
   video.play().catch(() => {});

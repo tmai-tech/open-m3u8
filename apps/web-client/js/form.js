@@ -1,5 +1,5 @@
 import { $, bind } from "./dom.js";
-import { adsAllowed, DEFAULT_AD, HINTS, LENGTH_HINTS, isLiveCadenceSession, LIVE_CADENCE, SAMPLES, state } from "./state.js";
+import { adsAllowed, DEFAULT_AD, HINTS, LENGTH_HINTS, isLiveCadenceSession, itemHasDash, LIVE_CADENCE, protocolForItem, SAMPLES, state } from "./state.js";
 import { setStatus } from "./status.js";
 import { renderTimeline } from "./ad-markers.js";
 import { fillPublicRow } from "./public-url.js";
@@ -238,6 +238,26 @@ export function setManifestButtons(enabled) {
   fillPublicRow();
 }
 
+export function syncProtocolSelect() {
+  const sel = $("protocol");
+  if (!sel) return;
+  const item = findCatalogItem(($("contentUrl") && $("contentUrl").value) || "");
+  const dashOk = itemHasDash(item);
+  const dashOpt = sel.querySelector('option[value="dash"]');
+  if (dashOpt) {
+    dashOpt.disabled = !dashOk;
+    dashOpt.title = dashOk ? "" : "No DASH pack for this title";
+  }
+  sel.value = protocolForItem(item);
+  const eng = $("playerEngine");
+  if (eng) {
+    const dash = sel.value === "dash";
+    eng.disabled = dash;
+    if (dash) eng.value = "shaka";
+    else eng.value = state.playerEngine === "shaka" ? "shaka" : "hls";
+  }
+}
+
 export function bindForm() {
   bind("strategy", "change", () => setStrategy($("strategy").value, true));
   bind("btnAddBreak", "click", () => addBreakRow());
@@ -287,7 +307,12 @@ export function applyCatalogPreset(item) {
     if (item.library) {
       savedBreaks = null;
       if ($("breakList")) $("breakList").innerHTML = "";
-      setStatus("Library title — no house ad. Add a break if you want one.");
+      const proto = protocolForItem(item);
+      setStatus(proto === "dash"
+        ? "Library title — DASH, no ads."
+        : (itemHasDash(item)
+          ? "Library title — HLS. Switch protocol to DASH, or add a break."
+          : "Library title — no house ad. Add a break if you want one."));
     } else if (fromLive) {
       $("breakList").innerHTML = "";
       (savedBreaks || []).forEach((b) => {
@@ -300,4 +325,5 @@ export function applyCatalogPreset(item) {
     }
   }
   refreshPoster();
+  syncProtocolSelect();
 }

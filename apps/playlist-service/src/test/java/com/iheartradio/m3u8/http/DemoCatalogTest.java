@@ -97,8 +97,36 @@ public class DemoCatalogTest {
         assertEquals("Summer on Mars", back.get(0).title);
         assertEquals(DemoJobStatus.QUEUED, back.get(0).status);
         assertNull(back.get(0).adUrl);
+        assertNull(back.get(0).dashUrl);
         assertEquals("A red rover on rust soil.", back.get(0).summary);
         assertTrue(back.get(0).durationSec > 73f);
+
+        t.dashUrl = "/media/titles/summer-on-mars/dash/manifest.mpd";
+        store.save(one);
+        List<Title> withDash = store.load();
+        assertEquals("/media/titles/summer-on-mars/dash/manifest.mpd", withDash.get(0).dashUrl);
+    }
+
+    @Test
+    public void loadOrDiscoverFillsDashUrlWhenMpdExists() throws Exception {
+        File root = Files.createTempDirectory("catalog-dash").toFile();
+        File dest = new File(new File(root, "titles"), "clip");
+        dest.mkdirs();
+        Files.write(new File(dest, "master.m3u8").toPath(), "#EXTM3U\n".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        File dash = new File(dest, "dash");
+        dash.mkdirs();
+        Files.write(new File(dash, "manifest.mpd").toPath(), "<MPD/>\n".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        CatalogStore store = new CatalogStore(root);
+        Title t = new Title();
+        t.id = "clip";
+        t.title = "Clip";
+        t.url = "/media/titles/clip/master.m3u8";
+        List<Title> one = new ArrayList<Title>();
+        one.add(t);
+        store.save(one);
+        List<Title> back = store.loadOrDiscover();
+        assertEquals("/media/titles/clip/dash/manifest.mpd", back.get(0).dashUrl);
+        assertEquals("/media/titles/clip/dash/manifest.mpd", store.load().get(0).dashUrl);
     }
 
     @Test

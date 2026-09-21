@@ -124,14 +124,57 @@ export function refreshQualityHint(hls) {
   setHint(levelLabel(levels[idx], false));
 }
 
+export function syncShakaQuality(player) {
+  const sel = selectEl();
+  if (!sel) return;
+  const tracks = (player && player.getVariantTracks && player.getVariantTracks()) || [];
+  const levels = tracks.map((t) => ({
+    height: t.height,
+    bitrate: t.bandwidth,
+    name: t.height ? String(t.height) : "",
+  }));
+  fillSelect(levels);
+  if (!levels.length) {
+    sel.disabled = true;
+    sel.title = "No DASH variants";
+    setHint("No variants");
+    return;
+  }
+  sel.disabled = false;
+  sel.title = "Auto uses bandwidth. Pick a resolution to pin it.";
+  const abrOn = !(player.getConfiguration && player.getConfiguration().abr
+    && player.getConfiguration().abr.enabled === false);
+  if (abrOn) {
+    sel.value = "-1";
+    const active = tracks.filter((t) => t.active)[0];
+    setHint(active ? levelLabel({ height: active.height, bitrate: active.bandwidth }, false) : "");
+  } else {
+    const activeIdx = tracks.findIndex((t) => t.active);
+    if (activeIdx >= 0) sel.value = String(activeIdx);
+    setHint("");
+  }
+}
+
 export function bindQuality() {
   resetQualityMenu();
   bind("qualitySelect", "change", () => {
-    const hls = state.hls;
     const sel = selectEl();
-    if (!hls || !sel) return;
+    if (!sel) return;
     const next = Number(sel.value);
     if (!isFinite(next)) return;
+    if (state.shaka && state.shaka.getVariantTracks) {
+      try {
+        state.shaka.configure({ abr: { enabled: next < 0 } });
+        if (next >= 0) {
+          const tracks = state.shaka.getVariantTracks() || [];
+          if (tracks[next]) state.shaka.selectVariantTrack(tracks[next], true);
+        }
+      } catch (e) { /* ignore */ }
+      syncShakaQuality(state.shaka);
+      return;
+    }
+    const hls = state.hls;
+    if (!hls) return;
     hls.currentLevel = next;
     refreshQualityHint(hls);
   });

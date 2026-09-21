@@ -19,6 +19,8 @@ public final class Title {
     public String sub;
     public String summary;
     public String url;
+    /** Static DASH MPD when packed; null if the title is HLS-only. */
+    public String dashUrl;
     public String poster;
     public String adUrl;
     public float adOffset;

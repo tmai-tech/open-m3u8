@@ -111,10 +111,36 @@ public final class CatalogStore {
             }
             return titles;
         }
-        if (normalizeTitles(titles)) {
+        boolean changed = normalizeTitles(titles);
+        if (fillDashUrls(titles)) {
+            changed = true;
+        }
+        if (changed) {
             save(titles);
         }
         return titles;
+    }
+
+    boolean fillDashUrls(List<Title> titles) {
+        boolean changed = false;
+        if (titles == null) {
+            return false;
+        }
+        for (Title t : titles) {
+            if (t == null || t.id == null || t.id.length() == 0) {
+                continue;
+            }
+            File mpd = new File(new File(new File(titlesDir(), t.id), "dash"), "manifest.mpd");
+            if (!mpd.isFile()) {
+                continue;
+            }
+            String want = "/media/titles/" + t.id + "/dash/manifest.mpd";
+            if (!want.equals(t.dashUrl)) {
+                t.dashUrl = want;
+                changed = true;
+            }
+        }
+        return changed;
     }
 
     static boolean normalizeTitles(List<Title> titles) {
@@ -171,6 +197,7 @@ public final class CatalogStore {
             t.sub = DemoHttp.jsonStringValue(obj, "sub");
             t.summary = DemoHttp.jsonStringValue(obj, "summary");
             t.url = DemoHttp.jsonStringValue(obj, "url");
+            t.dashUrl = DemoHttp.jsonStringValue(obj, "dashUrl");
             t.poster = DemoHttp.jsonStringValue(obj, "poster");
             String ad = DemoHttp.jsonStringValue(obj, "adUrl");
             if (ad != null && ad.length() > 0) {
@@ -237,6 +264,9 @@ public final class CatalogStore {
             sb.append(",\"summary\":").append(DemoHttp.jsonString(t.summary));
         }
         sb.append(",\"url\":").append(DemoHttp.jsonString(t.url));
+        if (t.dashUrl != null && t.dashUrl.length() > 0) {
+            sb.append(",\"dashUrl\":").append(DemoHttp.jsonString(t.dashUrl));
+        }
         if (t.poster != null && t.poster.length() > 0) {
             sb.append(",\"poster\":").append(DemoHttp.jsonString(t.poster));
         }
@@ -314,6 +344,10 @@ public final class CatalogStore {
             t.id = dir.getName();
             t.title = pretty.containsKey(t.id) ? pretty.get(t.id) : TitleNames.prettyName(t.id);
             t.url = "/media/titles/" + t.id + "/master.m3u8";
+            File mpd = new File(new File(dir, "dash"), "manifest.mpd");
+            if (mpd.isFile()) {
+                t.dashUrl = "/media/titles/" + t.id + "/dash/manifest.mpd";
+            }
             File poster = new File(dir, "poster.jpg");
             if (poster.isFile()) {
                 t.poster = "/media/titles/" + t.id + "/poster.jpg";

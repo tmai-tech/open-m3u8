@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import sys
 import time
+from math import gcd
 from pathlib import Path
 
 from ollama_describe import describe_poster, ollama_host, ollama_model
@@ -33,10 +34,10 @@ def media_root() -> Path:
         if skip_next:
             skip_next = False
             continue
-        if arg in ("--ladder",):
+        if arg in ("--ladder", "--dash"):
             skip_next = True
             continue
-        if arg.startswith("--ladder="):
+        if arg.startswith("--ladder=") or arg.startswith("--dash="):
             continue
         if not arg.startswith("-"):
             return Path(arg).resolve()
@@ -238,11 +239,131 @@ def package(ffmpeg: str, ffprobe: str, src: Path, dest: Path, root: Path, tid: s
             "uri": "v720.m3u8", "bandwidth": bw,
             "width": width, "height": height, "fps": fps,
         }]
-    return {
+    info = {
         "durationSec": dur, "fps": fps, "width": width, "height": height,
         "variants": variants,
         "hasAudio": bool(audio),
     }
+    try:
+        package_dash(ffmpeg, src, dest, root, tid, info, audio)
+    except Cancelled:
+        raise
+    except Exception as e:
+        job_log(root, tid, f"ffmpeg dash failed {e}")
+    return info
+
+
+def _dar(width: int, height: int) -> str:
+    w = max(1, int(width or 1))
+    h = max(1, int(height or 1))
+    g = gcd(w, h)
+    return f"{w // g}:{h // g}"
+
+
+def _kbps_for_height(variants: list[dict], height: int, default_k: int) -> int:
+    if variants:
+        closest = min(variants, key=lambda v: abs(int(v.get("height") or 0) - height))
+        bw = int(closest.get("bandwidth") or 0)
+        if bw > 0:
+            return max(80, (bw + 500) // 1000)
+    return default_k
+
+
+def dash_manifest_path(dest: Path) -> Path:
+    return dest / "dash" / "manifest.mpd"
+
+
+def package_dash(
+        ffmpeg: str, src: Path, dest: Path, root: Path, tid: str,
+        info: dict, audio: bool) -> None:
+    """Sequential DASH remux/encode into dest/dash/. Does not touch HLS files."""
+    out = dest / "dash"
+    if out.exists():
+        shutil.rmtree(out)
+    out.mkdir(parents=True)
+    width = int(info.get("width") or 0)
+    height = int(info.get("height") or 0)
+    fps = int(info.get("fps") or 24)
+    gop = max(1, fps * 4)
+    variants = list(info.get("variants") or [])
+    dar = _dar(width, height) if width and height else "1:1"
+    encode_low = height > 360
+    bw_src = _kbps_for_height(variants, height or 720, 1450)
+    bw_low = _kbps_for_height(variants, 360, 1100)
+    cmd = [ffmpeg, "-y", "-hide_banner", "-loglevel", "info", "-i", str(src)]
+    audio_map = "0:a:0"
+    if not audio:
+        cmd += ["-f", "lavfi", "-t", "36000", "-i",
+                "anullsrc=channel_layout=stereo:sample_rate=48000"]
+        audio_map = "1:a:0"
+    if encode_low:
+        filt = (
+            f"[0:v:0]split=2[v0][v1];"
+            f"[v0]scale=-2:360:flags=bicubic,format=yuv420p,setdar={dar}[v360];"
+            f"[v1]format=yuv420p,setdar={dar}[vsrc]"
+        )
+        maps = ["-map", "[v360]", "-map", "[vsrc]", "-map", audio_map]
+        adapt = "id=0,streams=0,1 id=1,streams=2"
+        rates = ["-b:v:0", f"{bw_low}k", "-b:v:1", f"{bw_src}k"]
+    else:
+        filt = f"[0:v:0]format=yuv420p,setdar={dar}[vsrc]"
+        maps = ["-map", "[vsrc]", "-map", audio_map]
+        adapt = "id=0,streams=0 id=1,streams=1"
+        rates = ["-b:v:0", f"{bw_src}k"]
+    cmd += ["-filter_complex", filt, *maps]
+    if not audio:
+        cmd += ["-shortest"]
+    cmd += [
+        "-c:v", "libx264", "-profile:v", "high", "-level", "4.1",
+        "-g", str(gop), "-keyint_min", str(gop), "-sc_threshold", "0",
+        *rates,
+        "-c:a", "aac", "-ar", "48000", "-ac", "2", "-b:a", "128k",
+        "-adaptation_sets", adapt,
+        "-use_timeline", "1", "-use_template", "1",
+        "-seg_duration", "4",
+        "-dash_segment_type", "mp4",
+        "-init_seg_name", "init-$RepresentationID$.m4s",
+        "-media_seg_name", "chunk-$RepresentationID$-$Number%05d$.m4s",
+        "-f", "dash", str(out / "manifest.mpd"),
+    ]
+    job_log(root, tid, "ffmpeg dash start")
+    run_logged(root, tid, cmd)
+    if not (out / "manifest.mpd").is_file():
+        raise RuntimeError("dash manifest missing after ffmpeg")
+    job_log(root, tid, "ffmpeg dash done")
+
+
+def dash_url_for(tid: str, dest: Path) -> str | None:
+    if dash_manifest_path(dest).is_file():
+        return f"/media/titles/{tid}/dash/manifest.mpd"
+    return None
+
+
+def backfill_dash(root: Path, ffmpeg: str, ffprobe: str, tid: str) -> None:
+    dest = root / "titles" / tid
+    src = root / "inbox" / "done" / f"{tid}.mp4"
+    if not dest.is_dir():
+        raise SystemExit(f"demo-packager --dash: no title dir {dest}")
+    if dash_manifest_path(dest).is_file():
+        job_log(root, tid, "dash already present")
+        titles = upsert(load_catalog(root), {"id": tid, "dashUrl": dash_url_for(tid, dest)})
+        save_catalog(root, titles)
+        return
+    if not src.is_file():
+        raise SystemExit(f"demo-packager --dash: missing {src}")
+    dur, fps, audio = probe(ffprobe, src)
+    width, height = probe_video_size(ffprobe, src)
+    variants = collect_variants(dest, ffprobe, fps, dur)
+    if not width or not height:
+        width, height = probe_video_size(ffprobe, dest / "init.m4s")
+    info = {
+        "durationSec": dur, "fps": fps, "width": width, "height": height,
+        "variants": variants, "hasAudio": audio,
+    }
+    package_dash(ffmpeg, src, dest, root, tid, info, audio)
+    titles = upsert(load_catalog(root), {"id": tid, "dashUrl": dash_url_for(tid, dest)})
+    save_catalog(root, titles)
+    job_log(root, tid, "dashUrl set")
 
 
 # Extra rungs below the source-size encode. Never encode a rung >= source height.
@@ -753,6 +874,7 @@ def tick(root: Path, ffmpeg: str, ffprobe: str) -> None:
                 "error": None,
                 "contentHash": digest,
                 "hasAudio": bool(info.get("hasAudio")),
+                "dashUrl": dash_url_for(tid, dest),
             })
             save_catalog(root, titles)
             job_log(root, tid, f"ready {info['durationSec']:.1f}s")
@@ -836,6 +958,14 @@ def main() -> None:
         print("demo-packager --fix-resolution", flush=True)
         print(f"  Media:   {root}", flush=True)
         backfill_resolution(root, probe)
+        return
+    dash_id = argv_value("--dash")
+    if dash_id:
+        ffmpeg = ffmpeg_bin()
+        probe = ffprobe_bin(ffmpeg)
+        print(f"demo-packager --dash {dash_id}", flush=True)
+        print(f"  Media:   {root}", flush=True)
+        backfill_dash(root, ffmpeg, probe, dash_id)
         return
     ladder_id = argv_value("--ladder")
     if ladder_id:

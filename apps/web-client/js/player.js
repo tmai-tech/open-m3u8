@@ -1,14 +1,14 @@
 import { $, bind } from "./dom.js";
-import { adsAllowed, setPlayerEngine, state } from "./state.js";
+import { adsAllowed, isMpdUrl, protocolForItem, setPlayerEngine, setProtocolPreference, state } from "./state.js";
 import { highlight, setStatus } from "./status.js";
 import { createSession, showSessionWarnings } from "./api.js";
-import { setManifestButtons } from "./form.js";
+import { setManifestButtons, syncProtocolSelect } from "./form.js";
 import { parseCueWindows, rememberPlaylist } from "./cues.js";
 import { renderTimeline } from "./ad-markers.js";
 import { refreshAdLabel, setAdLabel, stopAdLabelWatch } from "./ad-overlay.js";
 import { onSgaiInterstitialEnded, onSgaiInterstitialStarted, resetAdClock, resetSgaiOnce } from "./seek-sgai.js";
 import { startAdWatch, stopAdWatch, guardInterstitialMedia } from "./seek-guard.js";
-import { hidePoster, setPosterHint, showPoster } from "./ott.js";
+import { findCatalogItem, hidePoster, setPosterHint, showPoster } from "./ott.js";
 import { startSeekThumbs, stopSeekThumbs } from "./seek-thumbs.js";
 import { bindQuality, refreshQualityHint, resetQualityMenu, setQualityNative, syncQualityMenu } from "./quality.js";
 import { destroyShaka, playShaka, shakaAvailable } from "./shaka-player.js";
@@ -52,8 +52,14 @@ export function destroyPlayer() {
 export function playUrl(manifestUrl, enableInterstitials, staticSession) {
   destroyPlayer();
   const video = $("video");
-  if (state.playerEngine === "shaka") {
+  const dash = isMpdUrl(manifestUrl);
+  if (dash || state.playerEngine === "shaka") {
     playShaka(manifestUrl).catch((e) => {
+      if (dash) {
+        setStatus("Shaka failed — DASH needs Shaka. " + (e && e.message ? e.message : e), "err");
+        showPoster();
+        return;
+      }
       setStatus("Shaka failed — falling back to hls.js. " + (e && e.message ? e.message : e), "err");
       setPlayerEngine("hls");
       const sel = $("playerEngine");
@@ -171,6 +177,28 @@ export async function apply(andPlay) {
   try {
     if (andPlay) destroyPlayer();
     $("btnApply").disabled = true;
+    const item = findCatalogItem(($("contentUrl") && $("contentUrl").value) || "");
+    if (protocolForItem(item) === "dash") {
+      const dashUrl = item.dashUrl;
+      if (!dashUrl) throw new Error("DASH is not packed for this title");
+      state.lastSession = null;
+      showSessionId(null);
+      $("manifestUrl").value = dashUrl;
+      setManifestButtons(true);
+      $("sessionMeta").innerHTML = "<strong>DASH</strong> · static MPD · no ads";
+      try {
+        const res = await fetch(dashUrl, { cache: "no-store" });
+        const text = await res.text();
+        $("preview").innerHTML = highlight(text);
+      } catch (_) {
+        $("preview").textContent = dashUrl;
+      }
+      state.adWindows = [];
+      setAdLabel(false);
+      setStatus("Ready.", "ok");
+      if (andPlay) playUrl(dashUrl, false);
+      return;
+    }
     if (state.strategy === "sgai" && $("playPath").value === "direct") {
       const url = $("contentUrl").value.trim();
       if (!url) throw new Error("Content URL is required");
@@ -233,6 +261,22 @@ export async function apply(andPlay) {
 
 export function bindPlayer() {
   bindQuality();
+  syncProtocolSelect();
+  const proto = $("protocol");
+  if (proto) {
+    proto.value = protocolForItem(findCatalogItem(($("contentUrl") && $("contentUrl").value) || ""));
+    proto.addEventListener("change", () => {
+      const item = findCatalogItem(($("contentUrl") && $("contentUrl").value) || "");
+      if (proto.value === "dash" && !(item && item.dashUrl)) {
+        proto.value = "hls";
+        setStatus("No DASH pack for this title.", "err");
+        return;
+      }
+      setProtocolPreference(proto.value);
+      syncProtocolSelect();
+      apply(true);
+    });
+  }
   const engine = $("playerEngine");
   if (engine) {
     engine.value = state.playerEngine === "shaka" ? "shaka" : "hls";
