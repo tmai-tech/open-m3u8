@@ -101,10 +101,10 @@ public class DemoCatalogTest {
         assertEquals("A red rover on rust soil.", back.get(0).summary);
         assertTrue(back.get(0).durationSec > 73f);
 
-        t.dashUrl = "/media/titles/summer-on-mars/dash/manifest.mpd";
+        t.dashUrl = "/media/titles/summer-on-mars/manifest.mpd";
         store.save(one);
         List<Title> withDash = store.load();
-        assertEquals("/media/titles/summer-on-mars/dash/manifest.mpd", withDash.get(0).dashUrl);
+        assertEquals("/media/titles/summer-on-mars/manifest.mpd", withDash.get(0).dashUrl);
     }
 
     @Test
@@ -113,9 +113,7 @@ public class DemoCatalogTest {
         File dest = new File(new File(root, "titles"), "clip");
         dest.mkdirs();
         Files.write(new File(dest, "master.m3u8").toPath(), "#EXTM3U\n".getBytes(java.nio.charset.StandardCharsets.UTF_8));
-        File dash = new File(dest, "dash");
-        dash.mkdirs();
-        Files.write(new File(dash, "manifest.mpd").toPath(), "<MPD/>\n".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        Files.write(new File(dest, "manifest.mpd").toPath(), "<MPD/>\n".getBytes(java.nio.charset.StandardCharsets.UTF_8));
         CatalogStore store = new CatalogStore(root);
         Title t = new Title();
         t.id = "clip";
@@ -125,8 +123,8 @@ public class DemoCatalogTest {
         one.add(t);
         store.save(one);
         List<Title> back = store.loadOrDiscover();
-        assertEquals("/media/titles/clip/dash/manifest.mpd", back.get(0).dashUrl);
-        assertEquals("/media/titles/clip/dash/manifest.mpd", store.load().get(0).dashUrl);
+        assertEquals("/media/titles/clip/manifest.mpd", back.get(0).dashUrl);
+        assertEquals("/media/titles/clip/manifest.mpd", store.load().get(0).dashUrl);
     }
 
     @Test

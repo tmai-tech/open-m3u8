@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<MPD xmlns="urn:mpeg:dash:schema:mpd:2011"
+     profiles="urn:mpeg:dash:profile:isoff-live:2011"
+     type="static"
+     mediaPresentationDuration="PT15.042S"
+     minBufferTime="PT2S">
+  <Period id="p0" duration="PT15.042S">
+    <AdaptationSet id="0" contentType="video" mimeType="video/mp4" codecs="avc1.640029,mp4a.40.2" segmentAlignment="true" startWithSAP="1" maxWidth="752" maxHeight="416" maxFrameRate="24">
+      <Representation id="v360" bandwidth="1117375" width="650" height="360" frameRate="24">
+        <SegmentTemplate timescale="1000" initialization="init360.m4s"
+                         media="v360_$Number$.m4s" startNumber="0">
+          <SegmentTimeline>
+            <S t="0" d="4000" r="2"/>
+            <S d="3042"/>
+          </SegmentTimeline>
+        </SegmentTemplate>
+      </Representation>
+      <Representation id="v720" bandwidth="1465630" width="752" height="416" frameRate="24">
+        <SegmentTemplate timescale="1000" initialization="init.m4s"
+                         media="v720_$Number$.m4s" startNumber="0">
+          <SegmentTimeline>
+            <S t="0" d="4000" r="2"/>
+            <S d="3042"/>
+          </SegmentTimeline>
+        </SegmentTemplate>
+      </Representation>
+    </AdaptationSet>
+  </Period>
+</MPD>

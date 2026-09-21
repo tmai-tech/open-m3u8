@@ -9,7 +9,6 @@ import shutil
 import subprocess
 import sys
 import time
-from math import gcd
 from pathlib import Path
 
 from ollama_describe import describe_poster, ollama_host, ollama_model
@@ -245,122 +244,171 @@ def package(ffmpeg: str, ffprobe: str, src: Path, dest: Path, root: Path, tid: s
         "hasAudio": bool(audio),
     }
     try:
-        package_dash(ffmpeg, src, dest, root, tid, info, audio)
+        write_dash_mpd(dest, info)
+        job_log(root, tid, "dash mpd written")
     except Cancelled:
         raise
     except Exception as e:
-        job_log(root, tid, f"ffmpeg dash failed {e}")
+        job_log(root, tid, f"dash mpd failed {e}")
     return info
 
 
-def _dar(width: int, height: int) -> str:
-    w = max(1, int(width or 1))
-    h = max(1, int(height or 1))
-    g = gcd(w, h)
-    return f"{w // g}:{h // g}"
-
-
-def _kbps_for_height(variants: list[dict], height: int, default_k: int) -> int:
-    if variants:
-        closest = min(variants, key=lambda v: abs(int(v.get("height") or 0) - height))
-        bw = int(closest.get("bandwidth") or 0)
-        if bw > 0:
-            return max(80, (bw + 500) // 1000)
-    return default_k
-
-
 def dash_manifest_path(dest: Path) -> Path:
-    return dest / "dash" / "manifest.mpd"
-
-
-def package_dash(
-        ffmpeg: str, src: Path, dest: Path, root: Path, tid: str,
-        info: dict, audio: bool) -> None:
-    """Sequential DASH remux/encode into dest/dash/. Does not touch HLS files."""
-    out = dest / "dash"
-    if out.exists():
-        shutil.rmtree(out)
-    out.mkdir(parents=True)
-    width = int(info.get("width") or 0)
-    height = int(info.get("height") or 0)
-    fps = int(info.get("fps") or 24)
-    gop = max(1, fps * 4)
-    variants = list(info.get("variants") or [])
-    dar = _dar(width, height) if width and height else "1:1"
-    encode_low = height > 360
-    bw_src = _kbps_for_height(variants, height or 720, 1450)
-    bw_low = _kbps_for_height(variants, 360, 1100)
-    cmd = [ffmpeg, "-y", "-hide_banner", "-loglevel", "info", "-i", str(src)]
-    audio_map = "0:a:0"
-    if not audio:
-        cmd += ["-f", "lavfi", "-t", "36000", "-i",
-                "anullsrc=channel_layout=stereo:sample_rate=48000"]
-        audio_map = "1:a:0"
-    if encode_low:
-        filt = (
-            f"[0:v:0]split=2[v0][v1];"
-            f"[v0]scale=-2:360:flags=bicubic,format=yuv420p,setdar={dar}[v360];"
-            f"[v1]format=yuv420p,setdar={dar}[vsrc]"
-        )
-        maps = ["-map", "[v360]", "-map", "[vsrc]", "-map", audio_map]
-        adapt = "id=0,streams=0,1 id=1,streams=2"
-        rates = ["-b:v:0", f"{bw_low}k", "-b:v:1", f"{bw_src}k"]
-    else:
-        filt = f"[0:v:0]format=yuv420p,setdar={dar}[vsrc]"
-        maps = ["-map", "[vsrc]", "-map", audio_map]
-        adapt = "id=0,streams=0 id=1,streams=1"
-        rates = ["-b:v:0", f"{bw_src}k"]
-    cmd += ["-filter_complex", filt, *maps]
-    if not audio:
-        cmd += ["-shortest"]
-    cmd += [
-        "-c:v", "libx264", "-profile:v", "high", "-level", "4.1",
-        "-g", str(gop), "-keyint_min", str(gop), "-sc_threshold", "0",
-        *rates,
-        "-c:a", "aac", "-ar", "48000", "-ac", "2", "-b:a", "128k",
-        "-adaptation_sets", adapt,
-        "-use_timeline", "1", "-use_template", "1",
-        "-seg_duration", "4",
-        "-dash_segment_type", "mp4",
-        "-init_seg_name", "init-$RepresentationID$.m4s",
-        "-media_seg_name", "chunk-$RepresentationID$-$Number%05d$.m4s",
-        "-f", "dash", str(out / "manifest.mpd"),
-    ]
-    job_log(root, tid, "ffmpeg dash start")
-    run_logged(root, tid, cmd)
-    if not (out / "manifest.mpd").is_file():
-        raise RuntimeError("dash manifest missing after ffmpeg")
-    job_log(root, tid, "ffmpeg dash done")
+    return dest / "manifest.mpd"
 
 
 def dash_url_for(tid: str, dest: Path) -> str | None:
     if dash_manifest_path(dest).is_file():
-        return f"/media/titles/{tid}/dash/manifest.mpd"
+        return f"/media/titles/{tid}/manifest.mpd"
     return None
+
+
+def iso_duration(seconds: float) -> str:
+    ms = max(0, int(round(float(seconds) * 1000)))
+    whole, frac = divmod(ms, 1000)
+    if frac == 0:
+        return f"PT{whole}S"
+    return f"PT{whole}.{frac:03d}S".rstrip("0")
+
+
+def xml_esc(s: str) -> str:
+    return (str(s).replace("&", "&amp;").replace("<", "&lt;")
+            .replace(">", "&gt;").replace('"', "&quot;"))
+
+
+def parse_map_uri(playlist: Path) -> str | None:
+    if not playlist.is_file():
+        return None
+    for line in playlist.read_text(encoding="utf-8", errors="replace").splitlines():
+        if not line.startswith("#EXT-X-MAP:"):
+            continue
+        rest = line.split(":", 1)[1]
+        for part in rest.split(","):
+            part = part.strip()
+            if part.startswith("URI="):
+                return part.split("=", 1)[1].strip().strip('"')
+    return None
+
+
+def segment_timeline_xml(durs: list[float]) -> str:
+    ms = [max(1, int(round(d * 1000))) for d in durs]
+    if not ms:
+        return ""
+    lines = []
+    i = 0
+    first = True
+    while i < len(ms):
+        d = ms[i]
+        r = 0
+        j = i + 1
+        while j < len(ms) and ms[j] == d:
+            r += 1
+            j += 1
+        attr = f't="0" d="{d}"' if first else f'd="{d}"'
+        if r:
+            attr += f' r="{r}"'
+        lines.append(f"            <S {attr}/>")
+        first = False
+        i = j
+    return "\n".join(lines)
+
+
+def write_dash_mpd(dest: Path, info: dict | None = None) -> Path:
+    """Write manifest.mpd pointing at existing HLS CMAF (no second encode)."""
+    info = info or {}
+    variants = list(info.get("variants") or [])
+    if not variants:
+        raise RuntimeError("no HLS variants for MPD")
+    dur = float(info.get("durationSec") or 0)
+    if dur <= 0:
+        for v in variants:
+            uri = dest / str(v.get("uri") or "")
+            durs = parse_extinf(uri)
+            if durs:
+                dur = sum(durs)
+                break
+    if dur <= 0:
+        raise RuntimeError("unknown duration for MPD")
+    fps = info.get("fps") or 24
+    try:
+        fps_i = int(round(float(fps)))
+    except (TypeError, ValueError):
+        fps_i = 24
+    max_w = max((int(v.get("width") or 0) for v in variants), default=0)
+    max_h = max((int(v.get("height") or 0) for v in variants), default=0)
+    iso = iso_duration(dur)
+    reps = []
+    for v in variants:
+        playlist = dest / str(v.get("uri") or "v720.m3u8")
+        stem = playlist.stem
+        durs = parse_extinf(playlist)
+        if not durs:
+            raise RuntimeError(f"no EXTINF in {playlist.name}")
+        init = parse_map_uri(playlist) or rung_init_name(int(stem[1:]) if stem[1:].isdigit() else 720)
+        timeline = segment_timeline_xml(durs)
+        bw = int(v.get("bandwidth") or 0) or 500_000
+        width = int(v.get("width") or 0)
+        height = int(v.get("height") or 0)
+        rid = xml_esc(stem)
+        size = ""
+        if width > 0 and height > 0:
+            size = f' width="{width}" height="{height}"'
+        reps.append(
+            f'      <Representation id="{rid}" bandwidth="{bw}"{size} frameRate="{fps_i}">\n'
+            f'        <SegmentTemplate timescale="1000" initialization="{xml_esc(init)}"\n'
+            f'                         media="{xml_esc(stem)}_$Number$.m4s" startNumber="0">\n'
+            f"          <SegmentTimeline>\n{timeline}\n"
+            f"          </SegmentTimeline>\n"
+            f"        </SegmentTemplate>\n"
+            f"      </Representation>"
+        )
+    as_attrs = [
+        'id="0"', 'contentType="video"', 'mimeType="video/mp4"',
+        'codecs="avc1.640029,mp4a.40.2"',
+        'segmentAlignment="true"', 'startWithSAP="1"',
+    ]
+    if max_w > 0:
+        as_attrs.append(f'maxWidth="{max_w}"')
+    if max_h > 0:
+        as_attrs.append(f'maxHeight="{max_h}"')
+    as_attrs.append(f'maxFrameRate="{fps_i}"')
+    xml = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<MPD xmlns="urn:mpeg:dash:schema:mpd:2011"\n'
+        '     profiles="urn:mpeg:dash:profile:isoff-live:2011"\n'
+        '     type="static"\n'
+        f'     mediaPresentationDuration="{iso}"\n'
+        '     minBufferTime="PT2S">\n'
+        f'  <Period id="p0" duration="{iso}">\n'
+        f'    <AdaptationSet {" ".join(as_attrs)}>\n'
+        + "\n".join(reps) + "\n"
+        "    </AdaptationSet>\n"
+        "  </Period>\n"
+        "</MPD>\n"
+    )
+    out = dash_manifest_path(dest)
+    out.write_text(xml, encoding="utf-8")
+    return out
 
 
 def backfill_dash(root: Path, ffmpeg: str, ffprobe: str, tid: str) -> None:
     dest = root / "titles" / tid
-    src = root / "inbox" / "done" / f"{tid}.mp4"
-    if not dest.is_dir():
-        raise SystemExit(f"demo-packager --dash: no title dir {dest}")
-    if dash_manifest_path(dest).is_file():
-        job_log(root, tid, "dash already present")
-        titles = upsert(load_catalog(root), {"id": tid, "dashUrl": dash_url_for(tid, dest)})
-        save_catalog(root, titles)
-        return
-    if not src.is_file():
-        raise SystemExit(f"demo-packager --dash: missing {src}")
-    dur, fps, audio = probe(ffprobe, src)
-    width, height = probe_video_size(ffprobe, src)
-    variants = collect_variants(dest, ffprobe, fps, dur)
-    if not width or not height:
-        width, height = probe_video_size(ffprobe, dest / "init.m4s")
-    info = {
+    if not dest.is_dir() or not (dest / "master.m3u8").is_file():
+        raise SystemExit(f"demo-packager --dash: no HLS pack at {dest}")
+    dur = 0.0
+    for p in video_playlists(dest):
+        durs = parse_extinf(p)
+        if durs:
+            dur = sum(durs)
+            break
+    fps = 24
+    variants = collect_variants(dest, ffprobe, fps, dur or 1.0)
+    width = max((int(v.get("width") or 0) for v in variants), default=0)
+    height = max((int(v.get("height") or 0) for v in variants), default=0)
+    write_dash_mpd(dest, {
         "durationSec": dur, "fps": fps, "width": width, "height": height,
-        "variants": variants, "hasAudio": audio,
-    }
-    package_dash(ffmpeg, src, dest, root, tid, info, audio)
+        "variants": variants,
+    })
     titles = upsert(load_catalog(root), {"id": tid, "dashUrl": dash_url_for(tid, dest)})
     save_catalog(root, titles)
     job_log(root, tid, "dashUrl set")

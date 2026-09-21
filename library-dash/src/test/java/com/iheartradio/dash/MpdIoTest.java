@@ -99,6 +99,31 @@ public class MpdIoTest {
         assertEquals("1", videoAgain.getRepresentations().get(1).getId());
     }
 
+    @Test
+    public void parseSharedHlsGrokManifest() throws Exception {
+        String xml = readResource("/grok-hls-shared.mpd");
+        MpdIo io = new MpdIo();
+        MPD mpd = io.parse(xml);
+        assertEquals(PresentationType.STATIC, mpd.getType());
+        assertEquals(1, mpd.getPeriods().size());
+        assertEquals(1, mpd.getPeriods().get(0).getAdaptationSets().size());
+        AdaptationSet video = mpd.getPeriods().get(0).getAdaptationSets().get(0);
+        assertEquals("video", video.getContentType());
+        assertEquals(2, video.getRepresentations().size());
+        Representation r0 = video.getRepresentations().get(0);
+        Representation r1 = video.getRepresentations().get(1);
+        assertEquals("v360", r0.getId());
+        assertEquals("v720", r1.getId());
+        assertTrue(r0.getSegmentTemplate().getMedia().contains("v360_$Number$"));
+        assertTrue(r1.getSegmentTemplate().getMedia().contains("v720_$Number$"));
+        assertEquals("init360.m4s", r0.getSegmentTemplate().getInitialization());
+        assertEquals("init.m4s", r1.getSegmentTemplate().getInitialization());
+        MPD again = io.parse(io.write(mpd));
+        assertEquals(2, videoRepCount(again));
+        assertEquals("v360", again.getPeriods().get(0).getAdaptationSets().get(0)
+                .getRepresentations().get(0).getId());
+    }
+
     private static int videoRepCount(MPD mpd) {
         int n = 0;
         for (AdaptationSet set : mpd.getPeriods().get(0).getAdaptationSets()) {

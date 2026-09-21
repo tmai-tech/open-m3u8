@@ -130,11 +130,11 @@ public final class CatalogStore {
             if (t == null || t.id == null || t.id.length() == 0) {
                 continue;
             }
-            File mpd = new File(new File(new File(titlesDir(), t.id), "dash"), "manifest.mpd");
+            File mpd = new File(new File(titlesDir(), t.id), "manifest.mpd");
             if (!mpd.isFile()) {
                 continue;
             }
-            String want = "/media/titles/" + t.id + "/dash/manifest.mpd";
+            String want = "/media/titles/" + t.id + "/manifest.mpd";
             if (!want.equals(t.dashUrl)) {
                 t.dashUrl = want;
                 changed = true;
@@ -344,9 +344,9 @@ public final class CatalogStore {
             t.id = dir.getName();
             t.title = pretty.containsKey(t.id) ? pretty.get(t.id) : TitleNames.prettyName(t.id);
             t.url = "/media/titles/" + t.id + "/master.m3u8";
-            File mpd = new File(new File(dir, "dash"), "manifest.mpd");
+            File mpd = new File(dir, "manifest.mpd");
             if (mpd.isFile()) {
-                t.dashUrl = "/media/titles/" + t.id + "/dash/manifest.mpd";
+                t.dashUrl = "/media/titles/" + t.id + "/manifest.mpd";
             }
             File poster = new File(dir, "poster.jpg");
             if (poster.isFile()) {
