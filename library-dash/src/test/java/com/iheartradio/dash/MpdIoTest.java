@@ -106,10 +106,24 @@ public class MpdIoTest {
         MPD mpd = io.parse(xml);
         assertEquals(PresentationType.STATIC, mpd.getType());
         assertEquals(1, mpd.getPeriods().size());
-        assertEquals(1, mpd.getPeriods().get(0).getAdaptationSets().size());
-        AdaptationSet video = mpd.getPeriods().get(0).getAdaptationSets().get(0);
+        assertEquals(2, mpd.getPeriods().get(0).getAdaptationSets().size());
+        AdaptationSet video = null;
+        AdaptationSet text = null;
+        for (AdaptationSet set : mpd.getPeriods().get(0).getAdaptationSets()) {
+            if ("text".equals(set.getContentType())) {
+                text = set;
+            } else {
+                video = set;
+            }
+        }
+        assertNotNull(video);
         assertEquals("video", video.getContentType());
         assertEquals(2, video.getRepresentations().size());
+        assertNotNull(text);
+        assertEquals("text", text.getContentType());
+        assertEquals("subs", text.getRepresentations().get(0).getId());
+        assertTrue(text.getRepresentations().get(0).getSegmentTemplate().getMedia()
+                .contains("subs_$Number$"));
         Representation r0 = video.getRepresentations().get(0);
         Representation r1 = video.getRepresentations().get(1);
         assertEquals("v360", r0.getId());

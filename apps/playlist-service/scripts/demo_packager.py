@@ -372,6 +372,23 @@ def write_dash_mpd(dest: Path, info: dict | None = None) -> Path:
     if max_h > 0:
         as_attrs.append(f'maxHeight="{max_h}"')
     as_attrs.append(f'maxFrameRate="{fps_i}"')
+    text_as = ""
+    subs = dest / "subs.m3u8"
+    if subs.is_file():
+        sub_durs = parse_extinf(subs)
+        if sub_durs:
+            sub_tl = segment_timeline_xml(sub_durs)
+            text_as = (
+                '    <AdaptationSet id="1" contentType="text" mimeType="text/vtt" lang="en">\n'
+                '      <Role schemeIdUri="urn:mpeg:dash:role:2011" value="subtitle"/>\n'
+                '      <Representation id="subs" bandwidth="256">\n'
+                '        <SegmentTemplate timescale="1000" media="subs_$Number$.vtt" startNumber="0">\n'
+                f"          <SegmentTimeline>\n{sub_tl}\n"
+                "          </SegmentTimeline>\n"
+                "        </SegmentTemplate>\n"
+                "      </Representation>\n"
+                "    </AdaptationSet>\n"
+            )
     xml = (
         '<?xml version="1.0" encoding="UTF-8"?>\n'
         '<MPD xmlns="urn:mpeg:dash:schema:mpd:2011"\n'
@@ -383,6 +400,7 @@ def write_dash_mpd(dest: Path, info: dict | None = None) -> Path:
         f'    <AdaptationSet {" ".join(as_attrs)}>\n'
         + "\n".join(reps) + "\n"
         "    </AdaptationSet>\n"
+        + text_as +
         "  </Period>\n"
         "</MPD>\n"
     )
