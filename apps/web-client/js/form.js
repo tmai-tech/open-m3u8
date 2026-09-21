@@ -78,25 +78,6 @@ export function addBreakRow(offsetSec, assetUri, durationSec) {
   addBreakCard(offsetSec, [{ assetUri, durationSec }]);
 }
 
-export function isDemoCave(item) {
-  const id = (item && item.id) || "";
-  const url = (item && item.url) || "";
-  return id === "cave" || id === "the-cave-charles-ancelle"
-    || url.indexOf("the-cave-charles-ancelle") >= 0;
-}
-
-/** Cave demo: 12s one grok, 24s grok + GIFF. */
-export function seedDefaultBreaks() {
-  const list = $("breakList");
-  if (!list) return;
-  list.innerHTML = "";
-  addBreakCard(12, [{ assetUri: SAMPLES.grok8e30, durationSec: 16 }]);
-  addBreakCard(24, [
-    { assetUri: SAMPLES.grok27bf, durationSec: 16 },
-    { assetUri: SAMPLES.giff, durationSec: 16 },
-  ]);
-}
-
 export function addBreakCard(offsetSec, ads) {
   const list = $("breakList");
   const inherit = lastCreativeFields();
@@ -323,11 +304,7 @@ export function applyCatalogPreset(item) {
     const fromLive = state.liveMode;
     state.windowDuration = 0;
     setLiveUi(false);
-    if (isDemoCave(item)) {
-      savedBreaks = null;
-      seedDefaultBreaks();
-      setStatus("The Cave — 1 ad at 12s, 2 ads at 24s.");
-    } else if (item.library) {
+    if (item.library) {
       savedBreaks = null;
       if ($("breakList")) $("breakList").innerHTML = "";
       const proto = protocolForItem(item);
