@@ -173,6 +173,31 @@ public class DemoLiveCadenceTest {
         assertTrue(json.contains("grok.m3u8"));
     }
 
+    @Test
+    public void liveAssetListEmptyWhenHlsStartOffsetGreaterThanZero() {
+        DemoSession session = DemoSession.fromJson("live-off",
+                "{\"strategy\":\"sgai\",\"contentUrl\":\"http://cdn/live.m3u8\","
+                        + "\"adUrl\":\"http://ads/grok.m3u8\",\"liveCadenceSec\":60,\"livePlayoutLimit\":15}");
+        DemoPlaylistPipeline pipeline = new DemoPlaylistPipeline();
+        String withAds = pipeline.assetListJson(session, "live-1", "http://127.0.0.1:8765", 0d);
+        assertTrue(withAds.contains("grok.m3u8"));
+        String skipped = pipeline.assetListJson(session, "live-1", "http://127.0.0.1:8765", 12d);
+        assertEquals("{\"ASSETS\":[]}", skipped);
+        String dump = DemoLog.dumpJson("live-off", 20);
+        assertTrue(dump.contains("_HLS_start_offset greater than 0"));
+        assertTrue(dump.contains("\"startOffset\":12"));
+    }
+
+    @Test
+    public void hlsStartOffsetMissingIsZero() {
+        assertEquals(0d, DemoHttp.hlsStartOffset(null), 0d);
+        assertEquals(0d, DemoHttp.hlsStartOffset(""), 0d);
+        assertEquals(0d, DemoHttp.hlsStartOffset("_HLS_primary_id=abc"), 0d);
+        assertEquals(0d, DemoHttp.hlsStartOffset("_HLS_start_offset=0"), 0d);
+        assertEquals(12.5d, DemoHttp.hlsStartOffset("_HLS_start_offset=12.5&_HLS_primary_id=x"), 0d);
+        assertTrue(Double.isNaN(DemoHttp.hlsStartOffset("_HLS_start_offset=nope")));
+    }
+
     private static Playlist liveWindow(String pdt, float seg, int n) {
         TrackData[] tracks = new TrackData[n];
         for (int i = 0; i < n; i++) {

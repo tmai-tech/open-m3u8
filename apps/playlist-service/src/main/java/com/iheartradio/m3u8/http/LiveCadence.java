@@ -112,10 +112,26 @@ final class LiveCadence {
         return b.build();
     }
 
+    static final String EMPTY_ASSETS = "{\"ASSETS\":[]}";
+
     static String assetListJson(DemoPlaylistPipeline pipeline, DemoSession session, String publicBase) {
+        return assetListJson(pipeline, session, publicBase, 0d);
+    }
+
+    static String assetListJson(DemoPlaylistPipeline pipeline, DemoSession session, String publicBase,
+                                double hlsStartOffset) {
+        if (hlsStartOffset > 0d || Double.isNaN(hlsStartOffset)) {
+            DemoLog.event("assets").sid(session.id)
+                    .put("break", "live")
+                    .put("startOffset", hlsStartOffset)
+                    .put("skipAds", true)
+                    .put("msg", "_HLS_start_offset greater than 0; returning empty ASSETS")
+                    .write();
+            return EMPTY_ASSETS;
+        }
         String uri = session.adUrl;
         if (uri == null || uri.length() == 0 || session.isSkippedAd(uri)) {
-            return "{\"ASSETS\":[]}";
+            return EMPTY_ASSETS;
         }
         String host = publicBase == null ? "" : publicBase;
         if (host.endsWith("/")) {

@@ -938,12 +938,17 @@ public final class DemoPlaylistPipeline {
      * Skipped creatives are omitted; an empty {@code ASSETS} array is still 200.
      */
     public String assetListJson(DemoSession session, String breakId, String publicBase) {
+        return assetListJson(session, breakId, publicBase, 0d);
+    }
+
+    public String assetListJson(DemoSession session, String breakId, String publicBase,
+                                double hlsStartOffset) {
         if (session == null || breakId == null) {
             return null;
         }
         skipSilentAds(session);
         if (LiveCadence.isBreak(session, breakId)) {
-            return LiveCadence.assetListJson(this, session, publicBase);
+            return LiveCadence.assetListJson(this, session, publicBase, hlsStartOffset);
         }
         DemoSession.Break found = session.findBreak(breakId);
         if (found == null) {

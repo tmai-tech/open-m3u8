@@ -252,6 +252,22 @@ public final class DemoHttp {
         return null;
     }
 
+    /**
+     * {@code _HLS_start_offset} on an asset-list request. Missing or blank → 0.
+     * Unparseable → {@link Double#NaN} (treat as skip ads).
+     */
+    public static double hlsStartOffset(String rawQuery) {
+        String v = queryParam(rawQuery, "_HLS_start_offset");
+        if (v == null || v.length() == 0) {
+            return 0d;
+        }
+        try {
+            return Double.parseDouble(decode(v));
+        } catch (Exception e) {
+            return Double.NaN;
+        }
+    }
+
     public static String decode(String s) {
         if (s == null) {
             return null;
