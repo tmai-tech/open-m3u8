@@ -162,10 +162,7 @@ public final class DemoPlaylistPipeline {
         UriMapper mapper = new UriMapper() {
             @Override
             public String map(String absoluteUri) {
-                if (isOwnSessionUrl(absoluteUri, proxyBase)) {
-                    return absoluteUri;
-                }
-                return PlaylistRewriteUtil.toProxyUrl(proxyBase, absoluteUri);
+                return mapOriginUri(absoluteUri, proxyBase, publicBase);
             }
         };
 
@@ -931,6 +928,80 @@ public final class DemoPlaylistPipeline {
             return false;
         }
         return uri.equals(sessionBase) || uri.startsWith(sessionBase + "/");
+    }
+
+    /**
+     * Playlists stay on {@code /s/{id}/proxy} so SSAI/SGAI rewrite still runs.
+     * Local {@code /media/} segments (m4s, init, vtt, …) are emitted as same-origin
+     * paths so the player does not round-trip them through the session proxy.
+     * Remote and live origins are unchanged.
+     */
+    static String mapOriginUri(String absoluteUri, String proxyBase, String publicBase) {
+        if (absoluteUri == null || absoluteUri.length() == 0) {
+            return absoluteUri;
+        }
+        if (isOwnSessionUrl(absoluteUri, proxyBase)) {
+            return absoluteUri;
+        }
+        if (isLocalMediaAsset(absoluteUri, publicBase)) {
+            String href = toLocalMediaHref(absoluteUri);
+            if (href != null && href.length() > 0) {
+                return href;
+            }
+        }
+        return PlaylistRewriteUtil.toProxyUrl(proxyBase, absoluteUri);
+    }
+
+    static boolean isLocalMediaAsset(String absoluteUri, String publicBase) {
+        if (absoluteUri == null || DemoHttp.urlLooksLikePlaylist(absoluteUri)) {
+            return false;
+        }
+        URI u;
+        try {
+            u = URI.create(absoluteUri);
+        } catch (Exception e) {
+            return false;
+        }
+        String path = u.getPath();
+        if (path == null || !path.startsWith("/media/")) {
+            return false;
+        }
+        String host = u.getHost();
+        if (host == null || host.length() == 0) {
+            return true;
+        }
+        String h = host.toLowerCase(Locale.US);
+        if ("127.0.0.1".equals(h) || "localhost".equals(h) || "::1".equals(h)) {
+            return true;
+        }
+        if (publicBase != null && publicBase.length() > 0) {
+            try {
+                String pbHost = URI.create(publicBase).getHost();
+                if (pbHost != null && pbHost.equalsIgnoreCase(host)) {
+                    return true;
+                }
+            } catch (Exception ignored) {
+                // fall through
+            }
+        }
+        return false;
+    }
+
+    static String toLocalMediaHref(String absoluteUri) {
+        try {
+            URI u = URI.create(absoluteUri);
+            String path = u.getPath();
+            if (path == null || path.length() == 0) {
+                return null;
+            }
+            String q = u.getRawQuery();
+            if (q != null && q.length() > 0) {
+                return path + "?" + q;
+            }
+            return path;
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     /**

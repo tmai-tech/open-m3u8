@@ -539,6 +539,100 @@ public class DemoPlaylistPipelineTest {
     }
 
     @Test
+    public void mapOriginUriSkipsProxyForLocalMediaFiles() {
+        String proxy = "http://127.0.0.1:8765/s/s1";
+        String pub = "http://127.0.0.1:8765";
+        assertEquals("/media/titles/x/v360_0.m4s",
+                DemoPlaylistPipeline.mapOriginUri(
+                        "http://127.0.0.1:8765/media/titles/x/v360_0.m4s", proxy, pub));
+        assertEquals("/media/titles/x/init360.m4s",
+                DemoPlaylistPipeline.mapOriginUri(
+                        "http://localhost:8765/media/titles/x/init360.m4s", proxy, pub));
+        assertEquals("/media/titles/x/subs_0.vtt",
+                DemoPlaylistPipeline.mapOriginUri(
+                        "http://127.0.0.1:8765/media/titles/x/subs_0.vtt", proxy, pub));
+        assertEquals("/media/ads/grok-clip/ad_0.m4s",
+                DemoPlaylistPipeline.mapOriginUri(
+                        "http://127.0.0.1:8765/media/ads/grok-clip/ad_0.m4s", proxy, pub));
+        String child = "http://127.0.0.1:8765/media/titles/x/v360.m3u8";
+        String mappedChild = DemoPlaylistPipeline.mapOriginUri(child, proxy, pub);
+        assertTrue(mappedChild.contains("/s/s1/proxy?url="));
+        assertTrue(mappedChild.contains(PlaylistRewriteUtil.urlEncode(child)));
+        String remote = "http://cdn.example/seg.ts";
+        String mappedRemote = DemoPlaylistPipeline.mapOriginUri(remote, proxy, pub);
+        assertTrue(mappedRemote.contains("/s/s1/proxy?url="));
+        assertTrue(mappedRemote.contains(PlaylistRewriteUtil.urlEncode(remote)));
+        assertEquals(proxy + "/assets/break-1.json",
+                DemoPlaylistPipeline.mapOriginUri(proxy + "/assets/break-1.json", proxy, pub));
+    }
+
+    @Test
+    public void localTitlePlaylistsStayProxiedAndSegmentsDoNot() throws Exception {
+        final String master = "#EXTM3U\n"
+                + "#EXT-X-STREAM-INF:BANDWIDTH=800000\n"
+                + "v360.m3u8\n";
+        final String media = "#EXTM3U\n#EXT-X-VERSION:6\n#EXT-X-TARGETDURATION:4\n"
+                + "#EXT-X-MAP:URI=\"init360.m4s\"\n"
+                + "#EXTINF:4,\nv360_0.m4s\n"
+                + "#EXTINF:4,\nv360_1.m4s\n"
+                + "#EXT-X-ENDLIST\n";
+        DemoPlaylistPipeline pipeline = new DemoPlaylistPipeline(url -> {
+            String body = url.endsWith("master.m3u8") ? master : media;
+            return new DemoHttp.FetchResult(200, "application/vnd.apple.mpegurl",
+                    body.getBytes(StandardCharsets.UTF_8));
+        });
+        DemoSession session = DemoSession.fromJson("s-local",
+                "{\"strategy\":\"ssai\","
+                        + "\"contentUrl\":\"http://127.0.0.1:8765/media/titles/x/master.m3u8\"}");
+        String pub = "http://127.0.0.1:8765";
+
+        String masterOut = new String(pipeline.process(session,
+                "http://127.0.0.1:8765/media/titles/x/master.m3u8", pub).body,
+                StandardCharsets.UTF_8);
+        assertTrue(masterOut.contains("/s/s-local/proxy?url="));
+        assertTrue(masterOut.contains(PlaylistRewriteUtil.urlEncode(
+                "http://127.0.0.1:8765/media/titles/x/v360.m3u8")));
+        assertFalse(masterOut.contains("\n/media/titles/x/v360.m3u8"));
+
+        String mediaOut = new String(pipeline.process(session,
+                "http://127.0.0.1:8765/media/titles/x/v360.m3u8", pub).body,
+                StandardCharsets.UTF_8);
+        assertTrue(mediaOut.contains("/media/titles/x/v360_0.m4s"));
+        assertTrue(mediaOut.contains("/media/titles/x/init360.m4s"));
+        assertFalse(mediaOut.contains("/proxy?url="));
+        assertFalse(mediaOut.contains("#EXT-X-CUE-OUT"));
+    }
+
+    @Test
+    public void ssaiLocalContentKeepsCuesAndProxiesRemoteAdSegments() throws Exception {
+        final String media = "#EXTM3U\n#EXT-X-VERSION:6\n#EXT-X-TARGETDURATION:10\n"
+                + "#EXTINF:10,\nv360_0.m4s\n"
+                + "#EXTINF:10,\nv360_1.m4s\n"
+                + "#EXT-X-ENDLIST\n";
+        final String ad = "#EXTM3U\n#EXT-X-TARGETDURATION:5\n#EXTINF:5.0,\n"
+                + "http://ads.example/a0.ts\n#EXT-X-ENDLIST\n";
+        DemoPlaylistPipeline pipeline = new DemoPlaylistPipeline(url -> {
+            String body = url.contains("ads.example") || url.contains("/ad.m3u8") ? ad : media;
+            return new DemoHttp.FetchResult(200, "application/vnd.apple.mpegurl",
+                    body.getBytes(StandardCharsets.UTF_8));
+        });
+        DemoSession session = DemoSession.fromJson("s-mix",
+                "{\"strategy\":\"ssai\",\"snapToSegment\":false,"
+                        + "\"contentUrl\":\"http://127.0.0.1:8765/media/titles/x/v360.m3u8\","
+                        + "\"adUrl\":\"http://ads.example/ad.m3u8\","
+                        + "\"breaks\":[{\"offsetSec\":10,\"durationSec\":5}]}");
+        String text = new String(pipeline.process(session,
+                "http://127.0.0.1:8765/media/titles/x/v360.m3u8",
+                "http://127.0.0.1:8765").body, StandardCharsets.UTF_8);
+        assertTrue(text.contains("#EXT-X-CUE-OUT"));
+        assertTrue(text.contains("/media/titles/x/v360_0.m4s"));
+        assertTrue(text.contains("/media/titles/x/v360_1.m4s"));
+        assertTrue(text.contains("/s/s-mix/proxy?url="));
+        assertTrue(text.contains(PlaylistRewriteUtil.urlEncode("http://ads.example/a0.ts")));
+        assertFalse(text.contains("http://ads.example/a0.ts\n"));
+    }
+
+    @Test
     public void pickClosestVariantPrefersNearestResolution() {
         List<PlaylistData> variants = Arrays.asList(
                 variant("a360.m3u8", 640, 360, 400000),
