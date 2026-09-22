@@ -182,8 +182,9 @@ export async function apply(andPlay) {
       const dashUrl = item && item.dashUrl;
       if (!dashUrl) throw new Error("DASH is not packed for this title");
       const hasBreaks = $("breakList") && $("breakList").querySelector(".break-card");
-      const ssai = state.strategy === "ssai" && adsAllowed() && hasBreaks;
-      if (!ssai) {
+      const sessionAds = (state.strategy === "ssai" || state.strategy === "sgai")
+        && adsAllowed() && hasBreaks;
+      if (!sessionAds) {
         state.lastSession = null;
         showSessionId(null);
         $("manifestUrl").value = dashUrl;
@@ -203,7 +204,7 @@ export async function apply(andPlay) {
         return;
       }
     }
-    if (state.strategy === "sgai" && $("playPath").value === "direct") {
+    if (state.strategy === "sgai" && protocolForItem(item) !== "dash" && $("playPath").value === "direct") {
       const url = $("contentUrl").value.trim();
       if (!url) throw new Error("Content URL is required");
       $("manifestUrl").value = url;

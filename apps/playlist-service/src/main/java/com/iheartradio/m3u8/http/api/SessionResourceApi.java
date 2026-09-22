@@ -73,6 +73,10 @@ public final class SessionResourceApi implements HttpHandler {
             handleProxy(ex, session);
             return;
         }
+        if (action.startsWith("alt/")) {
+            handleAlt(ex, session, action.substring("alt/".length()));
+            return;
+        }
         if (action.startsWith("text/")) {
             handleText(ex, session, action.substring("text/".length()));
             return;
@@ -83,6 +87,20 @@ public final class SessionResourceApi implements HttpHandler {
         }
         DemoHttp.send(ex, 404, "application/json; charset=utf-8",
                 "{\"error\":\"unknown session path; use manifest, proxy, or assets/{breakId}.json\"}");
+    }
+
+    private void handleAlt(HttpExchange ex, DemoSession session, String file) throws IOException {
+        int q = file.indexOf('?');
+        if (q >= 0) {
+            file = file.substring(0, q);
+        }
+        String body = session.dashAlt(file);
+        if (body == null) {
+            DemoHttp.send(ex, 404, "application/json; charset=utf-8",
+                    "{\"error\":\"alternate MPD not found\"}");
+            return;
+        }
+        DemoHttp.send(ex, 200, "application/dash+xml; charset=utf-8", body);
     }
 
     private void handleText(HttpExchange ex, DemoSession session, String file) throws IOException {

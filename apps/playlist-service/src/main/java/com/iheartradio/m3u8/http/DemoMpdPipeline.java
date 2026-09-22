@@ -2,6 +2,7 @@ package com.iheartradio.m3u8.http;
 
 import com.iheartradio.dash.MpdIo;
 import com.iheartradio.m3u8.Encoding;
+import com.iheartradio.m3u8.ads.MpdSgaiUtil;
 import com.iheartradio.m3u8.ads.MpdSsaiUtil;
 import com.iheartradio.m3u8.ads.PlaylistRewriteUtil;
 import com.iheartradio.m3u8.data.MapInfo;
@@ -60,6 +61,16 @@ public final class DemoMpdPipeline {
         String contentDir = directoryPath(mpdUrl);
         mpd = withPeriodBase(mpd, contentDir);
 
+        if (session != null && session.strategy == DemoSession.Strategy.SGAI) {
+            String written = new String(io.writeBytes(mpd), StandardCharsets.UTF_8);
+            java.util.Map<String, String> alts = new java.util.LinkedHashMap<String, String>();
+            List<MpdSgaiUtil.Event> events = sgaiEvents(session, alts);
+            session.setDashAlt(alts);
+            if (!events.isEmpty()) {
+                written = MpdSgaiUtil.inject(written, events);
+            }
+            return new Result(written.getBytes(StandardCharsets.UTF_8));
+        }
         if (session != null && session.strategy == DemoSession.Strategy.SSAI) {
             List<MpdSsaiUtil.AdBreak> ads = loadAdBreaks(session, publicBase);
             if (!ads.isEmpty()) {
@@ -71,6 +82,52 @@ public final class DemoMpdPipeline {
             }
         }
         return new Result(io.writeBytes(mpd));
+    }
+
+    List<MpdSgaiUtil.Event> sgaiEvents(DemoSession session, java.util.Map<String, String> alts) {
+        List<MpdSgaiUtil.Event> events = new ArrayList<MpdSgaiUtil.Event>();
+        if (session.breaks.isEmpty()) {
+            return events;
+        }
+        int i = 0;
+        for (DemoSession.Break br : session.breaks) {
+            i++;
+            String bid = br.id != null && br.id.length() > 0 ? br.id : ("ad-" + i);
+            List<Period> periods = new ArrayList<Period>();
+            float sum = 0f;
+            int j = 0;
+            for (DemoSession.Ad creative : session.liveAds(br)) {
+                j++;
+                if (session.isSkippedAd(creative.assetUri)) {
+                    continue;
+                }
+                Period period = loadAdPeriod(creative.assetUri);
+                if (period == null) {
+                    session.addWarning("DASH SGAI skipped ad with no MPD/CMAF: " + creative.assetUri);
+                    continue;
+                }
+                String pid = br.ads.size() > 1 ? (bid + "-" + j) : bid;
+                float dur = creative.durationSec > 0f ? creative.durationSec
+                        : (period.getDuration() != null ? period.getDuration().toMillis() / 1000f : 0f);
+                if (period.getDuration() == null && dur > 0f) {
+                    period = period.buildUpon().withDuration(Duration.ofMillis(Math.round(dur * 1000f))).build();
+                }
+                periods.add(period.buildUpon().withId(pid).build());
+                sum += dur;
+            }
+            if (periods.isEmpty()) {
+                continue;
+            }
+            try {
+                alts.put(bid, MpdSgaiUtil.altMpdString(periods));
+            } catch (Exception e) {
+                session.addWarning("DASH SGAI alt MPD failed: " + e.getMessage());
+                continue;
+            }
+            events.add(new MpdSgaiUtil.Event(bid, br.offsetSec, sum,
+                    "/s/" + session.id + "/alt/" + bid + ".mpd"));
+        }
+        return events;
     }
 
     String fetchText(String url) {
