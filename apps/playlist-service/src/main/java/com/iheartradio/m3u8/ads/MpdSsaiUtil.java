@@ -1,6 +1,7 @@
 package com.iheartradio.m3u8.ads;
 
 import io.lindstrom.mpd.data.AdaptationSet;
+import io.lindstrom.mpd.data.BaseURL;
 import io.lindstrom.mpd.data.MPD;
 import io.lindstrom.mpd.data.Period;
 import io.lindstrom.mpd.data.Representation;
@@ -10,7 +11,9 @@ import io.lindstrom.mpd.data.SegmentTemplate;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * DASH SSAI: split the content Period and insert one Period per ad creative.
@@ -36,20 +39,40 @@ public final class MpdSsaiUtil {
         }
     }
 
+    /** Sidecar WebVTT bodies keyed by file name ({@code c0.vtt}). */
+    public static final class Stitched {
+        public final MPD mpd;
+        public final Map<String, String> text;
+
+        Stitched(MPD mpd, Map<String, String> text) {
+            this.mpd = mpd;
+            this.text = text;
+        }
+    }
+
     public static MPD stitch(MPD content, List<AdBreak> breaks) {
+        return stitch(content, breaks, null, null).mpd;
+    }
+
+    /**
+     * @param vtt full-title {@code subs-dash.vtt}, or null to omit text
+     * @param textHrefPrefix path prefix such as {@code /s/{id}/text/}; each slice is {@code c0.vtt}
+     */
+    public static Stitched stitch(MPD content, List<AdBreak> breaks, String vtt, String textHrefPrefix) {
+        Map<String, String> text = new LinkedHashMap<String, String>();
         if (content == null) {
             throw new IllegalArgumentException("content MPD is null");
         }
         if (breaks == null || breaks.isEmpty()) {
-            return content;
+            return new Stitched(content, text);
         }
         if (content.getPeriods() == null || content.getPeriods().isEmpty()) {
-            return content;
+            return new Stitched(content, text);
         }
         Period src = content.getPeriods().get(0);
         Timeline tl = Timeline.from(src);
         if (tl.flats.isEmpty()) {
-            return content;
+            return new Stitched(content, text);
         }
 
         List<Resolved> resolved = new ArrayList<Resolved>();
@@ -63,6 +86,7 @@ public final class MpdSsaiUtil {
             return c != 0 ? c : Integer.compare(a.order, b.order);
         });
 
+        AdaptationSet textSet = findText(src);
         List<Period> periods = new ArrayList<Period>();
         int from = 0;
         int cSeq = 0;
@@ -70,7 +94,8 @@ public final class MpdSsaiUtil {
         while (r < resolved.size()) {
             int idx = resolved.get(r).index;
             if (from < idx) {
-                periods.add(tl.sliceContent(src, from, idx, "c" + cSeq++));
+                String id = "c" + cSeq++;
+                periods.add(tl.sliceContent(src, from, idx, id, vtt, textHrefPrefix, textSet, text));
                 from = idx;
             }
             while (r < resolved.size() && resolved.get(r).index == idx) {
@@ -79,10 +104,11 @@ public final class MpdSsaiUtil {
             }
         }
         if (from < tl.flats.size()) {
-            periods.add(tl.sliceContent(src, from, tl.flats.size(), "c" + cSeq));
+            String id = "c" + cSeq;
+            periods.add(tl.sliceContent(src, from, tl.flats.size(), id, vtt, textHrefPrefix, textSet, text));
         }
         if (periods.isEmpty()) {
-            return content;
+            return new Stitched(content, text);
         }
 
         Duration total = Duration.ZERO;
@@ -94,10 +120,10 @@ public final class MpdSsaiUtil {
             start = start.plus(d);
             total = total.plus(d);
         }
-        return content.buildUpon()
+        return new Stitched(content.buildUpon()
                 .withPeriods(timed)
                 .withMediaPresentationDuration(total)
-                .build();
+                .build(), text);
     }
 
     static Period prepareAdPeriod(AdBreak br) {
@@ -202,7 +228,9 @@ public final class MpdSsaiUtil {
             return ticks * 1000L / timescale;
         }
 
-        Period sliceContent(Period src, int from, int to, String id) {
+        Period sliceContent(Period src, int from, int to, String id,
+                             String vtt, String textHrefPrefix, AdaptationSet textSet,
+                             Map<String, String> textOut) {
             List<AdaptationSet> sets = new ArrayList<AdaptationSet>();
             if (src.getAdaptationSets() != null) {
                 for (AdaptationSet as : src.getAdaptationSets()) {
@@ -217,6 +245,14 @@ public final class MpdSsaiUtil {
                     }
                     sets.add(as.buildUpon().withRepresentations(reps).build());
                 }
+            }
+            if (vtt != null && vtt.length() > 0 && textHrefPrefix != null && textSet != null) {
+                long startMs = flats.get(from).t * 1000L / timescale;
+                long endMs = (flats.get(to - 1).t + flats.get(to - 1).d) * 1000L / timescale;
+                String file = id + ".vtt";
+                textOut.put(file, sliceVtt(vtt, startMs, endMs));
+                String href = textHrefPrefix.endsWith("/") ? textHrefPrefix + file : textHrefPrefix + "/" + file;
+                sets.add(textSlice(textSet, href));
             }
             long ticks = 0L;
             for (int i = from; i < to; i++) {
@@ -237,16 +273,125 @@ public final class MpdSsaiUtil {
             }
             long start = (st.getStartNumber() != null ? st.getStartNumber() : startNumber) + from;
             List<Segment> sliced = compress(flats.subList(from, to));
-            // T and PTO use the CMAF movie time of the first included segment
-            // (v720_3 tfdt=12s). EPT=(T-PTO)/timescale is then 0 at Period@start.
             long pto = flats.get(from).t;
-            SegmentTemplate next = st.buildUpon()
+            SegmentTemplate.Builder tb = st.buildUpon()
                     .withStartNumber(start)
-                    .withSegmentTimeline(sliced)
-                    .withPresentationTimeOffset(pto)
-                    .build();
-            return r.buildUpon().withSegmentTemplate(next).build();
+                    .withSegmentTimeline(sliced);
+            if (pto != 0L) {
+                tb.withPresentationTimeOffset(pto);
+            }
+            return r.buildUpon().withSegmentTemplate(tb.build()).build();
         }
+    }
+
+    static AdaptationSet findText(Period period) {
+        if (period.getAdaptationSets() == null) {
+            return null;
+        }
+        for (AdaptationSet as : period.getAdaptationSets()) {
+            if ("text".equals(as.getContentType())) {
+                return as;
+            }
+        }
+        return null;
+    }
+
+    static AdaptationSet textSlice(AdaptationSet src, String href) {
+        Representation rep = Representation.builder()
+                .withId("subs")
+                .withBandwidth(256L)
+                .withBaseURLs(Collections.singletonList(BaseURL.builder().withValue(href).build()))
+                .build();
+        return src.buildUpon()
+                .withRepresentations(Collections.singletonList(rep))
+                .build();
+    }
+
+    /** Cues overlapping [startMs, endMs), shifted so the slice starts at 0. */
+    static String sliceVtt(String vtt, long startMs, long endMs) {
+        StringBuilder out = new StringBuilder("WEBVTT\n\n");
+        if (vtt == null || startMs >= endMs) {
+            return out.toString();
+        }
+        String[] lines = vtt.replace("\r\n", "\n").replace('\r', '\n').split("\n", -1);
+        for (int i = 0; i < lines.length; i++) {
+            int arrow = lines[i].indexOf("-->");
+            if (arrow < 0) {
+                continue;
+            }
+            String[] ends = lines[i].substring(arrow + 3).trim().split("\\s+");
+            if (ends.length == 0) {
+                continue;
+            }
+            long cueStart;
+            long cueEnd;
+            try {
+                cueStart = parseVttTime(lines[i].substring(0, arrow).trim());
+                cueEnd = parseVttTime(ends[0]);
+            } catch (RuntimeException e) {
+                continue;
+            }
+            if (cueEnd <= startMs || cueStart >= endMs) {
+                continue;
+            }
+            long a = Math.max(cueStart, startMs) - startMs;
+            long b = Math.min(cueEnd, endMs) - startMs;
+            StringBuilder payload = new StringBuilder();
+            for (int j = i + 1; j < lines.length && lines[j].length() > 0; j++) {
+                if (payload.length() > 0) {
+                    payload.append('\n');
+                }
+                payload.append(lines[j]);
+            }
+            out.append(fmtVtt(a)).append(" --> ").append(fmtVtt(b)).append('\n');
+            if (payload.length() > 0) {
+                out.append(payload).append('\n');
+            }
+            out.append('\n');
+        }
+        return out.toString();
+    }
+
+    static long parseVttTime(String raw) {
+        String s = raw.trim();
+        int dot = s.indexOf('.');
+        int ms = 0;
+        if (dot >= 0) {
+            String frac = s.substring(dot + 1);
+            s = s.substring(0, dot);
+            while (frac.length() < 3) {
+                frac = frac + "0";
+            }
+            ms = Integer.parseInt(frac.substring(0, 3));
+        }
+        String[] p = s.split(":");
+        long h = 0;
+        long m;
+        long sec;
+        if (p.length == 3) {
+            h = Long.parseLong(p[0]);
+            m = Long.parseLong(p[1]);
+            sec = Long.parseLong(p[2]);
+        } else if (p.length == 2) {
+            m = Long.parseLong(p[0]);
+            sec = Long.parseLong(p[1]);
+        } else {
+            throw new IllegalArgumentException(raw);
+        }
+        return ((h * 60 + m) * 60 + sec) * 1000 + ms;
+    }
+
+    static String fmtVtt(long ms) {
+        if (ms < 0) {
+            ms = 0;
+        }
+        long h = ms / 3600000;
+        ms %= 3600000;
+        long m = ms / 60000;
+        ms %= 60000;
+        long sec = ms / 1000;
+        long frac = ms % 1000;
+        return String.format("%02d:%02d:%02d.%03d", h, m, sec, frac);
     }
 
     static Representation firstVideoRep(Period period) {

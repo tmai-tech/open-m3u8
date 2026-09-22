@@ -115,6 +115,8 @@ public final class DemoSession {
             new java.util.concurrent.ConcurrentHashMap<String, byte[]>();
     private final java.util.List<String> warnings =
             new java.util.concurrent.CopyOnWriteArrayList<String>();
+    private final java.util.Map<String, String> dashText =
+            new java.util.concurrent.ConcurrentHashMap<String, String>();
     private final java.util.Set<String> skippedAds =
             java.util.concurrent.ConcurrentHashMap.newKeySet();
 
@@ -170,6 +172,25 @@ public final class DemoSession {
 
     public Playlist getCachedContentMaster() {
         return cachedContentMaster;
+    }
+
+    public void setDashText(java.util.Map<String, String> text) {
+        dashText.clear();
+        if (text != null) {
+            dashText.putAll(text);
+        }
+    }
+
+    public String dashText(String file) {
+        if (file == null) {
+            return null;
+        }
+        String name = file;
+        int slash = name.lastIndexOf('/');
+        if (slash >= 0) {
+            name = name.substring(slash + 1);
+        }
+        return dashText.get(name);
     }
 
     public void addWarning(String msg) {

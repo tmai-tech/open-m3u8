@@ -73,12 +73,29 @@ public final class SessionResourceApi implements HttpHandler {
             handleProxy(ex, session);
             return;
         }
+        if (action.startsWith("text/")) {
+            handleText(ex, session, action.substring("text/".length()));
+            return;
+        }
         if (action.startsWith("assets/")) {
             handleAssets(ex, session, action.substring("assets/".length()));
             return;
         }
         DemoHttp.send(ex, 404, "application/json; charset=utf-8",
                 "{\"error\":\"unknown session path; use manifest, proxy, or assets/{breakId}.json\"}");
+    }
+
+    private void handleText(HttpExchange ex, DemoSession session, String file) throws IOException {
+        int q = file.indexOf('?');
+        if (q >= 0) {
+            file = file.substring(0, q);
+        }
+        String body = session.dashText(file);
+        if (body == null) {
+            DemoHttp.send(ex, 404, "text/plain; charset=utf-8", "subtitle slice not found");
+            return;
+        }
+        DemoHttp.send(ex, 200, "text/vtt; charset=utf-8", body);
     }
 
     private void handleAssets(HttpExchange ex, DemoSession session, String rest) throws IOException {

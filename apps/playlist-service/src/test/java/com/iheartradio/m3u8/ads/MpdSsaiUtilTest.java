@@ -10,6 +10,7 @@ import java.util.List;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 public class MpdSsaiUtilTest {
@@ -87,6 +88,8 @@ public class MpdSsaiUtilTest {
         assertTrue(xml.contains("startNumber=\"0\""));
         assertTrue(xml.contains("startNumber=\"2\""));
         assertFalse(xml.contains("text/vtt"));
+        assertNull(out.getPeriods().get(0).getAdaptationSets().get(0)
+                .getRepresentations().get(0).getSegmentTemplate().getPresentationTimeOffset());
         Long pto = out.getPeriods().get(2).getAdaptationSets().get(0)
                 .getRepresentations().get(0).getSegmentTemplate().getPresentationTimeOffset();
         assertEquals(Long.valueOf(8000L), pto);
@@ -116,5 +119,50 @@ public class MpdSsaiUtilTest {
         assertEquals(Long.valueOf(12_000L), pto);
         assertEquals(Long.valueOf(12_000L), out.getPeriods().get(3).getAdaptationSets().get(0)
                 .getRepresentations().get(0).getSegmentTemplate().getSegmentTimeline().get(0).getT());
+    }
+
+    @Test
+    public void contentSubtitlesAreSlicedPerPeriodAndAdsHaveNone() throws Exception {
+        String withText = CONTENT.replace("</AdaptationSet>\n  </Period>",
+                "</AdaptationSet>\n"
+                        + "    <AdaptationSet id=\"1\" contentType=\"text\" mimeType=\"text/vtt\" lang=\"en\">\n"
+                        + "      <Representation id=\"subs\" bandwidth=\"256\"><BaseURL>subs-dash.vtt</BaseURL></Representation>\n"
+                        + "    </AdaptationSet>\n  </Period>");
+        String vtt = "WEBVTT\n\n"
+                + "00:00:00.000 --> 00:00:03.950\nDummy 1\n\n"
+                + "00:00:08.000 --> 00:00:11.950\nDummy 3\n\n"
+                + "00:00:12.000 --> 00:00:15.950\nDummy 4\n\n";
+        MpdIo io = new MpdIo();
+        MPD content = io.parse(withText);
+        Period ad = io.parse(AD).getPeriods().get(0);
+        List<MpdSsaiUtil.AdBreak> breaks = new ArrayList<MpdSsaiUtil.AdBreak>();
+        breaks.add(new MpdSsaiUtil.AdBreak("ad-1", 8f, ad));
+        MpdSsaiUtil.Stitched out = MpdSsaiUtil.stitch(content, breaks, vtt, "/s/sid/text/");
+        String c0 = out.text.get("c0.vtt");
+        String c1 = out.text.get("c1.vtt");
+        assertTrue(c0.contains("00:00:00.000 --> 00:00:03.950"));
+        assertTrue(c0.contains("Dummy 1"));
+        assertFalse(c0.contains("Dummy 4"));
+        assertTrue(c1.contains("00:00:04.000 --> 00:00:07.950"));
+        assertTrue(c1.contains("Dummy 4"));
+        assertFalse(c1.contains("Dummy 1"));
+        String xml = io.write(out.mpd);
+        assertTrue(xml.contains("/s/sid/text/c0.vtt"));
+        assertTrue(xml.contains("/s/sid/text/c1.vtt"));
+        assertEquals(2, count(xml, "text/vtt"));
+        int adAt = xml.indexOf("id=\"ad-1\"");
+        int c1At = xml.indexOf("id=\"c1\"");
+        assertTrue(adAt > 0 && c1At > adAt);
+        assertFalse(xml.substring(adAt, c1At).contains("text/vtt"));
+    }
+
+    private static int count(String xml, String token) {
+        int n = 0;
+        int i = 0;
+        while ((i = xml.indexOf(token, i)) >= 0) {
+            n++;
+            i += token.length();
+        }
+        return n;
     }
 }

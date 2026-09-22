@@ -63,10 +63,26 @@ public final class DemoMpdPipeline {
         if (session != null && session.strategy == DemoSession.Strategy.SSAI) {
             List<MpdSsaiUtil.AdBreak> ads = loadAdBreaks(session, publicBase);
             if (!ads.isEmpty()) {
-                mpd = MpdSsaiUtil.stitch(mpd, ads);
+                String vtt = fetchText(siblingFile(mpdUrl, "subs-dash.vtt"));
+                String prefix = "/s/" + session.id + "/text/";
+                MpdSsaiUtil.Stitched stitched = MpdSsaiUtil.stitch(mpd, ads, vtt, prefix);
+                session.setDashText(stitched.text);
+                mpd = stitched.mpd;
             }
         }
         return new Result(io.writeBytes(mpd));
+    }
+
+    String fetchText(String url) {
+        try {
+            DemoHttp.FetchResult r = fetch.fetch(url);
+            if (r.status >= 400 || r.body == null || r.body.length == 0) {
+                return null;
+            }
+            return new String(r.body, StandardCharsets.UTF_8);
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     List<MpdSsaiUtil.AdBreak> loadAdBreaks(DemoSession session, String publicBase) {
@@ -245,6 +261,22 @@ public final class DemoMpdPipeline {
         return period.buildUpon()
                 .withBaseURLs(Collections.singletonList(BaseURL.builder().withValue(dir).build()))
                 .build();
+    }
+
+    static String siblingFile(String url, String name) {
+        try {
+            URI u = URI.create(url);
+            String path = u.getPath();
+            if (path == null) {
+                path = "/";
+            }
+            int slash = path.lastIndexOf('/');
+            String dir = slash >= 0 ? path.substring(0, slash + 1) : "/";
+            return new URI(u.getScheme(), u.getUserInfo(), u.getHost(), u.getPort(),
+                    dir + name, null, null).toString();
+        } catch (Exception e) {
+            return url;
+        }
     }
 
     static String siblingMpd(String url) {
