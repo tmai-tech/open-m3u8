@@ -65,7 +65,7 @@ export function bindPublicUrl() {
       setStatus("No HTTPS URL yet. Generate a session while cloudflared is running, or open this UI via the printed trycloudflare.com link.", "err");
       return;
     }
-    try { await navigator.clipboard.writeText(url); setStatus("Copied HTTPS URL for hlsjs.video-dev.org.", "ok"); }
+    try { await navigator.clipboard.writeText(url); setStatus("Copied HTTPS URL.", "ok"); }
     catch (_) { $("publicManifestUrl").select(); document.execCommand("copy"); }
   });
   bind("btnCopy", "click", async () => {
