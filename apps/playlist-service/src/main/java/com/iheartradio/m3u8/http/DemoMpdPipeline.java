@@ -70,7 +70,13 @@ public final class DemoMpdPipeline {
         }
         String xml = new String(remote.body == null ? new byte[0] : remote.body, StandardCharsets.UTF_8);
         MPD mpd = io.parse(xml);
-        mpd = withPeriodBase(mpd, periodBase(mpdUrl));
+        mpd = withPeriodBase(mpd, directoryPath(mpdUrl));
+        String hostBase = mpdHostBase(mpdUrl);
+        if (hostBase != null) {
+            mpd = mpd.buildUpon()
+                    .withBaseURLs(Collections.singletonList(BaseURL.builder().withValue(hostBase).build()))
+                    .build();
+        }
 
         if (session != null && MpdLiveCadence.uses(session, mpd)) {
             return liveReplace(session, mpd);
@@ -388,23 +394,26 @@ public final class DemoMpdPipeline {
     }
 
     /**
-     * Remote origins need an absolute base so segments stay on that host.
-     * A path-only base is resolved against the session manifest host
-     * (localhost or the tunnel). Local {@code /media} stays path-only so a
-     * tunnel page still loads its own files.
+     * Host only, for an MPD-level BaseURL. The period keeps the path
+     * ({@code /livesim2/.../}). A leading slash on that path replaces the
+     * host base's path, then the segment name is appended. Local
+     * {@code /media} stays path-only so a tunnel page still loads its own files.
      */
-    static String periodBase(String url) {
+    static String mpdHostBase(String url) {
         try {
             URI u = URI.create(url);
             String path = directoryPath(url);
             String host = u.getHost();
             if (host == null || isLoopback(host) || path.startsWith("/media/")) {
-                return path;
+                return null;
             }
             String scheme = u.getScheme() == null ? "https" : u.getScheme();
-            return new URI(scheme, u.getUserInfo(), host, u.getPort(), path, null, null).toString();
+            if (u.getPort() > 0) {
+                return scheme + "://" + host + ":" + u.getPort();
+            }
+            return scheme + "://" + host;
         } catch (Exception e) {
-            return directoryPath(url);
+            return null;
         }
     }
 

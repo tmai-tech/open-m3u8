@@ -45,8 +45,10 @@ public class DemoMpdLiveCadenceTest {
         assertTrue(first, first.contains("urn:mpeg:dash:event:alternativeMPD:replace:2025"));
         assertFalse(first, first.contains("returnOffset"));
         assertFalse(first, first.contains("alternativeMPD:insert"));
-        assertTrue(first, first.contains("<BaseURL>http://cdn/</BaseURL>"));
-        assertFalse(first, first.contains("<BaseURL>/live"));
+        assertTrue(first, first.contains("<BaseURL>http://cdn</BaseURL>"));
+        assertTrue(first, first.contains(
+                "<BaseURL>/livesim2/periods_60/continuous_1/testpic_2s/</BaseURL>"));
+        assertTrue(first.indexOf("<BaseURL>http://cdn</BaseURL>") < first.indexOf("<Period"));
         assertTrue(first, first.contains("startNumber=\"30\""));
         assertTrue(first, first.contains("presentationTimeOffset=\"60\""));
         assertTrue(first, first.contains("startNumber=\"60\""));
@@ -100,7 +102,7 @@ public class DemoMpdLiveCadenceTest {
 
     private static DemoSession session() {
         return DemoSession.fromJson("sid",
-                "{\"strategy\":\"sgai\",\"contentUrl\":\"http://cdn/live.mpd\","
+                "{\"strategy\":\"sgai\",\"contentUrl\":\"http://cdn/livesim2/periods_60/continuous_1/testpic_2s/Manifest.mpd\","
                         + "\"adUrl\":\"http://ads/grok/master.m3u8\","
                         + "\"liveCadenceSec\":60,\"livePlayoutLimit\":15}");
     }
