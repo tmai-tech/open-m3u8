@@ -420,7 +420,7 @@ body.live-mode .live-play-bar:not([hidden]) { display: flex; }
   background: var(--accent); color: #fff; border-color: var(--accent);
 }
 .rail { margin: 28px 4vw 0; }
-#libraryRail, #liveRail { margin-top: 32px; }
+#libraryRail, #liveRail, #dashLiveRail { margin-top: 32px; }
 .rail-head {
   display: flex; align-items: center; gap: 10px; margin: 0 0 12px;
 }

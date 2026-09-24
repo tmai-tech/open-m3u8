@@ -11,6 +11,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 import urllib.request
 from pathlib import Path
 
@@ -29,6 +30,12 @@ FEATURED = [
     ("fdr", "https://cdn.jwplayer.com/manifests/pZxWPRg4.m3u8"),
     ("blender", "https://ireplay.tv/test/blender.m3u8"),
     ("unifiedLive", "https://demo.unified-streaming.com/k8s/low-latency/stable/channel1/channel1.isml/.m3u8"),
+]
+
+# DASH live cards. Lowest video Representation, one segment still inside the live window.
+DASH_LIVE = [
+    ("dashTimeline", "https://livesim2.dashif.org/livesim2/segtimeline_1/patch_60/testpic_2s/Manifest.mpd"),
+    ("dashPeriods", "https://livesim2.dashif.org/livesim2/periods_60/continuous_1/testpic_2s/Manifest.mpd"),
 ]
 
 
@@ -233,6 +240,98 @@ def grab(ffmpeg: str, url: str, dest: Path) -> bool:
         shutil.rmtree(work, ignore_errors=True)
 
 
+def xml_attr(tag: str, key: str) -> str | None:
+    m = re.search(r'\b' + re.escape(key) + r'="([^"]*)"', tag)
+    return m.group(1) if m else None
+
+
+def lowest_video(mpd: str) -> str:
+    """Inner XML of the lowest-bandwidth video AdaptationSet."""
+    best = None
+    for m in re.finditer(r"<AdaptationSet\b([^>]*)>(.*?)</AdaptationSet>", mpd, re.S):
+        head, body = m.group(1), m.group(2)
+        ctype = (xml_attr(head, "contentType") or "").lower()
+        mime = (xml_attr(head, "mimeType") or "").lower()
+        if ctype != "video" and not mime.startswith("video/"):
+            continue
+        bw = 10**12
+        for rep in re.finditer(r"<Representation\b([^>]*)/?>", body):
+            raw = xml_attr(rep.group(1), "bandwidth")
+            if raw and raw.isdigit():
+                bw = min(bw, int(raw))
+        # <= keeps the newest Period when every video rendition shares a bandwidth.
+        if best is None or bw <= best[0]:
+            best = (bw, body)
+    if not best:
+        raise RuntimeError("no video adaptation set")
+    return best[1]
+
+
+def dash_segment(mpd: str, mpd_url: str) -> tuple[str, str]:
+    """Init URL plus one media segment a few steps behind the live edge."""
+    body = lowest_video(mpd)
+    st = re.search(r"<SegmentTemplate\b([^>]*)(?:/>|>(.*?)</SegmentTemplate>)", body, re.S)
+    if not st:
+        raise RuntimeError("no SegmentTemplate")
+    attrs, inner = st.group(1), st.group(2) or ""
+    rep = re.search(r'<Representation\b[^>]*\bid="([^"]+)"', body)
+    rid = rep.group(1) if rep else "video"
+    media = xml_attr(attrs, "media") or "$RepresentationID$/$Number$.m4s"
+    init = xml_attr(attrs, "initialization") or "$RepresentationID$/init.mp4"
+
+    def fill(tmpl: str, number: int | None, t: int | None) -> str:
+        out = tmpl.replace("$RepresentationID$", rid)
+        if number is not None:
+            out = out.replace("$Number$", str(number))
+        if t is not None:
+            out = out.replace("$Time$", str(t))
+        return abs_url(mpd_url, out)
+
+    timeline = re.search(r'<S\b[^>]*\bt="(\d+)"[^>]*\bd="(\d+)"(?:[^>]*\br="(\d+)")?', inner)
+    if timeline:
+        t0 = int(timeline.group(1))
+        d = int(timeline.group(2))
+        r = int(timeline.group(3) or "0")
+        # Two segments back from the end so the newest, still-open one is skipped.
+        idx = max(0, r - 2)
+        return fill(init, None, None), fill(media, None, t0 + d * idx)
+
+    duration = float(xml_attr(attrs, "duration") or "2")
+    start_number = int(xml_attr(attrs, "startNumber") or "1")
+    pto = float(xml_attr(attrs, "presentationTimeOffset") or "0")
+    timescale = float(xml_attr(attrs, "timescale") or "1")
+    now = time.time()
+    elapsed = max(0.0, now - (pto / timescale))
+    # A few segments behind the edge; the DVR window is about a minute.
+    index = max(0, int(elapsed / (duration / timescale)) - 3)
+    return fill(init, None, None), fill(media, start_number + index, None)
+
+
+def grab_dash(ffmpeg: str, url: str, dest: Path) -> bool:
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    work = dest.parent / (dest.stem + ".work")
+    if work.exists():
+        shutil.rmtree(work, ignore_errors=True)
+    work.mkdir()
+    try:
+        mpd = fetch_text(url)
+        init_url, seg_url = dash_segment(mpd, url)
+        clip = work / "clip.bin"
+        with clip.open("wb") as out:
+            out.write(fetch_bytes(init_url))
+            out.write(fetch_bytes(seg_url))
+        if not decode_local(ffmpeg, clip, dest):
+            print(f"  fail {dest.stem}: decode {seg_url}", flush=True)
+            return False
+        print(f"  ok   {dest.stem} ({dest.stat().st_size} bytes)", flush=True)
+        return True
+    except Exception as e:
+        print(f"  fail {dest.stem}: {e}", flush=True)
+        return False
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+
+
 def main() -> None:
     root = media_root()
     out = root / "posters"
@@ -250,6 +349,11 @@ def main() -> None:
         print("  ok   demo (copy of mux)", flush=True)
         ok += 1
     print(f"done {ok}/{len(FEATURED) + 1}", flush=True)
+    dash_ok = 0
+    for tid, url in DASH_LIVE:
+        if grab_dash(ffmpeg, url, out / f"{tid}.jpg"):
+            dash_ok += 1
+    print(f"dash live {dash_ok}/{len(DASH_LIVE)}", flush=True)
 
 
 if __name__ == "__main__":

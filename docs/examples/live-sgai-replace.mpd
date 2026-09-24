@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Hand-written. Snapshot of the livesim2 periods_60 stream at 15:01:26Z,
+  plus one live SGAI replacement. Periods, startNumber, and
+  presentationTimeOffset are the origin values, unchanged.
+
+  Edge at fetch: 26s into P29836261 (15:01:26Z).
+  Hold-back: 3 x 2s segments = 6s, so the break is at 15:01:20Z.
+  That is 20s into this period. EventStream timescale 1000, so presentationTime=20000.
+  Id live-1790175660 is the minute bucket (15:01:00Z) and stays frozen on later refreshes.
+  The event sits on P29836261, the period that contains 15:01:20Z, not on the older period.
+-->
+<MPD xmlns="urn:mpeg:dash:schema:mpd:2011"
+     profiles="urn:mpeg:dash:profile:isoff-live:2011,http://dashif.org/guidelines/dash-if-simple"
+     type="dynamic"
+     availabilityStartTime="1970-01-01T00:00:00Z"
+     publishTime="2026-09-23T15:01:00Z"
+     minimumUpdatePeriod="PT2S"
+     minBufferTime="PT2S"
+     timeShiftBufferDepth="PT1M"
+     maxSegmentDuration="PT2S">
+  <Period id="P29836260" start="PT497271H">
+    <AdaptationSet lang="en" contentType="audio" segmentAlignment="true" mimeType="audio/mp4" startWithSAP="1">
+      <SupplementalProperty schemeIdUri="urn:mpeg:dash:period-continuity:2015" value="1"/>
+      <Role schemeIdUri="urn:mpeg:dash:role:2011" value="main"/>
+      <SegmentTemplate media="A48/$Number$.m4s" initialization="A48/init.mp4"
+                       duration="2" startNumber="895087800" presentationTimeOffset="1790175600"/>
+      <Representation id="A48" bandwidth="48000" audioSamplingRate="48000" codecs="mp4a.40.2"/>
+    </AdaptationSet>
+    <AdaptationSet contentType="video" segmentAlignment="true" mimeType="video/mp4" startWithSAP="1">
+      <SupplementalProperty schemeIdUri="urn:mpeg:dash:period-continuity:2015" value="1"/>
+      <Role schemeIdUri="urn:mpeg:dash:role:2011" value="main"/>
+      <SegmentTemplate media="V300/$Number$.m4s" initialization="V300/init.mp4"
+                       duration="2" startNumber="895087800" presentationTimeOffset="1790175600"/>
+      <Representation id="V300" bandwidth="300000" width="640" height="360" codecs="avc1.64001e" frameRate="30"/>
+    </AdaptationSet>
+  </Period>
+  <Period id="P29836261" start="PT497271H1M">
+    <EventStream schemeIdUri="urn:mpeg:dash:event:alternativeMPD:replace:2025" timescale="1000">
+      <Event presentationTime="20000" duration="15000" id="live-1790175660">
+        <ReplacePresentation uri="/s/demo/alt/live-1790175660.mpd"
+                             maxDuration="15000"
+                             earliestResolutionTimeOffset="2000"/>
+      </Event>
+    </EventStream>
+    <AdaptationSet lang="en" contentType="audio" segmentAlignment="true" mimeType="audio/mp4" startWithSAP="1">
+      <SupplementalProperty schemeIdUri="urn:mpeg:dash:period-continuity:2015" value="1"/>
+      <Role schemeIdUri="urn:mpeg:dash:role:2011" value="main"/>
+      <SegmentTemplate media="A48/$Number$.m4s" initialization="A48/init.mp4"
+                       duration="2" startNumber="895087830" presentationTimeOffset="1790175660"/>
+      <Representation id="A48" bandwidth="48000" audioSamplingRate="48000" codecs="mp4a.40.2"/>
+    </AdaptationSet>
+    <AdaptationSet contentType="video" segmentAlignment="true" mimeType="video/mp4" startWithSAP="1">
+      <SupplementalProperty schemeIdUri="urn:mpeg:dash:period-continuity:2015" value="1"/>
+      <Role schemeIdUri="urn:mpeg:dash:role:2011" value="main"/>
+      <SegmentTemplate media="V300/$Number$.m4s" initialization="V300/init.mp4"
+                       duration="2" startNumber="895087830" presentationTimeOffset="1790175660"/>
+      <Representation id="V300" bandwidth="300000" width="640" height="360" codecs="avc1.64001e" frameRate="30"/>
+    </AdaptationSet>
+  </Period>
+  <UTCTiming schemeIdUri="urn:mpeg:dash:utc:http-xsdate:2014" value="https://time.akamai.com/?iso&amp;ms"/>
+</MPD>

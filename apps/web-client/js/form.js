@@ -1,5 +1,5 @@
 import { $, bind } from "./dom.js";
-import { adsAllowed, DEFAULT_AD, HINTS, LENGTH_HINTS, isLiveCadenceSession, itemHasDash, LIVE_CADENCE, protocolForItem, SAMPLES, state } from "./state.js";
+import { adsAllowed, DEFAULT_AD, HINTS, LENGTH_HINTS, isLiveCadenceSession, itemHasDash, LIVE_CADENCE, protocolForItem, SAMPLES, setProtocolPreference, state } from "./state.js";
 import { setStatus } from "./status.js";
 import { renderTimeline } from "./ad-markers.js";
 import { fillPublicRow } from "./public-url.js";
@@ -283,7 +283,23 @@ export function applyCatalogPreset(item) {
   if (!item) return;
   $("contentUrl").value = item.url;
   state.forceVod = !!item.asVod;
-  if (item.live) {
+  if (item.dashLive) {
+    if (savedBreaks == null) {
+      try { savedBreaks = readBreaksFromDom(); } catch (_) { savedBreaks = []; }
+    }
+    state.windowDuration = 0;
+    state.mediaDuration = 0;
+    setProtocolPreference("dash");
+    if ($("breakList")) $("breakList").innerHTML = "";
+    renderTimeline();
+    setLiveUi(true);
+    setStrategy("sgai", false);
+    const hint = $("liveCadenceHint");
+    if (hint) {
+      hint.textContent = "DASH live SGAI: 15s grok every 1 min. One replace event on the newest period, frozen for that minute.";
+    }
+    setStatus("DASH live — 15s grok every 1 min. Play.");
+  } else if (item.live) {
     if (!state.liveMode) {
       try { savedBreaks = readBreaksFromDom(); } catch (_) { savedBreaks = []; }
     }
@@ -299,6 +315,10 @@ export function applyCatalogPreset(item) {
       renderTimeline();
       if (item.live && !item.asVod) {
         setStrategy("sgai", false);
+        const hint = $("liveCadenceHint");
+        if (hint) {
+          hint.textContent = "Live SGAI: 15s grok every 1 min (START-DATE frozen per minute, hold-back 3× target duration).";
+        }
         setStatus("Live SGAI — 15s grok ad every 1 min. Play.");
       } else {
         setStatus("Live — ads are not available on this rail.");
@@ -317,7 +337,7 @@ export function applyCatalogPreset(item) {
         : (itemHasDash(item)
           ? "Library title — HLS. Switch protocol to DASH, or add a break."
           : "Library title — no house ad. Add a break if you want one."));
-    } else if (fromLive) {
+    } else if (fromLive || savedBreaks) {
       $("breakList").innerHTML = "";
       (savedBreaks || []).forEach((b) => {
         if (b.ads && b.ads.length) addBreakCard(b.offsetSec, b.ads);

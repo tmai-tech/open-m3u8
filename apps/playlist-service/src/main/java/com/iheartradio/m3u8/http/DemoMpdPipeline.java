@@ -23,6 +23,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.function.LongSupplier;
 
 /**
  * Fetch origin MPD → SSAI Period stitch → BaseURL rewrite. Same role as
@@ -40,14 +41,25 @@ public final class DemoMpdPipeline {
 
     private final DemoHttp.OriginFetch fetch;
     private final MpdIo io;
+    private final LongSupplier clock;
 
     public DemoMpdPipeline() {
-        this(url -> DemoHttp.fetchRemote(url, null), new MpdIo());
+        this(url -> DemoHttp.fetchRemote(url, null), new MpdIo(), null);
     }
 
     public DemoMpdPipeline(DemoHttp.OriginFetch fetch, MpdIo io) {
+        this(fetch, io, null);
+    }
+
+    public DemoMpdPipeline(DemoHttp.OriginFetch fetch, MpdIo io, LongSupplier clock) {
         this.fetch = fetch;
         this.io = io == null ? new MpdIo() : io;
+        this.clock = clock == null ? new LongSupplier() {
+            @Override
+            public long getAsLong() {
+                return System.currentTimeMillis();
+            }
+        } : clock;
     }
 
     public Result process(DemoSession session, String mpdUrl, String publicBase) throws Exception {
@@ -58,9 +70,11 @@ public final class DemoMpdPipeline {
         }
         String xml = new String(remote.body == null ? new byte[0] : remote.body, StandardCharsets.UTF_8);
         MPD mpd = io.parse(xml);
-        String contentDir = directoryPath(mpdUrl);
-        mpd = withPeriodBase(mpd, contentDir);
+        mpd = withPeriodBase(mpd, periodBase(mpdUrl));
 
+        if (session != null && MpdLiveCadence.uses(session, mpd)) {
+            return liveReplace(session, mpd);
+        }
         if (session != null && session.strategy == DemoSession.Strategy.SGAI) {
             String written = new String(io.writeBytes(mpd), StandardCharsets.UTF_8);
             java.util.Map<String, String> alts = new java.util.LinkedHashMap<String, String>();
@@ -82,6 +96,29 @@ public final class DemoMpdPipeline {
             }
         }
         return new Result(io.writeBytes(mpd));
+    }
+
+    private Result liveReplace(DemoSession session, MPD mpd) throws Exception {
+        String written = new String(io.writeBytes(mpd), StandardCharsets.UTF_8);
+        java.util.Map<String, String> alts = new java.util.LinkedHashMap<String, String>();
+        MpdLiveCadence.Place place = MpdLiveCadence.place(mpd, session, clock.getAsLong());
+        if (place != null && session.adUrl != null && session.adUrl.length() > 0) {
+            Period ad = loadAdPeriod(session.adUrl);
+            if (ad == null) {
+                session.addWarning("DASH live SGAI skipped ad with no MPD/CMAF: " + session.adUrl);
+            } else {
+                float dur = session.livePlayoutLimit > 0f ? session.livePlayoutLimit : 15f;
+                if (ad.getDuration() == null) {
+                    ad = ad.buildUpon().withDuration(Duration.ofMillis(Math.round(dur * 1000f))).build();
+                }
+                alts.put(place.breakId, MpdSgaiUtil.altMpdString(Collections.singletonList(ad)));
+                MpdSgaiUtil.Event ev = new MpdSgaiUtil.Event(place.breakId, place.offsetSec, dur,
+                        "/s/" + session.id + "/alt/" + place.breakId + ".mpd");
+                written = MpdSgaiUtil.injectReplace(written, place.periodId, ev, place.resolveMs);
+            }
+        }
+        session.setDashAlt(alts);
+        return new Result(written.getBytes(StandardCharsets.UTF_8));
     }
 
     List<MpdSgaiUtil.Event> sgaiEvents(DemoSession session, java.util.Map<String, String> alts) {
@@ -348,6 +385,33 @@ public final class DemoMpdPipeline {
         int slash = base.lastIndexOf('/');
         String dir = slash >= 0 ? base.substring(0, slash + 1) : "";
         return dir + "manifest.mpd";
+    }
+
+    /**
+     * Remote origins need an absolute base so segments stay on that host.
+     * A path-only base is resolved against the session manifest host
+     * (localhost or the tunnel). Local {@code /media} stays path-only so a
+     * tunnel page still loads its own files.
+     */
+    static String periodBase(String url) {
+        try {
+            URI u = URI.create(url);
+            String path = directoryPath(url);
+            String host = u.getHost();
+            if (host == null || isLoopback(host) || path.startsWith("/media/")) {
+                return path;
+            }
+            String scheme = u.getScheme() == null ? "https" : u.getScheme();
+            return new URI(scheme, u.getUserInfo(), host, u.getPort(), path, null, null).toString();
+        } catch (Exception e) {
+            return directoryPath(url);
+        }
+    }
+
+    static boolean isLoopback(String host) {
+        return "localhost".equalsIgnoreCase(host)
+                || "127.0.0.1".equals(host)
+                || "::1".equals(host);
     }
 
     static String directoryPath(String url) {

@@ -22,6 +22,8 @@ export const CATALOG = [
   { id: "fdr", title: "FDR", sub: "JW Player · 4s", kicker: "JW Player CDN", url: SAMPLES.fdr, poster: featuredPoster("fdr") },
   { id: "blender", title: "Blender 24/7", sub: "Ireplay · I-frame", kicker: "Live · Ireplay", url: SAMPLES.blender, live: true, poster: featuredPoster("blender") },
   { id: "unifiedLive", title: "Channel 1", sub: "Unified · low-latency", kicker: "Live · Unified Streaming", url: SAMPLES.unifiedLive, live: true, poster: featuredPoster("unifiedLive") },
+  { id: "dashTimeline", title: "Segment timeline", sub: "DASH-IF · 2s + patch", kicker: "DASH live · livesim2", url: SAMPLES.dashTimeline, dashUrl: SAMPLES.dashTimeline, dashLive: true, poster: featuredPoster("dashTimeline") },
+  { id: "dashPeriods", title: "Period every minute", sub: "DASH-IF · continuous", kicker: "DASH live · livesim2", url: SAMPLES.dashPeriods, dashUrl: SAMPLES.dashPeriods, dashLive: true, poster: featuredPoster("dashPeriods") },
 ];
 
 let playFn = () => {};
@@ -413,8 +415,9 @@ export async function renderCatalog() {
   const rail = $("libraryRail");
   if (rail) rail.hidden = !hasLocal;
   paintRail($("libraryCatalog"), libraryTitles);
-  paintRail($("catalog"), CATALOG.filter((c) => !c.live && !c.library));
-  paintRail($("liveCatalog"), CATALOG.filter((c) => c.live));
+  paintRail($("catalog"), CATALOG.filter((c) => !c.live && !c.dashLive && !c.library));
+  paintRail($("liveCatalog"), CATALOG.filter((c) => c.live && !c.dashLive));
+  paintRail($("dashLiveCatalog"), CATALOG.filter((c) => c.dashLive));
   const current = ($("contentUrl") && $("contentUrl").value) || SAMPLES.mux;
   const visible = allItems().filter((c) => !c.library || c.status === "ready");
   const match = visible.find((c) => catalogKey(c.url) === catalogKey(current)) || visible[0];

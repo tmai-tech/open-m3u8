@@ -19,6 +19,9 @@ public final class MpdSgaiUtil {
     public static final String INSERT_SCHEME =
             "urn:mpeg:dash:event:alternativeMPD:insert:2025";
 
+    public static final String REPLACE_SCHEME =
+            "urn:mpeg:dash:event:alternativeMPD:replace:2025";
+
     /** EventStream timescale. presentationTime and maxDuration are in these units. */
     public static final int TIMESCALE = 1000;
 
@@ -76,6 +79,62 @@ public final class MpdSgaiUtil {
         }
         eventsXml.append("    </EventStream>");
         return xml.substring(0, gt + 1) + eventsXml + xml.substring(gt + 1);
+    }
+
+    /**
+     * One replacement event on the named Period. No returnOffset: on a dynamic
+     * MPD the player resumes at the live edge.
+     */
+    public static String injectReplace(String xml, String periodId, Event ev, int resolveMs) {
+        if (xml == null || ev == null || periodId == null) {
+            return xml;
+        }
+        int gt = periodOpenEnd(xml, periodId);
+        if (gt < 0) {
+            return xml;
+        }
+        long at = Math.round(ev.offsetSec * TIMESCALE);
+        long dur = Math.max(0, Math.round(ev.durationSec * TIMESCALE));
+        int resolve = Math.max(0, resolveMs);
+        StringBuilder eventsXml = new StringBuilder();
+        eventsXml.append("\n    <EventStream schemeIdUri=\"").append(REPLACE_SCHEME)
+                .append("\" timescale=\"").append(TIMESCALE).append("\">\n");
+        eventsXml.append("      <Event presentationTime=\"").append(at)
+                .append("\" duration=\"").append(dur)
+                .append("\" id=\"").append(xmlAttr(ev.id)).append("\">\n");
+        eventsXml.append("        <ReplacePresentation uri=\"").append(xmlAttr(ev.uri))
+                .append("\" maxDuration=\"").append(dur)
+                .append("\" earliestResolutionTimeOffset=\"").append(resolve)
+                .append("\"/>\n");
+        eventsXml.append("      </Event>\n");
+        eventsXml.append("    </EventStream>");
+        return xml.substring(0, gt + 1) + eventsXml + xml.substring(gt + 1);
+    }
+
+    static int periodOpenEnd(String xml, String periodId) {
+        int from = 0;
+        while (from < xml.length()) {
+            int open = xml.indexOf("<Period", from);
+            if (open < 0) {
+                return -1;
+            }
+            int gt = xml.indexOf('>', open);
+            if (gt < 0) {
+                return -1;
+            }
+            String tag = xml.substring(open, gt + 1);
+            if (periodId.equals(attr(tag, "id"))) {
+                return gt;
+            }
+            from = gt + 1;
+        }
+        return -1;
+    }
+
+    static String attr(String tag, String name) {
+        java.util.regex.Matcher m = java.util.regex.Pattern
+                .compile("\\b" + name + "=\"([^\"]*)\"").matcher(tag);
+        return m.find() ? m.group(1) : null;
     }
 
     /** Alternate MPD: ad Periods only, sequential start. */

@@ -1,5 +1,5 @@
 import { $, bind } from "./dom.js";
-import { adsAllowed, isMpdUrl, protocolForItem, setPlayerEngine, setProtocolPreference, state } from "./state.js";
+import { adsAllowed, isLiveCadenceSession, isMpdUrl, protocolForItem, setPlayerEngine, setProtocolPreference, state } from "./state.js";
 import { highlight, setStatus } from "./status.js";
 import { createSession, showSessionWarnings } from "./api.js";
 import { setManifestButtons, syncProtocolSelect } from "./form.js";
@@ -184,7 +184,7 @@ export async function apply(andPlay) {
       const hasBreaks = $("breakList") && $("breakList").querySelector(".break-card");
       const sessionAds = (state.strategy === "ssai" || state.strategy === "sgai")
         && adsAllowed() && hasBreaks;
-      if (!sessionAds) {
+      if (!sessionAds && !isLiveCadenceSession()) {
         state.lastSession = null;
         showSessionId(null);
         $("manifestUrl").value = dashUrl;
