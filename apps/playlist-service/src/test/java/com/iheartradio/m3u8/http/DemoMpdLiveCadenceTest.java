@@ -19,6 +19,16 @@ import static org.junit.Assert.assertTrue;
  */
 public class DemoMpdLiveCadenceTest {
 
+    private static final String UPSTREAM_PATCH = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+            + "<Patch xmlns=\"urn:mpeg:dash:schema:mpd-patch:2020\""
+            + " originalPublishTime=\"2026-09-26T16:38:00Z\" publishTime=\"2026-09-26T16:38:06Z\">"
+            + "<replace sel=\"/MPD/@publishTime\">2026-09-26T16:38:06Z</replace>"
+            + "<replace sel=\"/MPD/PatchLocation[1]\">"
+            + "<PatchLocation ttl=\"60\">/patch/livesim2/segtimeline_1/patch_60/testpic_2s/Manifest.mpp?publishTime=2026-09-26T16%3A38%3A06Z</PatchLocation>"
+            + "</replace>"
+            + "<remove sel=\"/MPD/Period[@id='P0']/AdaptationSet[@id='1']/SegmentTemplate/SegmentTimeline/S[1]\"/>"
+            + "</Patch>";
+
     private static final String AD = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
             + "<MPD xmlns=\"urn:mpeg:dash:schema:mpd:2011\" type=\"static\""
             + " mediaPresentationDuration=\"PT15S\" minBufferTime=\"PT2S\">"
@@ -85,6 +95,49 @@ public class DemoMpdLiveCadenceTest {
     }
 
     @Test
+    public void patchLocationKeepsThePatchUrlAndInsertsTheAd() throws Exception {
+        final String origin = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+                + "<MPD xmlns=\"urn:mpeg:dash:schema:mpd:2011\" type=\"dynamic\""
+                + " availabilityStartTime=\"1970-01-01T00:00:00Z\" publishTime=\"2026-09-26T15:48:52Z\""
+                + " minimumUpdatePeriod=\"PT2S\" minBufferTime=\"PT2S\">"
+                + "<PatchLocation ttl=\"60\">/patch/livesim2/segtimeline_1/patch_60/testpic_2s/Manifest.mpp?publishTime=2026-09-26T15%3A48%3A52Z</PatchLocation>"
+                + "<Period id=\"P0\" start=\"PT0S\">"
+                + "<AdaptationSet id=\"1\" contentType=\"video\" mimeType=\"video/mp4\">"
+                + "<SegmentTemplate timescale=\"90000\" media=\"V300/$Time$.m4s\" initialization=\"V300/init.mp4\">"
+                + "<SegmentTimeline><S t=\"100\" d=\"180000\" r=\"30\"/></SegmentTimeline>"
+                + "</SegmentTemplate>"
+                + "<Representation id=\"V300\" bandwidth=\"300000\"/>"
+                + "</AdaptationSet></Period></MPD>";
+        DemoMpdPipeline pipeline = pipeline(new AtomicReference<String>(origin), new AtomicLong(0L));
+        DemoSession session = session();
+        String xml = manifest(pipeline, session);
+        assertTrue(xml, xml.contains("PatchLocation"));
+        assertTrue(xml, xml.contains(
+                "/s/sid/patch.mpp?publishTime=2026-09-26T15%3A48%3A52Z"));
+        assertTrue(xml, xml.contains("presentationTime=\"77001\""));
+        assertEquals("http://cdn/patch/livesim2/segtimeline_1/patch_60/testpic_2s/Manifest.mpp?publishTime=",
+                session.dashPatchUpstream);
+        String rolled = new String(pipeline.adPatch(session, "2026-09-26T16%3A38%3A06Z"),
+                StandardCharsets.UTF_8);
+        assertTrue(rolled.contains("SegmentTimeline/S[1]"));
+        assertTrue(rolled.contains("/s/sid/patch.mpp?publishTime=2026-09-26T16%3A38%3A06Z"));
+        assertTrue(rolled.contains("ReplacePresentation"));
+        assertNotNull(session.dashAlt(session.dashPatchEventId + ".mpd"));
+        String again = new String(pipeline.adPatch(session, "2026-09-26T16%3A38%3A08Z"),
+                StandardCharsets.UTF_8);
+        assertFalse(again.contains("EventStream"));
+        assertTrue(xml, xml.contains("publishTime=\"2026-09-26T15:48:52Z\""));
+        assertTrue(xml, xml.contains("<S t=\"100\" d=\"180000\" r=\"30\"/>"));
+        assertTrue(xml, xml.contains("ReplacePresentation"));
+        assertTrue(xml, xml.contains("id=\"live-60\""));
+        assertNotNull(session.dashAlt("live-60.mpd"));
+        assertTrue(xml, xml.contains("<BaseURL>http://cdn</BaseURL>"));
+        assertTrue(xml, xml.contains(
+                "<BaseURL>/livesim2/periods_60/continuous_1/testpic_2s/</BaseURL>"));
+        assertTrue(xml.indexOf("PatchLocation") < xml.indexOf("<Period"));
+    }
+
+    @Test
     public void timelineRefreshesFreezeTheEventWhileTheWindowSlides() throws Exception {
         final AtomicReference<String> origin = new AtomicReference<String>(timeline(100));
         DemoMpdPipeline pipeline = pipeline(origin, new AtomicLong(0L));
@@ -111,7 +164,7 @@ public class DemoMpdLiveCadenceTest {
         OriginFetch fetch = new OriginFetch() {
             @Override
             public FetchResult fetch(String url) {
-                String body = url.contains("/grok/") ? AD : origin.get();
+                String body = url.contains("/grok/") ? AD : url.contains(".mpp") ? UPSTREAM_PATCH : origin.get();
                 return new FetchResult(200, "application/xml", body.getBytes(StandardCharsets.UTF_8));
             }
         };

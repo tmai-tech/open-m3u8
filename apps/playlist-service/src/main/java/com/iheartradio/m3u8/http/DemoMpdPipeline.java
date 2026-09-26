@@ -69,6 +69,16 @@ public final class DemoMpdPipeline {
                     "origin returned HTTP " + remote.status + " for " + mpdUrl);
         }
         String xml = new String(remote.body == null ? new byte[0] : remote.body, StandardCharsets.UTF_8);
+        if (xml.contains("PatchLocation")) {
+            MPD parsed = io.parse(xml);
+            String kept = keepPatch(xml, mpdUrl);
+            if (session != null && MpdLiveCadence.uses(session, parsed)) {
+                session.dashPatchUpstream = upstreamPatchBase(xml, mpdUrl);
+                String owned = retargetPatchLocations(kept, "/s/" + session.id + "/patch.mpp?publishTime=");
+                return liveReplaceInto(session, parsed, owned, true);
+            }
+            return new Result(kept.getBytes(StandardCharsets.UTF_8));
+        }
         MPD mpd = io.parse(xml);
         mpd = withPeriodBase(mpd, directoryPath(mpdUrl));
         String hostBase = mpdHostBase(mpdUrl);
@@ -105,9 +115,42 @@ public final class DemoMpdPipeline {
     }
 
     private Result liveReplace(DemoSession session, MPD mpd) throws Exception {
-        String written = new String(io.writeBytes(mpd), StandardCharsets.UTF_8);
+        return liveReplaceInto(session, mpd, new String(io.writeBytes(mpd), StandardCharsets.UTF_8), false);
+    }
+
+    /**
+     * Livesim's patch, with {@code PatchLocation} kept on this session.
+     * The event edit is added only when {@code live-*} changes.
+     */
+    public byte[] adPatch(DemoSession session, String publishTime) throws Exception {
+        if (session == null || session.dashPatchUpstream == null) {
+            throw new DemoHttp.HttpException(404, "session has no patch upstream");
+        }
+        String upstream = session.dashPatchUpstream + publishTime;
+        DemoHttp.FetchResult remote = fetch.fetch(upstream);
+        if (remote.status >= 400) {
+            throw new DemoHttp.HttpException(remote.status > 0 ? remote.status : 502,
+                    "origin patch HTTP " + remote.status);
+        }
+        String xml = new String(remote.body == null ? new byte[0] : remote.body, StandardCharsets.UTF_8);
+        xml = retargetPatchLocations(xml, "/s/" + session.id + "/patch.mpp?publishTime=");
+        String published = patchPublishTime(xml);
+        MpdLiveCadence.Place place = MpdLiveCadence.placeAheadFromPublish(
+                session, published != null ? published : publishTime);
+        if (place != null && !place.breakId.equals(session.dashPatchEventId)) {
+            xml = appendEventReplace(xml, session, place);
+            session.dashPatchEventId = place.breakId;
+        }
+        return xml.getBytes(StandardCharsets.UTF_8);
+    }
+
+    /** Inject the replacement into {@code xml} without rewriting the rest of the document. */
+    private Result liveReplaceInto(DemoSession session, MPD mpd, String xml, boolean ahead) throws Exception {
+        String written = xml;
         java.util.Map<String, String> alts = new java.util.LinkedHashMap<String, String>();
-        MpdLiveCadence.Place place = MpdLiveCadence.place(mpd, session, clock.getAsLong());
+        MpdLiveCadence.Place place = ahead
+                ? MpdLiveCadence.placeAhead(mpd, session, clock.getAsLong())
+                : MpdLiveCadence.place(mpd, session, clock.getAsLong());
         if (place != null && session.adUrl != null && session.adUrl.length() > 0) {
             Period ad = loadAdPeriod(session.adUrl);
             if (ad == null) {
@@ -121,10 +164,95 @@ public final class DemoMpdPipeline {
                 MpdSgaiUtil.Event ev = new MpdSgaiUtil.Event(place.breakId, place.offsetSec, dur,
                         "/s/" + session.id + "/alt/" + place.breakId + ".mpd");
                 written = MpdSgaiUtil.injectReplace(written, place.periodId, ev, place.resolveMs);
+                if (ahead) {
+                    session.dashPatchEventId = place.breakId;
+                    session.dashPatchPeriodId = place.periodId;
+                    session.dashPatchPeriodStartSec = place.periodStartSec;
+                }
             }
         }
         session.setDashAlt(alts);
         return new Result(written.getBytes(StandardCharsets.UTF_8));
+    }
+
+    private String appendEventReplace(String xml, DemoSession session, MpdLiveCadence.Place place) throws Exception {
+        Period ad = loadAdPeriod(session.adUrl);
+        if (ad == null) {
+            return xml;
+        }
+        float dur = session.livePlayoutLimit > 0f ? session.livePlayoutLimit : 15f;
+        if (ad.getDuration() == null) {
+            ad = ad.buildUpon().withDuration(Duration.ofMillis(Math.round(dur * 1000f))).build();
+        }
+        session.putDashAlt(place.breakId, MpdSgaiUtil.altMpdString(Collections.singletonList(ad)));
+        long at = Math.round(place.offsetSec * 1000.0);
+        long max = Math.round(dur * 1000f);
+        String block = "<replace sel=\"/MPD/Period[@id='" + place.periodId + "']/EventStream[1]\">"
+                + "<EventStream schemeIdUri=\"" + MpdSgaiUtil.REPLACE_SCHEME + "\" timescale=\"1000\">"
+                + "<Event presentationTime=\"" + at + "\" duration=\"" + max
+                + "\" id=\"" + place.breakId + "\">"
+                + "<ReplacePresentation uri=\"/s/" + session.id + "/alt/" + place.breakId + ".mpd\""
+                + " maxDuration=\"" + max + "\" earliestResolutionTimeOffset=\"" + place.resolveMs + "\"/>"
+                + "</Event></EventStream></replace>";
+        int end = xml.lastIndexOf("</Patch>");
+        if (end < 0) {
+            return xml;
+        }
+        return xml.substring(0, end) + block + xml.substring(end);
+    }
+
+    /** Upstream URL through {@code publishTime=}, taken from the origin document. */
+    static String upstreamPatchBase(String xml, String mpdUrl) {
+        String url = firstPatchLocation(xml);
+        if (url == null) {
+            return null;
+        }
+        if (url.startsWith("/")) {
+            String host = mpdHostBase(mpdUrl);
+            if (host == null) {
+                return null;
+            }
+            url = host + url;
+        }
+        int q = url.indexOf("publishTime=");
+        if (q < 0) {
+            return url;
+        }
+        return url.substring(0, q + "publishTime=".length());
+    }
+
+    /** Point every PatchLocation at this session, keeping its publishTime value. */
+    static String retargetPatchLocations(String xml, String sessionBase) {
+        if (xml == null || sessionBase == null) {
+            return xml;
+        }
+        java.util.regex.Matcher m = java.util.regex.Pattern
+                .compile("(<PatchLocation\\b[^>]*>)([^<]*)(</PatchLocation>)")
+                .matcher(xml);
+        StringBuffer out = new StringBuffer();
+        while (m.find()) {
+            String url = m.group(2).trim();
+            int q = url.indexOf("publishTime=");
+            String value = q >= 0 ? url.substring(q + "publishTime=".length()) : "";
+            m.appendReplacement(out, java.util.regex.Matcher.quoteReplacement(
+                    m.group(1) + sessionBase + value + m.group(3)));
+        }
+        m.appendTail(out);
+        return out.toString();
+    }
+
+    static String firstPatchLocation(String xml) {
+        java.util.regex.Matcher m = java.util.regex.Pattern
+                .compile("<PatchLocation\\b[^>]*>([^<]*)</PatchLocation>")
+                .matcher(xml == null ? "" : xml);
+        return m.find() ? m.group(1).trim() : null;
+    }
+
+    static String patchPublishTime(String xml) {
+        java.util.regex.Matcher m = java.util.regex.Pattern
+                .compile("<Patch\\b[^>]*\\bpublishTime=\"([^\"]*)\"")
+                .matcher(xml == null ? "" : xml);
+        return m.find() ? m.group(1) : null;
     }
 
     List<MpdSgaiUtil.Event> sgaiEvents(DemoSession session, java.util.Map<String, String> alts) {
@@ -399,6 +527,70 @@ public final class DemoMpdPipeline {
      * host base's path, then the segment name is appended. Local
      * {@code /media} stays path-only so a tunnel page still loads its own files.
      */
+    /**
+     * Leave a patch manifest as the origin wrote it, plus the host and period
+     * bases. A parse/write would drop {@code PatchLocation}, and an ad event
+     * would make the origin {@code .mpp} a diff against the wrong document.
+     */
+    static String keepPatch(String xml, String mpdUrl) {
+        String host = mpdHostBase(mpdUrl);
+        String path = directoryPath(mpdUrl);
+        if (host != null && !xml.contains("<BaseURL>" + host + "</BaseURL>")) {
+            int open = xml.indexOf("<MPD");
+            int gt = open < 0 ? -1 : xml.indexOf('>', open);
+            if (gt >= 0) {
+                xml = xml.substring(0, gt + 1) + "<BaseURL>" + host + "</BaseURL>" + xml.substring(gt + 1);
+            }
+        }
+        if (path != null && path.length() > 1 && !xml.contains("<BaseURL>" + path + "</BaseURL>")) {
+            StringBuilder out = new StringBuilder();
+            int from = 0;
+            while (from < xml.length()) {
+                int open = xml.indexOf("<Period", from);
+                if (open < 0) {
+                    out.append(xml.substring(from));
+                    break;
+                }
+                int gt = xml.indexOf('>', open);
+                if (gt < 0) {
+                    out.append(xml.substring(from));
+                    break;
+                }
+                out.append(xml.substring(from, gt + 1));
+                out.append("<BaseURL>").append(path).append("</BaseURL>");
+                from = gt + 1;
+            }
+            xml = out.toString();
+        }
+        return absolutizePatchLocations(xml, host);
+    }
+
+    /**
+     * Shaka resolves {@code PatchLocation} against the manifest URL, not
+     * {@code BaseURL}. A path that starts with {@code /} therefore stays on
+     * localhost. Prefix the origin host so the {@code .mpp} is requested from
+     * the same host as the segments.
+     */
+    static String absolutizePatchLocations(String xml, String host) {
+        if (xml == null || host == null || host.length() == 0) {
+            return xml;
+        }
+        java.util.regex.Matcher m = java.util.regex.Pattern
+                .compile("(<PatchLocation\\b[^>]*>)([^<]*)(</PatchLocation>)")
+                .matcher(xml);
+        StringBuffer out = new StringBuffer();
+        while (m.find()) {
+            String url = m.group(2).trim();
+            if (url.startsWith("/") && !url.startsWith("//")) {
+                url = host + url;
+            }
+            m.appendReplacement(out, java.util.regex.Matcher.quoteReplacement(
+                    m.group(1) + url + m.group(3)));
+        }
+        m.appendTail(out);
+        return out.toString();
+    }
+
     static String mpdHostBase(String url) {
         try {
             URI u = URI.create(url);

@@ -137,6 +137,7 @@ public final class DemoPlayerServer {
         server.createContext("/s/", new SessionResourceApi(port, sessions, pipeline,
                 new DemoMpdPipeline()));
         server.createContext("/media/", new MediaApi(mediaRoot));
+        server.createContext("/patch/", new com.iheartradio.m3u8.http.api.PatchProxyApi());
         server.setExecutor(Executors.newFixedThreadPool(16));
         server.start();
         DemoHttp.startPublicBaseDiscovery();

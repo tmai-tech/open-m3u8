@@ -93,6 +93,13 @@ public final class DemoSession {
     /** Frozen START-DATE (epoch ms) for the current {@code live-*} id. */
     public String liveFrozenId;
     public long liveFrozenStartMs;
+    /** Upstream livesim patch URL through {@code publishTime=}. */
+    public String dashPatchUpstream;
+    /** Period that owns the patch-flow event, and its start on the presentation timeline. */
+    public String dashPatchPeriodId;
+    public double dashPatchPeriodStartSec;
+    /** Last {@code live-*} id written into a manifest or patch. */
+    public String dashPatchEventId;
 
     public long freezeLiveCadenceStart(String id, long startMs) {
         synchronized (this) {
@@ -187,6 +194,12 @@ public final class DemoSession {
         dashAlt.clear();
         if (alt != null) {
             dashAlt.putAll(alt);
+        }
+    }
+
+    public void putDashAlt(String breakId, String mpd) {
+        if (breakId != null && mpd != null) {
+            dashAlt.put(breakId, mpd);
         }
     }
 

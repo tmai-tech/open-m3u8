@@ -85,6 +85,10 @@ public final class SessionResourceApi implements HttpHandler {
             handleAssets(ex, session, action.substring("assets/".length()));
             return;
         }
+        if ("patch.mpp".equals(action)) {
+            handleAdPatch(ex, session);
+            return;
+        }
         DemoHttp.send(ex, 404, "application/json; charset=utf-8",
                 "{\"error\":\"unknown session path; use manifest, proxy, or assets/{breakId}.json\"}");
     }
@@ -235,6 +239,33 @@ public final class SessionResourceApi implements HttpHandler {
         int slash = base.lastIndexOf('/');
         String dir = slash >= 0 ? base.substring(0, slash + 1) : "";
         return dir + "manifest.mpd";
+    }
+
+    private void handleAdPatch(HttpExchange ex, DemoSession session) throws IOException {
+        String query = ex.getRequestURI().getRawQuery();
+        String publishTime = null;
+        if (query != null) {
+            for (String part : query.split("&")) {
+                if (part.startsWith("publishTime=")) {
+                    publishTime = part.substring("publishTime=".length());
+                }
+            }
+        }
+        if (publishTime == null || publishTime.length() == 0) {
+            DemoHttp.send(ex, 400, "text/plain", "publishTime required");
+            return;
+        }
+        try {
+            byte[] body = mpdPipeline.adPatch(session, publishTime);
+            if ("HEAD".equalsIgnoreCase(ex.getRequestMethod())) {
+                body = new byte[0];
+            }
+            DemoHttp.sendCors(ex, 200, body, "application/dash-patch+xml");
+        } catch (DemoHttp.HttpException e) {
+            DemoHttp.send(ex, e.status, "text/plain", e.getMessage() == null ? "patch failed" : e.getMessage());
+        } catch (Exception e) {
+            DemoHttp.send(ex, 502, "text/plain", "patch failed: " + e.getMessage());
+        }
     }
 
     private void handleMpd(HttpExchange ex, DemoSession session, String mpdUrl)

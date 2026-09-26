@@ -22,6 +22,7 @@ final class MpdLiveCadence {
         final float offsetSec;
         final String breakId;
         final int resolveMs;
+        double periodStartSec;
 
         Place(String periodId, float offsetSec, String breakId, int resolveMs) {
             this.periodId = periodId;
@@ -43,7 +44,41 @@ final class MpdLiveCadence {
                 && mpd.getType() == PresentationType.DYNAMIC;
     }
 
+    /** Patch flow: the break must still be ahead of the playhead when the first document is parsed. */
+    static final long PATCH_LOOKAHEAD_MS = 15_000L;
+
     static Place place(MPD mpd, DemoSession session, long nowMs) {
+        return place(mpd, session, nowMs, false);
+    }
+
+    static Place placeAhead(MPD mpd, DemoSession session, long nowMs) {
+        return place(mpd, session, nowMs, true);
+    }
+
+    /** Edge from a patch {@code publishTime}. Period start is the one stored on the session. */
+    static Place placeAheadFromPublish(DemoSession session, String publishTime) {
+        if (session == null || session.dashPatchPeriodId == null || publishTime == null) {
+            return null;
+        }
+        long edgeMs;
+        try {
+            edgeMs = java.time.OffsetDateTime.parse(publishTime).toInstant().toEpochMilli();
+        } catch (Exception e) {
+            return null;
+        }
+        long intervalMs = Math.round(session.liveCadenceSec * 1000.0);
+        if (intervalMs < 1000L) {
+            intervalMs = 60_000L;
+        }
+        long breakMs = edgeMs + PATCH_LOOKAHEAD_MS;
+        long bucket = (breakMs / intervalMs) * intervalMs;
+        String id = "live-" + (bucket / 1000L);
+        breakMs = session.freezeLiveCadenceStart(id, breakMs);
+        float offset = (float) Math.max(0.0, (breakMs / 1000.0) - session.dashPatchPeriodStartSec);
+        return new Place(session.dashPatchPeriodId, offset, id, 2000);
+    }
+
+    private static Place place(MPD mpd, DemoSession session, long nowMs, boolean ahead) {
         List<Period> periods = mpd.getPeriods();
         if (periods == null || periods.isEmpty()) {
             return null;
@@ -58,8 +93,8 @@ final class MpdLiveCadence {
             intervalMs = 60_000L;
         }
         long edgeMs = Math.round(edge * 1000.0);
-        long breakMs = edgeMs - Math.round(delay * 1000.0);
-        long bucket = (edgeMs / intervalMs) * intervalMs;
+        long breakMs = ahead ? edgeMs + PATCH_LOOKAHEAD_MS : edgeMs - Math.round(delay * 1000.0);
+        long bucket = ((ahead ? breakMs : edgeMs) / intervalMs) * intervalMs;
         String id = "live-" + (bucket / 1000L);
         breakMs = session.freezeLiveCadenceStart(id, breakMs);
 
@@ -78,7 +113,9 @@ final class MpdLiveCadence {
         }
         float offset = (float) Math.max(0.0, (breakMs / 1000.0) - ownerStart);
         int resolve = resolveMs(videoTemplate(owner), delay);
-        return new Place(periodId, offset, id, resolve);
+        Place place = new Place(periodId, offset, id, resolve);
+        place.periodStartSec = ownerStart;
+        return place;
     }
 
     /** suggestedPresentationDelay, otherwise 1.5 × minBufferTime capped by the DVR window. */
