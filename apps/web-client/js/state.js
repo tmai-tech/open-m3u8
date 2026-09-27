@@ -56,6 +56,7 @@ export const state = {
   watchingAds: false,
   lastPublicBase: null,
   liveMode: false,
+  hlsLiveAds: readHlsLiveAds(),
   forceVod: false,
   windowDuration: 0,
   seekGuard: false,
@@ -117,8 +118,24 @@ export function isMpdUrl(url) {
 /** Rolling-live SGAI: 15s grok, one frozen START-DATE per interval. */
 export const LIVE_CADENCE = { intervalSec: 60, playoutLimit: 15 };
 
+function readHlsLiveAds() {
+  try {
+    return localStorage.getItem("hls-demo-live-ads") !== "0";
+  } catch (e) {
+    return true;
+  }
+}
+
+export function setHlsLiveAds(on) {
+  state.hlsLiveAds = !!on;
+  try { localStorage.setItem("hls-demo-live-ads", state.hlsLiveAds ? "1" : "0"); } catch (e) { /* ignore */ }
+}
+
 export function isLiveCadenceSession() {
-  return !!(state.liveMode && !state.forceVod && state.strategy === "sgai");
+  if (!(state.liveMode && !state.forceVod && state.strategy === "sgai")) return false;
+  const url = (document.getElementById("contentUrl") || {}).value || "";
+  if (/\.mpd(\?|#|$)/i.test(url)) return true;
+  return state.hlsLiveAds !== false;
 }
 
 /** Ads on VOD, live Snapshot, and rolling live SGAI. */

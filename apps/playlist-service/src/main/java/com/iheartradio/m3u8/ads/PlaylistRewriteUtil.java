@@ -663,7 +663,7 @@ public final class PlaylistRewriteUtil {
         return fmt.format(new Date(ms));
     }
 
-    static long parseIsoToMs(String iso) {
+    public static long parseIsoToMs(String iso) {
         if (iso == null || iso.length() == 0) {
             return -1;
         }

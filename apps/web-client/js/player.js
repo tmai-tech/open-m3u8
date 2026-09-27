@@ -16,6 +16,20 @@ import { destroyShaka, playShaka, shakaAvailable } from "./shaka-player.js";
 let onDestroyed = () => {};
 export function setOnDestroyed(fn) { onDestroyed = fn || (() => {}); }
 
+function firstMediaPlaylistUrl(text, manifestUrl) {
+  const lines = String(text || "").split(/\r?\n/);
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line || line.charAt(0) === "#") continue;
+    try {
+      return new URL(line, manifestUrl).href;
+    } catch (_) {
+      return line;
+    }
+  }
+  return null;
+}
+
 export function showSessionId(id) {
   const label = $("sessionIdLabel");
   const link = $("sessionIdLink");
@@ -88,6 +102,13 @@ export function playUrl(manifestUrl, enableInterstitials, staticSession) {
       });
     }
     state.hls = new Hls(cfg);
+    state.hls.on(Hls.Events.LEVEL_LOADED, (_, data) => {
+      const url = data && data.details && data.details.url;
+      if (!url || !$("preview")) return;
+      fetch(url, { cache: "no-store" }).then((r) => r.text()).then((t) => {
+        if (t && t.indexOf("#EXTINF") >= 0) $("preview").innerHTML = highlight(t);
+      }).catch(() => {});
+    });
     state.hls.loadSource(manifestUrl);
     state.hls.attachMedia(video);
     startSeekThumbs(manifestUrl);
@@ -248,8 +269,18 @@ export async function apply(andPlay) {
       " · <strong>" + (session.strategy || state.strategy).toUpperCase() + "</strong>" +
       " · splices [" + (session.splices || []).join(", ") + "]s";
     const res = await fetch(session.manifestUrl, { cache: "no-store" });
-    const text = await res.text();
+    let text = await res.text();
     if (!res.ok) throw new Error(text);
+    if (text.indexOf("#EXT-X-STREAM-INF") >= 0) {
+      const mediaUrl = firstMediaPlaylistUrl(text, session.manifestUrl);
+      if (mediaUrl) {
+        try {
+          const mediaRes = await fetch(mediaUrl, { cache: "no-store" });
+          const mediaText = await mediaRes.text();
+          if (mediaRes.ok && mediaText.indexOf("#EXTINF") >= 0) text = mediaText;
+        } catch (_) { /* keep the master */ }
+      }
+    }
     $("preview").innerHTML = highlight(text);
     state.adWindows = /<MPD[\s>]|<Period[\s>]/i.test(text)
       ? parseDashAdWindows(text) : parseCueWindows(text);

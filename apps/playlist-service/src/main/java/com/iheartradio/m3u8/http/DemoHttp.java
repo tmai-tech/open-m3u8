@@ -234,6 +234,26 @@ public final class DemoHttp {
         return values.get(0);
     }
 
+    /**
+     * Copy {@code _HLS_skip=YES} or {@code v2} from the proxy request onto the
+     * origin playlist URL. hls.js puts the directive on our URL, not inside
+     * the encoded {@code url} parameter.
+     */
+    public static String forwardHlsSkip(String target, String rawQuery) {
+        if (target == null || target.contains("_HLS_skip=")) {
+            return target;
+        }
+        String skip = queryParam(rawQuery, "_HLS_skip");
+        if (skip == null) {
+            return target;
+        }
+        skip = decode(skip);
+        if (!"YES".equals(skip) && !"v2".equals(skip)) {
+            return target;
+        }
+        return com.iheartradio.m3u8.PlaylistDeltaUtil.appendSkipDirective(target, "v2".equals(skip));
+    }
+
     public static String queryParam(String rawQuery, String name) {
         if (rawQuery == null) {
             return null;

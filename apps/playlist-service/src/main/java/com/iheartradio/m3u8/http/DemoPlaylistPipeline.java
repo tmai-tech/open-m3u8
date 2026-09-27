@@ -174,6 +174,7 @@ public final class DemoPlaylistPipeline {
             Playlist transformed = apply(session, playlist, playlistUrl, publicBase);
             Playlist rewritten = PlaylistRewriteUtil.rewriteUris(transformed, playlistUrl, mapper);
             rewritten = stripStartTag(rewritten);
+            rewritten = applyDeliveryDirectives(rewritten, playlistUrl);
             byte[] out = PlaylistRewriteUtil.write(rewritten, Encoding.UTF_8);
             String kind = rewritten.hasMasterPlaylist() ? "master"
                     : rewritten.hasMediaPlaylist() ? "media" : "playlist";
@@ -499,6 +500,106 @@ public final class DemoPlaylistPipeline {
      * Drop {@code EXT-X-START} so live players join the edge instead of
      * {@code TIME-OFFSET} into the DVR (Blender uses {@code TIME-OFFSET=36}).
      */
+    /**
+     * Live media playlists advertise {@code CAN-SKIP-UNTIL} even when the origin
+     * does not. A request carrying {@code _HLS_skip} returns only the tail plus
+     * {@code EXT-X-SKIP}. Media sequence stays the sequence of the oldest segment.
+     */
+    static Playlist applyDeliveryDirectives(Playlist playlist, String playlistUrl) {
+        if (playlist == null || !playlist.hasMediaPlaylist()) {
+            return playlist;
+        }
+        com.iheartradio.m3u8.data.MediaPlaylist media = playlist.getMediaPlaylist();
+        if (!media.isOngoing() || media.hasSkipData()) {
+            return playlist;
+        }
+        int target = media.getTargetDuration() > 0 ? media.getTargetDuration() : 6;
+        float skipUntil = 6f * target;
+        com.iheartradio.m3u8.data.ServerControlData existing = media.hasServerControlData()
+                ? media.getServerControlData() : null;
+        if (existing != null && existing.hasCanSkipUntil() && existing.getCanSkipUntil() > skipUntil) {
+            skipUntil = existing.getCanSkipUntil();
+        }
+        com.iheartradio.m3u8.data.ServerControlData.Builder control = existing != null
+                ? existing.buildUpon() : new com.iheartradio.m3u8.data.ServerControlData.Builder();
+        control.withCanSkipUntil(skipUntil);
+        com.iheartradio.m3u8.data.MediaPlaylist.Builder mb = media.buildUpon()
+                .withServerControlData(control.build());
+        boolean skip = playlistUrl != null && (playlistUrl.contains("_HLS_skip=YES")
+                || playlistUrl.contains("_HLS_skip=v2"));
+        if (skip) {
+            java.util.List<com.iheartradio.m3u8.data.TrackData> tracks = media.getTracks();
+            double end = 0;
+            double[] ends = new double[tracks.size()];
+            for (int i = 0; i < tracks.size(); i++) {
+                float dur = tracks.get(i).hasTrackInfo() ? tracks.get(i).getTrackInfo().duration : target;
+                end += dur;
+                ends[i] = end;
+            }
+            int skipped = 0;
+            for (int i = 0; i < tracks.size(); i++) {
+                if (end - ends[i] > skipUntil) {
+                    skipped++;
+                } else {
+                    break;
+                }
+            }
+            if (skipped > 0 && skipped < tracks.size()) {
+                com.iheartradio.m3u8.data.MapInfo map = null;
+                for (int i = 0; i < skipped; i++) {
+                    if (tracks.get(i).hasMapInfo()) {
+                        map = tracks.get(i).getMapInfo();
+                    }
+                }
+                java.util.ArrayList<com.iheartradio.m3u8.data.TrackData> tail =
+                        new java.util.ArrayList<com.iheartradio.m3u8.data.TrackData>(
+                                tracks.subList(skipped, tracks.size()));
+                if (map != null && !tail.get(0).hasMapInfo()) {
+                    tail.set(0, tail.get(0).buildUpon().withMapInfo(map).build());
+                }
+                if (!tail.get(0).hasProgramDateTime()) {
+                    String pdt = programDateAt(tracks, skipped);
+                    if (pdt != null) {
+                        tail.set(0, tail.get(0).buildUpon().withProgramDateTime(pdt).build());
+                    }
+                }
+                mb.withTracks(tail);
+                mb.withSkipData(new com.iheartradio.m3u8.data.SkipData.Builder()
+                        .withSkippedSegments(skipped).build());
+            }
+        }
+        int version = playlist.getCompatibilityVersion();
+        if (version < 9) {
+            version = 9;
+        }
+        return playlist.buildUpon()
+                .withCompatibilityVersion(version)
+                .withMediaPlaylist(mb.build())
+                .build();
+    }
+
+    /** Start time of {@code index}, carried forward from the first program date. */
+    static String programDateAt(java.util.List<com.iheartradio.m3u8.data.TrackData> tracks, int index) {
+        long clock = -1L;
+        for (int i = 0; i <= index && i < tracks.size(); i++) {
+            com.iheartradio.m3u8.data.TrackData track = tracks.get(i);
+            if (track.hasProgramDateTime()) {
+                long parsed = PlaylistRewriteUtil.parseIsoToMs(track.getProgramDateTime());
+                if (parsed >= 0) {
+                    clock = parsed;
+                }
+            }
+            if (i == index) {
+                return clock >= 0 ? PlaylistRewriteUtil.toIsoDate(clock) : null;
+            }
+            float dur = track.hasTrackInfo() ? track.getTrackInfo().duration : 0f;
+            if (clock >= 0) {
+                clock += Math.round(dur * 1000f);
+            }
+        }
+        return null;
+    }
+
     static Playlist stripStartTag(Playlist playlist) {
         if (playlist == null) {
             return playlist;

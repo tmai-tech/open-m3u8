@@ -319,7 +319,9 @@ export function applyCatalogPreset(item) {
         if (hint) {
           hint.textContent = "Live SGAI: 15s grok every 1 min (START-DATE frozen per minute, hold-back 3× target duration).";
         }
-        setStatus("Live SGAI — 15s grok ad every 1 min. Play.");
+        setStatus(state.hlsLiveAds === false
+          ? "Live — playlist only, no ads. Play."
+          : "Live SGAI — 15s grok ad every 1 min. Play.");
       } else {
         setStatus("Live — ads are not available on this rail.");
       }

@@ -2,8 +2,11 @@ package com.iheartradio.m3u8.http;
 
 import com.iheartradio.m3u8.Encoding;
 import com.iheartradio.m3u8.ads.PlaylistRewriteUtil;
+import com.iheartradio.m3u8.data.MapInfo;
 import com.iheartradio.m3u8.data.MediaPlaylist;
 import com.iheartradio.m3u8.data.Playlist;
+import com.iheartradio.m3u8.data.ServerControlData;
+import com.iheartradio.m3u8.data.SkipData;
 import com.iheartradio.m3u8.data.TrackData;
 import com.iheartradio.m3u8.data.TrackInfo;
 import org.junit.Test;
@@ -37,6 +40,113 @@ public class DemoLiveCadenceTest {
         assertFalse(text.contains("X-RESUME-OFFSET="));
         assertFalse(text.contains("CUE="));
         assertFalse(text.contains("#EXT-X-CUE-OUT"));
+    }
+
+    @Test
+    public void fullRewriteKeepsCanSkipUntilAndTheLiveDateRange() throws Exception {
+        Playlist content = liveWindow("2020-01-01T00:00:10.000Z", 10f, 6);
+        content = content.buildUpon()
+                .withCompatibilityVersion(9)
+                .withMediaPlaylist(content.getMediaPlaylist().buildUpon()
+                        .withServerControlData(new ServerControlData.Builder()
+                                .withCanSkipUntil(60f)
+                                .withHoldBack(30f)
+                                .build())
+                        .build())
+                .build();
+        DemoSession session = DemoSession.fromJson("live-skip",
+                "{\"strategy\":\"sgai\",\"contentUrl\":\"http://cdn/live.m3u8\","
+                        + "\"adUrl\":\"http://ads/grok.m3u8\",\"liveCadenceSec\":60,\"livePlayoutLimit\":15}");
+        Playlist applied = new DemoPlaylistPipeline().apply(
+                session, content, "http://cdn/live.m3u8", "http://127.0.0.1:8765");
+        Playlist rewritten = PlaylistRewriteUtil.rewriteUris(applied, "http://cdn/live.m3u8",
+                new PlaylistRewriteUtil.UriMapper() {
+                    @Override
+                    public String map(String absoluteUri) {
+                        return DemoPlaylistPipeline.mapOriginUri(
+                                absoluteUri, "http://127.0.0.1:8765/s/live-skip", "http://127.0.0.1:8765");
+                    }
+                });
+        String text = PlaylistRewriteUtil.writeToString(rewritten, Encoding.UTF_8);
+        assertTrue(text, text.contains("CAN-SKIP-UNTIL=60"));
+        assertTrue(text, text.contains("#EXT-X-SERVER-CONTROL:"));
+        assertEquals(1, count(text, "#EXT-X-DATERANGE"));
+        assertTrue(text.contains("START-DATE=2020-01-01T00:00:30.000Z"));
+        assertTrue(text.contains("ID=\"live-"));
+    }
+
+    @Test
+    public void deltaRewriteKeepsSkipAndOneLiveDateRange() throws Exception {
+        Playlist content = liveWindow("2020-01-01T00:00:40.000Z", 10f, 3);
+        content = content.buildUpon()
+                .withCompatibilityVersion(9)
+                .withMediaPlaylist(content.getMediaPlaylist().buildUpon()
+                        .withMediaSequenceNumber(100)
+                        .withServerControlData(new ServerControlData.Builder()
+                                .withCanSkipUntil(60f)
+                                .build())
+                        .withSkipData(new SkipData.Builder().withSkippedSegments(3).build())
+                        .build())
+                .build();
+        DemoSession session = DemoSession.fromJson("live-delta",
+                "{\"strategy\":\"sgai\",\"contentUrl\":\"http://cdn/live.m3u8\","
+                        + "\"adUrl\":\"http://ads/grok.m3u8\",\"liveCadenceSec\":60,\"livePlayoutLimit\":15}");
+        Playlist applied = new DemoPlaylistPipeline().apply(
+                session, content, "http://cdn/live.m3u8", "http://127.0.0.1:8765");
+        String text = PlaylistRewriteUtil.writeToString(applied, Encoding.UTF_8);
+        assertTrue(text, text.contains("SKIPPED-SEGMENTS=3"));
+        assertTrue(text, text.contains("CAN-SKIP-UNTIL=60"));
+        assertFalse(text, text.contains("http://cdn/old"));
+        assertEquals(3, count(text, "#EXTINF"));
+        assertEquals(1, count(text, "#EXT-X-DATERANGE"));
+        // Tail starts at 00:00:40, so the 30s hold-back clamps to that first PDT.
+        assertTrue(text.contains("START-DATE=2020-01-01T00:00:40.000Z"));
+    }
+
+    @Test
+    public void livePlaylistAdvertisesSkipAndASkipRequestReturnsTheTail() throws Exception {
+        Playlist content = liveWindow("2020-01-01T00:00:00.000Z", 10f, 10);
+        DemoSession session = DemoSession.fromJson("live-adv",
+                "{\"strategy\":\"sgai\",\"contentUrl\":\"http://cdn/live.m3u8\","
+                        + "\"adUrl\":\"http://ads/grok.m3u8\",\"liveCadenceSec\":60,\"livePlayoutLimit\":15}");
+        Playlist full = DemoPlaylistPipeline.applyDeliveryDirectives(
+                new DemoPlaylistPipeline().apply(session, content, "http://cdn/live.m3u8",
+                        "http://127.0.0.1:8765"),
+                "http://cdn/live.m3u8");
+        String fullText = PlaylistRewriteUtil.writeToString(full, Encoding.UTF_8);
+        assertTrue(fullText, fullText.contains("CAN-SKIP-UNTIL=60"));
+        assertFalse(fullText.contains("EXT-X-SKIP"));
+        assertEquals(10, count(fullText, "#EXTINF"));
+        java.util.List<TrackData> withMap = new java.util.ArrayList<TrackData>(full.getMediaPlaylist().getTracks());
+        withMap.set(0, withMap.get(0).buildUpon()
+                .withMapInfo(new MapInfo("http://cdn/init.mp4", null)).build());
+        full = full.buildUpon()
+                .withMediaPlaylist(full.getMediaPlaylist().buildUpon().withTracks(withMap).build())
+                .build();
+
+        Playlist delta = DemoPlaylistPipeline.applyDeliveryDirectives(full, "http://cdn/live.m3u8?_HLS_skip=YES");
+        String deltaText = PlaylistRewriteUtil.writeToString(delta, Encoding.UTF_8);
+        assertTrue(deltaText, deltaText.contains("SKIPPED-SEGMENTS="));
+        assertTrue(count(deltaText, "#EXTINF") < 10);
+        assertTrue(deltaText.contains("#EXT-X-MEDIA-SEQUENCE:100"));
+        assertTrue(deltaText.contains("#EXT-X-MAP:URI=\"http://cdn/init.mp4\""));
+        assertTrue(deltaText, deltaText.contains("#EXT-X-PROGRAM-DATE-TIME:2020-01-01T00:00:30.000Z"));
+        assertEquals(1, count(deltaText, "#EXT-X-DATERANGE"));
+    }
+
+    @Test
+    public void proxyForwardsHlsSkipOntoTheOriginUrl() {
+        assertEquals("https://cdn.example/live.m3u8?_HLS_skip=YES",
+                DemoHttp.forwardHlsSkip("https://cdn.example/live.m3u8",
+                        "url=https%3A%2F%2Fcdn.example%2Flive.m3u8&_HLS_skip=YES"));
+        assertEquals("https://cdn.example/live.m3u8?cdn=1&_HLS_skip=v2",
+                DemoHttp.forwardHlsSkip("https://cdn.example/live.m3u8?cdn=1",
+                        "_HLS_skip=v2"));
+        assertEquals("https://cdn.example/live.m3u8",
+                DemoHttp.forwardHlsSkip("https://cdn.example/live.m3u8", "url=https%3A%2F%2Fx"));
+        assertEquals("https://cdn.example/live.m3u8?_HLS_skip=YES",
+                DemoHttp.forwardHlsSkip("https://cdn.example/live.m3u8?_HLS_skip=YES",
+                        "_HLS_skip=v2"));
     }
 
     @Test

@@ -1,5 +1,5 @@
 import { $, bind } from "./dom.js";
-import { adsAllowed, SAMPLES, state } from "./state.js";
+import { adsAllowed, SAMPLES, setHlsLiveAds, state } from "./state.js";
 import { dummyPosterDataUrl, loadPoster, probeMediaDuration } from "./thumbnail.js";
 import { renderTimeline } from "./ad-markers.js";
 import { setStatus } from "./status.js";
@@ -294,6 +294,32 @@ export function bindOtt() {
   bind("posterLayer", "click", watch);
   bind("btnForceLive", "click", () => setForceVod(false));
   bind("btnForceVod", "click", () => setForceVod(true));
+  const syncLiveAdsToggle = () => {
+    const on = state.hlsLiveAds !== false;
+    const yes = $("btnLiveAdsOn");
+    const no = $("btnLiveAdsOff");
+    if (yes) {
+      yes.classList.toggle("is-on", on);
+      yes.setAttribute("aria-pressed", on ? "true" : "false");
+    }
+    if (no) {
+      no.classList.toggle("is-on", !on);
+      no.setAttribute("aria-pressed", on ? "false" : "true");
+    }
+  };
+  const pickLiveAds = (on) => {
+    setHlsLiveAds(on);
+    syncLiveAdsToggle();
+    const item = findCatalogItem(($("contentUrl") && $("contentUrl").value) || "");
+    if (item && item.live && !item.dashLive && state.liveMode && !state.forceVod) {
+      setStatus(on
+        ? "Live SGAI — 15s grok ad every 1 min. Play."
+        : "Live — playlist only, no ads. Play.");
+    }
+  };
+  bind("btnLiveAdsOn", "click", () => pickLiveAds(true));
+  bind("btnLiveAdsOff", "click", () => pickLiveAds(false));
+  syncLiveAdsToggle();
   const input = $("contentUrl");
   if (input) {
     let t = null;

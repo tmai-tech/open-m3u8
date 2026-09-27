@@ -425,6 +425,10 @@ body.live-mode .live-play-bar:not([hidden]) { display: flex; }
   display: flex; align-items: center; gap: 10px; margin: 0 0 12px;
 }
 .rail-head .rail-title { margin: 0; }
+.live-ads-toggle { display: flex; gap: 6px; margin-left: auto; }
+.live-ads-toggle .btn.is-on {
+  background: var(--accent); color: #fff; border-color: var(--accent);
+}
 .rail-title {
   margin: 0 0 12px; font-size: 1.2rem; letter-spacing: -.02em;
   text-transform: none; color: #e5e5e5; font-weight: 700;
