@@ -75,6 +75,16 @@ Later pass, on a machine that can hold it: `OLLAMA_MODEL=moondream` (1.8B Q4, 1.
 
 Masters already have dummy WebVTT SUBS (`subs.m3u8`) and SSAI uses cue-less `empty.vtt` holes. Real captions later: user sidecar wins, then optional ASR on a bigger box; never fail the pack if ASR is down. Do not pull Whisper here.
 
+## DASH live: ad breaks on the patch chain
+
+**Tabled.** Segment timeline (`segtimeline_1/patch_60`) plays one 15s grok near the start, then no further breaks.
+
+What landed in `40d7486`: the session keeps `PatchLocation` and points it at `/s/{id}/patch.mpp`. The first manifest places `ReplacePresentation` 15s ahead of the edge. Each `.mpp` forwards livesim's timeline edits and replaces the event only when `live-{minute}` changes. `presentationTime` must be a full `long`; `Math.round(float)` clamped a 2026 edge to `2147483647` (1970-01-25) and the break never fired.
+
+Why it stopped: Shaka applies those patches to the timeline and does not arm an `EventStream` that arrives inside a later `.mpp`. The second break (about a minute later, for session `2-bccd87e6` at 18:24:05) was in the patch and did not play. A following patch returned 425 and the chain stops until a full manifest refetch. A `502` `mpd rewrite failed: livesim2.dashif.org` on session `3-0b0314b3` was `UnknownHostException` on the origin fetch, before any rewrite.
+
+Leave the patch stream as-is. Do not keep extending `/s/{id}/patch.mpp`. The period-every-minute stream is a full MPD refetch, not this item.
+
 ## Packager: resume leftover `{id}.work.mp4`
 
 Tick claims by renaming `inbox/{id}.mp4` → `{id}.work.mp4`, then encodes. It **ignores** `*.work.mp4`. If the watch process dies after the rename (session SIGTERM / 143 — not an FFmpeg crash), the job stays queued and is never claimed again. Recovered once by renaming back by hand (`grok-video-27bf43d8-…`). Later: treat leftover `{id}.work.mp4` as a resume (or rename it back to `{id}.mp4` on startup). Not urgent.

@@ -37,11 +37,11 @@ public final class MpdSgaiUtil {
 
     public static final class Event {
         public final String id;
-        public final float offsetSec;
+        public final double offsetSec;
         public final float durationSec;
         public final String uri;
 
-        public Event(String id, float offsetSec, float durationSec, String uri) {
+        public Event(String id, double offsetSec, float durationSec, String uri) {
             this.id = id;
             this.offsetSec = offsetSec;
             this.durationSec = durationSec;
@@ -66,7 +66,7 @@ public final class MpdSgaiUtil {
         eventsXml.append("\n    <EventStream schemeIdUri=\"").append(INSERT_SCHEME)
                 .append("\" timescale=\"").append(TIMESCALE).append("\">\n");
         for (Event ev : events) {
-            long at = Math.round(ev.offsetSec * TIMESCALE);
+            long at = Math.round(ev.offsetSec * (double) TIMESCALE);
             long dur = Math.max(0, Math.round(ev.durationSec * TIMESCALE));
             eventsXml.append("      <Event presentationTime=\"").append(at)
                     .append("\" duration=\"").append(dur)
@@ -93,7 +93,7 @@ public final class MpdSgaiUtil {
         if (gt < 0) {
             return xml;
         }
-        long at = Math.round(ev.offsetSec * TIMESCALE);
+        long at = Math.round(ev.offsetSec * (double) TIMESCALE);
         long dur = Math.max(0, Math.round(ev.durationSec * TIMESCALE));
         int resolve = Math.max(0, resolveMs);
         StringBuilder eventsXml = new StringBuilder();

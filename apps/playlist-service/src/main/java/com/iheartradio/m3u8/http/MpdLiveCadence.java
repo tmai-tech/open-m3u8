@@ -19,12 +19,12 @@ final class MpdLiveCadence {
 
     static final class Place {
         final String periodId;
-        final float offsetSec;
+        final double offsetSec;
         final String breakId;
         final int resolveMs;
         double periodStartSec;
 
-        Place(String periodId, float offsetSec, String breakId, int resolveMs) {
+        Place(String periodId, double offsetSec, String breakId, int resolveMs) {
             this.periodId = periodId;
             this.offsetSec = offsetSec;
             this.breakId = breakId;
@@ -74,7 +74,7 @@ final class MpdLiveCadence {
         long bucket = (breakMs / intervalMs) * intervalMs;
         String id = "live-" + (bucket / 1000L);
         breakMs = session.freezeLiveCadenceStart(id, breakMs);
-        float offset = (float) Math.max(0.0, (breakMs / 1000.0) - session.dashPatchPeriodStartSec);
+        double offset = Math.max(0.0, (breakMs / 1000.0) - session.dashPatchPeriodStartSec);
         return new Place(session.dashPatchPeriodId, offset, id, 2000);
     }
 
@@ -111,7 +111,7 @@ final class MpdLiveCadence {
         if (periodId == null || periodId.length() == 0) {
             return null;
         }
-        float offset = (float) Math.max(0.0, (breakMs / 1000.0) - ownerStart);
+        double offset = Math.max(0.0, (breakMs / 1000.0) - ownerStart);
         int resolve = resolveMs(videoTemplate(owner), delay);
         Place place = new Place(periodId, offset, id, resolve);
         place.periodStartSec = ownerStart;
