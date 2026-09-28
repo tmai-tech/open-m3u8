@@ -125,6 +125,12 @@ public class ServerControlData {
             return this;
         }
 
+        public Builder withoutCanSkipUntil() {
+            mCanSkipUntil = null;
+            mCanSkipDateranges = false;
+            return this;
+        }
+
         public Builder withCanSkipDateranges(boolean canSkipDateranges) {
             mCanSkipDateranges = canSkipDateranges;
             return this;

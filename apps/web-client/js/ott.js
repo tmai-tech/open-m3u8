@@ -71,7 +71,13 @@ export function syncSnapshotAdUi() {
   const toolbar = document.querySelector(".breaks-toolbar");
   const tl = $("timeline");
   const hint = $("liveCadenceHint");
-  if (toolbar) toolbar.hidden = !!cadence;
+  if (toolbar) toolbar.hidden = false;
+  if (!cadence) {
+    const pick = $("liveAdPick");
+    const add = $("btnAddBreak");
+    if (pick) pick.hidden = true;
+    if (add) add.disabled = false;
+  }
   if (list) list.hidden = !!cadence;
   if (tl) tl.hidden = !!cadence;
   if (hint) hint.hidden = !cadence;
@@ -156,7 +162,7 @@ function setForceVod(on) {
   durationToken++;
   clearWindowDuration();
   setStatus(adsAllowed()
-    ? "Live SGAI — 15s grok ad every 1 min. Play."
+    ? "Live SGAI — add one ad under 15s, then Play."
     : "Live — ads are not available on this rail.");
   if (isVideoPlaying()) playFn();
 }
@@ -170,6 +176,15 @@ function catalogKey(url) {
   } catch (_) {
     return raw.replace(/[?#].*$/, "").replace(/\/+$/, "");
   }
+}
+
+/** Ready library titles. Live playback is capped at the 15s pod. */
+export function liveAdCandidates() {
+  return libraryTitles.filter((t) => {
+    if (!t || !t.url || (t.status && t.status !== "ready")) return false;
+    const dur = Number(t.durationSec);
+    return isFinite(dur) && dur > 0;
+  });
 }
 
 export function findCatalogItem(url) {
@@ -314,7 +329,7 @@ export function bindOtt() {
     const item = findCatalogItem(($("contentUrl") && $("contentUrl").value) || "");
     if (item && item.live && !item.dashLive && state.liveMode && !state.forceVod) {
       setStatus(on
-        ? "Live SGAI — 15s grok ad every 1 min. Play."
+        ? "Live SGAI — add one ad under 15s, then Play."
         : "Live — playlist only, no ads. Play.");
     }
   };
@@ -413,6 +428,7 @@ function toLibraryItem(t) {
     dashUrl: t.dashUrl || "",
     poster: t.poster,
     library: true,
+    durationSec: isFinite(dur) && dur > 0 ? dur : 0,
     adUrl: "",
     adOffset: 0,
     adDuration: 0,

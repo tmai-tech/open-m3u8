@@ -11,12 +11,15 @@ import java.util.List;
 
 /**
  * Rolling-live SGAI: one interstitial per cadence interval on video media
- * playlists. START-DATE is last-segment PDT minus {@link #HOLD_BACK_TARGETS}
- * target durations, frozen for the interval so live reloads do not slide it.
+ * playlists. START-DATE is the end of the last segment plus {@link #LEAD_MS},
+ * frozen for the interval so live reloads do not slide it. The tag stays
+ * while that pod can still be playing, even if the window has slid past it.
  */
 final class LiveCadence {
 
     static final int HOLD_BACK_TARGETS = 3;
+    /** Break is this far after the live edge, so playback runs before the pod. */
+    static final long LEAD_MS = 10_000L;
     static final float DEFAULT_INTERVAL_SEC = 60f;
     static final float DEFAULT_PLAYOUT_SEC = 15f;
 
@@ -81,19 +84,27 @@ final class LiveCadence {
         if (target <= 0) {
             target = 6;
         }
-        long startMs = lastPdtMs - (long) HOLD_BACK_TARGETS * target * 1000L;
-        if (startMs < baseMs) {
-            startMs = baseMs;
+        long lastDurMs = target * 1000L;
+        java.util.List<com.iheartradio.m3u8.data.TrackData> tracks = media.getTracks();
+        if (tracks != null && !tracks.isEmpty()) {
+            com.iheartradio.m3u8.data.TrackData last = tracks.get(tracks.size() - 1);
+            if (last.hasTrackInfo()) {
+                lastDurMs = Math.round(last.getTrackInfo().duration * 1000.0);
+            }
         }
+        long startMs = lastPdtMs + lastDurMs + LEAD_MS;
         long idSec = (lastPdtMs / intervalMs) * (intervalMs / 1000L);
         String id = PlaylistRewriteUtil.LIVE_BREAK_ID_PREFIX + idSec;
         startMs = session.freezeLiveCadenceStart(id, startMs);
         float off = (startMs - baseMs) / 1000f;
+        // Keep the tag while the pod can still be playing. Dropping it as soon
+        // as the window start passes START-DATE makes hls.js cancel the ad.
+        boolean podStillCurrent = startMs + Math.round(limit * 1000f) > baseMs;
         String host = publicBase == null ? "" : publicBase;
         if (host.endsWith("/")) {
             host = host.substring(0, host.length() - 1);
         }
-        if (off >= -0.01f) {
+        if (off >= -0.01f || podStillCurrent) {
             String list = host + "/s/" + session.id + "/assets/" + id + ".json";
             injected.add(new InterstitialBreak(id, off, limit, null, list,
                     null, session.defaultRestrict, session.defaultSnap,

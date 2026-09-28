@@ -87,6 +87,8 @@ public final class DemoSession {
     public final String defaultCue;
     public final long createdAtMs;
     public boolean forceVod;
+    /** Advertise HLS playlist delta updates (CAN-SKIP-UNTIL / _HLS_skip). */
+    public boolean playlistDelta;
     /** Rolling-live SGAI: place a pod every N seconds of program time. 0 = off. */
     public float liveCadenceSec;
     public float livePlayoutLimit = 15f;
@@ -476,6 +478,7 @@ public final class DemoSession {
         sb.append("],");
         sb.append("\"maxAdDurationSec\":").append(maxAdDurationSec).append(',');
         sb.append("\"forceVod\":").append(forceVod).append(',');
+        sb.append("\"playlistDelta\":").append(playlistDelta).append(',');
         if (liveCadenceSec > 0f) {
             sb.append("\"liveCadenceSec\":").append(liveCadenceSec).append(',');
             sb.append("\"livePlayoutLimit\":").append(livePlayoutLimit).append(',');
@@ -590,6 +593,8 @@ public final class DemoSession {
         DemoSession session = new DemoSession(id, strategy, content, ad, breaks, maxAd, start,
                 snapSeg, resume, restrict, snap, cue);
         session.forceVod = DemoHttp.jsonBool(json, "forceVod", false);
+        session.playlistDelta = DemoHttp.jsonBool(sgaiSrc, "playlistDelta",
+                DemoHttp.jsonBool(json, "playlistDelta", false));
         float cadence = (float) DemoHttp.jsonNumber(sgaiSrc, "liveCadenceSec",
                 DemoHttp.jsonNumber(json, "liveCadenceSec", 0));
         if (cadence > 0f) {

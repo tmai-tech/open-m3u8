@@ -184,7 +184,11 @@ public final class SessionResourceApi implements HttpHandler {
             }
             return;
         }
-        handlePlaylist(ex, session, DemoHttp.forwardHlsSkip(target, ex.getRequestURI().getRawQuery()));
+        String playlistTarget = target;
+        if (session.playlistDelta) {
+            playlistTarget = DemoHttp.forwardHlsSkip(target, ex.getRequestURI().getRawQuery());
+        }
+        handlePlaylist(ex, session, playlistTarget);
     }
 
     private void handleVtt(HttpExchange ex, String target) throws IOException {

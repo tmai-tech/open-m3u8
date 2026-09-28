@@ -31,8 +31,8 @@ public class DemoLiveCadenceTest {
 
         assertEquals(1, count(text, "#EXT-X-DATERANGE"));
         assertTrue(text.contains("CLASS=\"com.apple.hls.interstitial\""));
-        // Last segment PDT 00:01:00 minus 3×TARGETDURATION(10s) = 00:00:30.
-        assertTrue(text.contains("START-DATE=2020-01-01T00:00:30.000Z"));
+        // End of the last segment is 00:01:10, plus 10s of playback.
+        assertTrue(text.contains("START-DATE=2020-01-01T00:01:20.000Z"));
         assertTrue(text.contains("ID=\"live-1577836860\"") || text.contains("ID=\"live-"));
         assertTrue(text.contains("/s/live-cad/assets/live-"));
         assertTrue(text.contains("X-PLAYOUT-LIMIT=15"));
@@ -71,7 +71,7 @@ public class DemoLiveCadenceTest {
         assertTrue(text, text.contains("CAN-SKIP-UNTIL=60"));
         assertTrue(text, text.contains("#EXT-X-SERVER-CONTROL:"));
         assertEquals(1, count(text, "#EXT-X-DATERANGE"));
-        assertTrue(text.contains("START-DATE=2020-01-01T00:00:30.000Z"));
+        assertTrue(text.contains("START-DATE=2020-01-01T00:01:20.000Z"));
         assertTrue(text.contains("ID=\"live-"));
     }
 
@@ -99,8 +99,8 @@ public class DemoLiveCadenceTest {
         assertFalse(text, text.contains("http://cdn/old"));
         assertEquals(3, count(text, "#EXTINF"));
         assertEquals(1, count(text, "#EXT-X-DATERANGE"));
-        // Tail starts at 00:00:40, so the 30s hold-back clamps to that first PDT.
-        assertTrue(text.contains("START-DATE=2020-01-01T00:00:40.000Z"));
+        // End of the last tail segment is 00:01:10, plus 10s.
+        assertTrue(text.contains("START-DATE=2020-01-01T00:01:20.000Z"));
     }
 
     @Test
@@ -108,7 +108,8 @@ public class DemoLiveCadenceTest {
         Playlist content = liveWindow("2020-01-01T00:00:00.000Z", 10f, 10);
         DemoSession session = DemoSession.fromJson("live-adv",
                 "{\"strategy\":\"sgai\",\"contentUrl\":\"http://cdn/live.m3u8\","
-                        + "\"adUrl\":\"http://ads/grok.m3u8\",\"liveCadenceSec\":60,\"livePlayoutLimit\":15}");
+                        + "\"adUrl\":\"http://ads/grok.m3u8\",\"liveCadenceSec\":60,\"livePlayoutLimit\":15,"
+                        + "\"playlistDelta\":true}");
         Playlist full = DemoPlaylistPipeline.applyDeliveryDirectives(
                 new DemoPlaylistPipeline().apply(session, content, "http://cdn/live.m3u8",
                         "http://127.0.0.1:8765"),
@@ -136,14 +137,40 @@ public class DemoLiveCadenceTest {
         // Date range is computed on the full window (last PDT minus 3 target
         // durations = 00:01:00), not clamped to the first segment of the tail.
         assertEquals(1, count(fullText, "#EXT-X-DATERANGE"));
-        assertTrue(fullText, fullText.contains("START-DATE=2020-01-01T00:01:00.000Z"));
+        assertTrue(fullText, fullText.contains("START-DATE=2020-01-01T00:01:50.000Z"));
         int idAt = fullText.indexOf("ID=\"live-");
         int idEnd = fullText.indexOf('"', idAt + 4);
         String idAttr = fullText.substring(idAt, idEnd + 1);
         assertEquals(1, count(deltaText, "#EXT-X-DATERANGE"));
-        assertTrue(deltaText, deltaText.contains("START-DATE=2020-01-01T00:01:00.000Z"));
+        assertTrue(deltaText, deltaText.contains("START-DATE=2020-01-01T00:01:50.000Z"));
         assertTrue(deltaText, deltaText.contains(idAttr));
         assertFalse(deltaText.contains("START-DATE=2020-01-01T00:00:20.000Z"));
+    }
+
+    @Test
+    public void deltaOffKeepsTheFullWindowAndStripsCanSkipUntil() throws Exception {
+        Playlist content = liveWindow("2020-01-01T00:00:00.000Z", 10f, 10);
+        content = content.buildUpon()
+                .withMediaPlaylist(content.getMediaPlaylist().buildUpon()
+                        .withServerControlData(new ServerControlData.Builder()
+                                .withCanSkipUntil(60f)
+                                .withHoldBack(30f)
+                                .build())
+                        .build())
+                .build();
+        DemoSession session = DemoSession.fromJson("live-nodelta",
+                "{\"strategy\":\"sgai\",\"contentUrl\":\"http://cdn/live.m3u8\","
+                        + "\"adUrl\":\"http://ads/grok.m3u8\",\"liveCadenceSec\":60,\"livePlayoutLimit\":15}");
+        Playlist full = DemoPlaylistPipeline.applyDeliveryDirectives(
+                new DemoPlaylistPipeline().apply(session, content, "http://cdn/live.m3u8",
+                        "http://127.0.0.1:8765"),
+                "http://cdn/live.m3u8?_HLS_skip=YES", session);
+        String text = PlaylistRewriteUtil.writeToString(full, Encoding.UTF_8);
+        assertFalse(text, text.contains("CAN-SKIP-UNTIL"));
+        assertFalse(text, text.contains("EXT-X-SKIP"));
+        assertTrue(text, text.contains("HOLD-BACK=30.0"));
+        assertEquals(10, count(text, "#EXTINF"));
+        assertEquals(1, count(text, "#EXT-X-DATERANGE"));
     }
 
     @Test
@@ -171,13 +198,13 @@ public class DemoLiveCadenceTest {
                 pipeline.apply(session, liveWindow("2020-01-01T00:00:10.000Z", 10f, 6),
                         "http://cdn/live.m3u8", "http://127.0.0.1:8765"),
                 Encoding.UTF_8);
-        assertTrue(first.contains("START-DATE=2020-01-01T00:00:30.000Z"));
+        assertTrue(first.contains("START-DATE=2020-01-01T00:01:20.000Z"));
         String later = PlaylistRewriteUtil.writeToString(
                 pipeline.apply(session, liveWindow("2020-01-01T00:00:30.000Z", 10f, 6),
                         "http://cdn/live.m3u8", "http://127.0.0.1:8765"),
                 Encoding.UTF_8);
-        assertTrue(later.contains("START-DATE=2020-01-01T00:00:30.000Z"));
-        assertFalse(later.contains("START-DATE=2020-01-01T00:00:50.000Z"));
+        assertTrue(later.contains("START-DATE=2020-01-01T00:01:20.000Z"));
+        assertFalse(later.contains("START-DATE=2020-01-01T00:01:40.000Z"));
     }
 
     @Test
@@ -209,9 +236,9 @@ public class DemoLiveCadenceTest {
                 new DemoPlaylistPipeline().apply(session, content, "http://cdn/live.m3u8",
                         "http://127.0.0.1:8765"),
                 Encoding.UTF_8);
-        // Last segment PDT 00:10:00 minus 3×60s hold-back = 00:07:00.
-        assertTrue(text.contains("START-DATE=2020-01-01T00:07:00.000Z"));
-        assertFalse(text.contains("START-DATE=2020-01-01T00:02:00.000Z"));
+        // Last segment ends 00:11:00, plus 10s.
+        assertTrue(text.contains("START-DATE=2020-01-01T00:11:10.000Z"));
+        assertFalse(text.contains("START-DATE=2020-01-01T00:07:00.000Z"));
         assertEquals(1, count(text, "#EXT-X-DATERANGE"));
     }
 
@@ -226,8 +253,34 @@ public class DemoLiveCadenceTest {
                         "http://127.0.0.1:8765"),
                 Encoding.UTF_8);
         assertEquals(1, count(text, "#EXT-X-DATERANGE"));
-        // Last PDT 00:24:50 minus 3×10s = 00:24:20.
-        assertTrue(text.contains("START-DATE=2020-01-01T00:24:20.000Z"));
+        // Last segment ends 00:25:00, plus 10s.
+        assertTrue(text.contains("START-DATE=2020-01-01T00:25:10.000Z"));
+    }
+
+    @Test
+    public void shortWindowBreakIsTenSecondsAfterTheEdgeAndSurvivesTheSlide() throws Exception {
+        DemoSession session = DemoSession.fromJson("live-lead",
+                "{\"strategy\":\"sgai\",\"contentUrl\":\"http://cdn/live.m3u8\","
+                        + "\"adUrl\":\"http://ads/grok.m3u8\",\"liveCadenceSec\":60,\"livePlayoutLimit\":15}");
+        DemoPlaylistPipeline pipeline = new DemoPlaylistPipeline();
+        String first = PlaylistRewriteUtil.writeToString(
+                pipeline.apply(session, liveWindow("2020-01-01T00:00:00.000Z", 5f, 4),
+                        "http://cdn/live.m3u8", "http://127.0.0.1:8765"),
+                Encoding.UTF_8);
+        assertTrue(first, first.contains("START-DATE=2020-01-01T00:00:30.000Z"));
+        assertFalse(first.contains("START-DATE=2020-01-01T00:00:00.000Z"));
+        String later = PlaylistRewriteUtil.writeToString(
+                pipeline.apply(session, liveWindow("2020-01-01T00:00:06.000Z", 5f, 4),
+                        "http://cdn/live.m3u8", "http://127.0.0.1:8765"),
+                Encoding.UTF_8);
+        assertEquals(1, count(later, "#EXT-X-DATERANGE"));
+        assertTrue(later, later.contains("START-DATE=2020-01-01T00:00:30.000Z"));
+        String duringPod = PlaylistRewriteUtil.writeToString(
+                pipeline.apply(session, liveWindow("2020-01-01T00:00:30.000Z", 5f, 4),
+                        "http://cdn/live.m3u8", "http://127.0.0.1:8765"),
+                Encoding.UTF_8);
+        assertEquals(1, count(duringPod, "#EXT-X-DATERANGE"));
+        assertTrue(duringPod, duringPod.contains("START-DATE=2020-01-01T00:00:30.000Z"));
     }
 
     @Test

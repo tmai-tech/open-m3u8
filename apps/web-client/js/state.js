@@ -116,7 +116,7 @@ export function isMpdUrl(url) {
   return /\.mpd(\?|#|$)/i.test(url || "");
 }
 
-/** Rolling-live SGAI: 15s grok, one frozen START-DATE per interval. */
+/** Rolling-live SGAI: one ad under 15s, one frozen START-DATE per interval. */
 export const LIVE_CADENCE = { intervalSec: 60, playoutLimit: 15 };
 
 function readHlsLiveAds() {

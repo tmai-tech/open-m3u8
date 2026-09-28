@@ -3,7 +3,7 @@ import { adsAllowed, DEFAULT_AD, HINTS, LENGTH_HINTS, isLiveCadenceSession, item
 import { setStatus } from "./status.js";
 import { renderTimeline } from "./ad-markers.js";
 import { fillPublicRow } from "./public-url.js";
-import { findCatalogItem, loadSnapshotTimeline, refreshPoster, setLiveUi, syncSnapshotAdUi } from "./ott.js";
+import { findCatalogItem, liveAdCandidates, loadSnapshotTimeline, refreshPoster, setLiveUi, syncSnapshotAdUi } from "./ott.js";
 
 let destroyPlayerFn = () => {};
 
@@ -163,32 +163,36 @@ export function buildLocalSession() {
   }
   if (!contentUrl) throw new Error("Content URL is required");
   if (isLiveCadenceSession()) {
-    const grok = toAbsoluteUrl(SAMPLES.grok8e30);
+    const ad = selectedLiveAd();
+    if (!ad) throw new Error("Add break, then pick one title under 15s");
     const restrictSkip = $("restrictSkip").checked;
     const restrictJump = $("restrictJump").checked;
+    const playlistDelta = $("playlistDelta").checked;
     return {
       strategy: "sgai",
       contentUrl,
-      adUrl: grok,
+      adUrl: ad.url,
       breaks: [],
       splices: [],
       offsets: [],
-      adLength: LIVE_CADENCE.playoutLimit,
-      maxAdDurationSec: LIVE_CADENCE.playoutLimit,
+      adLength: ad.durationSec,
+      maxAdDurationSec: ad.durationSec,
       liveCadenceSec: LIVE_CADENCE.intervalSec,
-      livePlayoutLimit: LIVE_CADENCE.playoutLimit,
+      livePlayoutLimit: ad.durationSec,
       snapToSegment: true,
       restrictSkip,
       restrictJump,
       cueOnce: false,
+      playlistDelta,
       forceVod: false,
       sgai: {
         snapToSegment: true,
         restrictSkip,
         restrictJump,
         cueOnce: false,
+        playlistDelta,
         liveCadenceSec: LIVE_CADENCE.intervalSec,
-        livePlayoutLimit: LIVE_CADENCE.playoutLimit,
+        livePlayoutLimit: ad.durationSec,
       },
     };
   }
@@ -213,12 +217,14 @@ export function buildLocalSession() {
     restrictSkip: $("restrictSkip").checked,
     restrictJump: $("restrictJump").checked,
     cueOnce: $("cueOnce").checked,
+    playlistDelta: $("playlistDelta").checked,
     forceVod: !!state.forceVod,
     sgai: {
       snapToSegment: $("snapSegment").checked,
       restrictSkip: $("restrictSkip").checked,
       restrictJump: $("restrictJump").checked,
       cueOnce: $("cueOnce").checked,
+      playlistDelta: $("playlistDelta").checked,
       resumeOffset: 0,
     },
   };
@@ -262,9 +268,76 @@ export function syncProtocolSelect() {
   }
 }
 
+function selectedLiveAd() {
+  const pick = $("liveAdPick");
+  const sel = $("liveAdSelect");
+  if (!pick || pick.hidden || !sel || !sel.value) return null;
+  const opt = sel.selectedOptions && sel.selectedOptions[0];
+  const dur = opt ? Number(opt.dataset.duration) : NaN;
+  if (!isFinite(dur) || dur <= 0) return null;
+  const content = findCatalogItem(($("contentUrl") && $("contentUrl").value) || "");
+  const item = findCatalogItem(sel.value);
+  const dash = content && protocolForItem(content) === "dash" && item && item.dashUrl;
+  const played = Math.min(dur, LIVE_CADENCE.playoutLimit);
+  return { url: toAbsoluteUrl(dash || sel.value), durationSec: played };
+}
+
+function showLiveAdSelect() {
+  const pick = $("liveAdPick");
+  const sel = $("liveAdSelect");
+  const btn = $("btnAddBreak");
+  if (!pick || !sel) return;
+  const previous = sel.value;
+  const ads = liveAdCandidates();
+  sel.innerHTML = "";
+  if (!ads.length) {
+    const empty = document.createElement("option");
+    empty.value = "";
+    empty.textContent = "No ready titles";
+    sel.appendChild(empty);
+    sel.disabled = true;
+  } else {
+    sel.disabled = false;
+    const nameCount = {};
+    ads.forEach((t) => {
+      const name = t.title || t.id;
+      nameCount[name] = (nameCount[name] || 0) + 1;
+    });
+    ads.forEach((t) => {
+      const opt = document.createElement("option");
+      opt.value = t.url;
+      opt.dataset.duration = String(t.durationSec);
+      const shown = Math.round(t.durationSec * 10) / 10;
+      let name = t.title || t.id;
+      if (nameCount[name] > 1) name += " · " + String(t.id).replace(/^grok-video-/, "").slice(0, 8);
+      opt.textContent = t.durationSec > LIVE_CADENCE.playoutLimit
+        ? name + " · " + shown + "s, play " + LIVE_CADENCE.playoutLimit + "s"
+        : name + " · " + shown + "s";
+      sel.appendChild(opt);
+    });
+    if (previous && ads.some((t) => t.url === previous)) sel.value = previous;
+  }
+  pick.hidden = false;
+  if (btn) btn.disabled = true;
+}
+
 export function bindForm() {
   bind("strategy", "change", () => setStrategy($("strategy").value, true));
-  bind("btnAddBreak", "click", () => addBreakRow());
+  bind("btnAddBreak", "click", () => {
+    if (isLiveCadenceSession()) {
+      if ($("liveAdPick") && !$("liveAdPick").hidden) {
+        setStatus("Live takes one ad, under 15s.");
+        return;
+      }
+      showLiveAdSelect();
+      const sel = $("liveAdSelect");
+      setStatus(sel && sel.value
+        ? "One ad under 15s, every minute. Play to apply."
+        : "No library title is under 15s.", sel && sel.value ? "ok" : "err");
+      return;
+    }
+    addBreakRow();
+  });
   bind("timeline", "click", (ev) => {
     if (!state.mediaDuration) {
       addBreakRow(0);
@@ -296,9 +369,9 @@ export function applyCatalogPreset(item) {
     setStrategy("sgai", false);
     const hint = $("liveCadenceHint");
     if (hint) {
-      hint.textContent = "DASH live SGAI: 15s grok every 1 min. One replace event on the newest period, frozen for that minute.";
+      hint.textContent = "DASH live SGAI: one ad under 15s every 1 min. Add break to choose it.";
     }
-    setStatus("DASH live — 15s grok every 1 min. Play.");
+    setStatus("DASH live — add one ad under 15s, then Play.");
   } else if (item.live) {
     if (!state.liveMode) {
       try { savedBreaks = readBreaksFromDom(); } catch (_) { savedBreaks = []; }
@@ -317,11 +390,11 @@ export function applyCatalogPreset(item) {
         setStrategy("sgai", false);
         const hint = $("liveCadenceHint");
         if (hint) {
-          hint.textContent = "Live SGAI: 15s grok every 1 min (START-DATE frozen per minute, hold-back 3× target duration).";
+          hint.textContent = "Live SGAI: one ad under 15s every 1 min. Add break to choose it.";
         }
         setStatus(state.hlsLiveAds === false
           ? "Live — playlist only, no ads. Play."
-          : "Live SGAI — 15s grok ad every 1 min. Play.");
+          : "Live SGAI — add one ad under 15s, then Play.");
       } else {
         setStatus("Live — ads are not available on this rail.");
       }

@@ -85,9 +85,12 @@
         <input id="contentUrl" type="url" value="/media/titles/the-cave-charles-ancelle/master.m3u8" placeholder="Title" aria-label="Content URL" />
       </div>
 
-      <p id="liveCadenceHint" class="debug-hint" hidden>Live SGAI: 15s grok every 1 min (START-DATE frozen per minute, hold-back 3× target duration).</p>
+      <p id="liveCadenceHint" class="debug-hint" hidden>Live SGAI: one ad under 15s every 1 min. Add break to choose it.</p>
       <div class="breaks-toolbar">
         <span class="col-label">Ad breaks</span>
+        <label class="live-ad-pick" id="liveAdPick" hidden>
+          <select id="liveAdSelect" aria-label="Live ad"></select>
+        </label>
         <button type="button" class="btn btn-ghost btn-sm" id="btnAddBreak" title="New cue on the timeline">Add break</button>
       </div>
       <div id="breakList"></div>
@@ -135,7 +138,11 @@
             <input type="checkbox" id="cueOnce" />
             Cue once
           </label>
-          <p class="debug-hint">SGAI: X-RESTRICT SKIP/JUMP; CUE="ONCE". Play again to apply.</p>
+          <label class="check-row debug-check">
+            <input type="checkbox" id="playlistDelta" />
+            Delta updates
+          </label>
+          <p class="debug-hint">SGAI: X-RESTRICT SKIP/JUMP; CUE="ONCE". Delta updates: CAN-SKIP-UNTIL on live playlists. Play again to apply.</p>
           <button class="btn btn-ghost btn-sm" id="btnLogs" type="button">Logs</button>
           <pre class="manifest-box" id="preview"></pre>
         </div>

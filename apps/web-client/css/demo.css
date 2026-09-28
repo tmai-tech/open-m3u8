@@ -107,6 +107,8 @@ video { width: 100%; aspect-ratio: 16/9; background: #000; display: block; }
 .breaks-toolbar {
   display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 4px 0 8px;
 }
+.live-ad-pick { flex: 1; min-width: 0; margin: 0; }
+.live-ad-pick select { width: 100%; margin: 0; padding: 6px 8px; font-size: .8rem; }
 .breaks-toolbar label { margin: 0; }
 .break-row {
   display: grid; grid-template-columns: 76px 1fr 76px 36px; gap: 8px; align-items: center;

@@ -514,7 +514,13 @@ public final class DemoPlaylistPipeline {
             return playlist;
         }
         com.iheartradio.m3u8.data.MediaPlaylist media = playlist.getMediaPlaylist();
-        if (!media.isOngoing() || media.hasSkipData()) {
+        if (!media.isOngoing()) {
+            return playlist;
+        }
+        if (session == null || !session.playlistDelta) {
+            return stripDeltaAdvertisement(playlist);
+        }
+        if (media.hasSkipData()) {
             return playlist;
         }
         int target = media.getTargetDuration() > 0 ? media.getTargetDuration() : 6;
@@ -585,6 +591,31 @@ public final class DemoPlaylistPipeline {
         return playlist.buildUpon()
                 .withCompatibilityVersion(version)
                 .withMediaPlaylist(mb.build())
+                .build();
+    }
+
+    /** Drop CAN-SKIP-UNTIL so the player refetches the full live window. */
+    static Playlist stripDeltaAdvertisement(Playlist playlist) {
+        com.iheartradio.m3u8.data.MediaPlaylist media = playlist.getMediaPlaylist();
+        if (!media.hasServerControlData()) {
+            return playlist;
+        }
+        com.iheartradio.m3u8.data.ServerControlData existing = media.getServerControlData();
+        if (!existing.hasCanSkipUntil() && !existing.canSkipDateranges()) {
+            return playlist;
+        }
+        com.iheartradio.m3u8.data.ServerControlData stripped = existing.buildUpon()
+                .withoutCanSkipUntil()
+                .build();
+        boolean empty = !stripped.hasCanSkipUntil()
+                && !stripped.canSkipDateranges()
+                && !stripped.hasHoldBack()
+                && !stripped.hasPartHoldBack()
+                && !stripped.canBlockReload();
+        return playlist.buildUpon()
+                .withMediaPlaylist(media.buildUpon()
+                        .withServerControlData(empty ? null : stripped)
+                        .build())
                 .build();
     }
 
