@@ -22,6 +22,7 @@ export const CATALOG = [
   { id: "fdr", title: "FDR", sub: "JW Player · 4s", kicker: "JW Player CDN", url: SAMPLES.fdr, poster: featuredPoster("fdr") },
   { id: "blender", title: "Blender 24/7", sub: "Ireplay · I-frame", kicker: "Live · Ireplay", url: SAMPLES.blender, live: true, poster: featuredPoster("blender") },
   { id: "unifiedLive", title: "Channel 1", sub: "Unified · low-latency", kicker: "Live · Unified Streaming", url: SAMPLES.unifiedLive, live: true, poster: featuredPoster("unifiedLive") },
+  { id: "harborLive", title: "Big Buck Bunny", sub: "Akamai · 1080p24", kicker: "Live · Akamai", url: SAMPLES.harborLive, live: true, poster: featuredPoster("harborLive") },
   { id: "dashTimeline", title: "Segment timeline", sub: "DASH-IF · 2s + patch", kicker: "DASH live · livesim2", url: SAMPLES.dashTimeline, dashUrl: SAMPLES.dashTimeline, dashLive: true, poster: featuredPoster("dashTimeline") },
   { id: "dashPeriods", title: "Period every minute", sub: "DASH-IF · continuous", kicker: "DASH live · livesim2", url: SAMPLES.dashPeriods, dashUrl: SAMPLES.dashPeriods, dashLive: true, poster: featuredPoster("dashPeriods") },
 ];

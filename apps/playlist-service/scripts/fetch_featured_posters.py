@@ -30,6 +30,7 @@ FEATURED = [
     ("fdr", "https://cdn.jwplayer.com/manifests/pZxWPRg4.m3u8"),
     ("blender", "https://ireplay.tv/test/blender.m3u8"),
     ("unifiedLive", "https://demo.unified-streaming.com/k8s/low-latency/stable/channel1/channel1.isml/.m3u8"),
+    ("harborLive", "https://hls-harbor-livepush.akamaized.net/live_cdn/nsqIStpj8PaG-Ev/emcQJ0pGpremocy/index.m3u8"),
 ]
 
 # DASH live cards. Lowest video Representation, one segment still inside the live window.

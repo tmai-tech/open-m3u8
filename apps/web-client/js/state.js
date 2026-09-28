@@ -13,6 +13,7 @@ export const SAMPLES = {
   fdr: "https://cdn.jwplayer.com/manifests/pZxWPRg4.m3u8",
   blender: "https://ireplay.tv/test/blender.m3u8",
   unifiedLive: "https://demo.unified-streaming.com/k8s/low-latency/stable/channel1/channel1.isml/.m3u8",
+  harborLive: "https://hls-harbor-livepush.akamaized.net/live_cdn/nsqIStpj8PaG-Ev/emcQJ0pGpremocy/index.m3u8",
   dashTimeline: "https://livesim2.dashif.org/livesim2/segtimeline_1/patch_60/testpic_2s/Manifest.mpd",
   dashPeriods: "https://livesim2.dashif.org/livesim2/periods_60/continuous_1/testpic_2s/Manifest.mpd",
   mars: "/media/titles/summer-on-mars/master.m3u8",
