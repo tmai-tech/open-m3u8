@@ -112,9 +112,10 @@ public class DemoLiveCadenceTest {
         Playlist full = DemoPlaylistPipeline.applyDeliveryDirectives(
                 new DemoPlaylistPipeline().apply(session, content, "http://cdn/live.m3u8",
                         "http://127.0.0.1:8765"),
-                "http://cdn/live.m3u8");
+                "http://cdn/live.m3u8", session);
         String fullText = PlaylistRewriteUtil.writeToString(full, Encoding.UTF_8);
-        assertTrue(fullText, fullText.contains("CAN-SKIP-UNTIL=60"));
+        // 10s target: max(6*10, 3*10 + 15 + 3*10) = 75.
+        assertTrue(fullText, fullText.contains("CAN-SKIP-UNTIL=75"));
         assertFalse(fullText.contains("EXT-X-SKIP"));
         assertEquals(10, count(fullText, "#EXTINF"));
         java.util.List<TrackData> withMap = new java.util.ArrayList<TrackData>(full.getMediaPlaylist().getTracks());
@@ -124,13 +125,14 @@ public class DemoLiveCadenceTest {
                 .withMediaPlaylist(full.getMediaPlaylist().buildUpon().withTracks(withMap).build())
                 .build();
 
-        Playlist delta = DemoPlaylistPipeline.applyDeliveryDirectives(full, "http://cdn/live.m3u8?_HLS_skip=YES");
+        Playlist delta = DemoPlaylistPipeline.applyDeliveryDirectives(
+                full, "http://cdn/live.m3u8?_HLS_skip=YES", session);
         String deltaText = PlaylistRewriteUtil.writeToString(delta, Encoding.UTF_8);
         assertTrue(deltaText, deltaText.contains("SKIPPED-SEGMENTS="));
         assertTrue(count(deltaText, "#EXTINF") < 10);
         assertTrue(deltaText.contains("#EXT-X-MEDIA-SEQUENCE:100"));
         assertTrue(deltaText.contains("#EXT-X-MAP:URI=\"http://cdn/init.mp4\""));
-        assertTrue(deltaText, deltaText.contains("#EXT-X-PROGRAM-DATE-TIME:2020-01-01T00:00:30.000Z"));
+        assertTrue(deltaText, deltaText.contains("#EXT-X-PROGRAM-DATE-TIME:2020-01-01T00:00:20.000Z"));
         assertEquals(1, count(deltaText, "#EXT-X-DATERANGE"));
     }
 

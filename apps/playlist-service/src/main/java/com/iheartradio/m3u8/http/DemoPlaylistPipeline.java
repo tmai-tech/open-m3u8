@@ -174,7 +174,7 @@ public final class DemoPlaylistPipeline {
             Playlist transformed = apply(session, playlist, playlistUrl, publicBase);
             Playlist rewritten = PlaylistRewriteUtil.rewriteUris(transformed, playlistUrl, mapper);
             rewritten = stripStartTag(rewritten);
-            rewritten = applyDeliveryDirectives(rewritten, playlistUrl);
+            rewritten = applyDeliveryDirectives(rewritten, playlistUrl, session);
             byte[] out = PlaylistRewriteUtil.write(rewritten, Encoding.UTF_8);
             String kind = rewritten.hasMasterPlaylist() ? "master"
                     : rewritten.hasMediaPlaylist() ? "media" : "playlist";
@@ -506,6 +506,10 @@ public final class DemoPlaylistPipeline {
      * {@code EXT-X-SKIP}. Media sequence stays the sequence of the oldest segment.
      */
     static Playlist applyDeliveryDirectives(Playlist playlist, String playlistUrl) {
+        return applyDeliveryDirectives(playlist, playlistUrl, null);
+    }
+
+    static Playlist applyDeliveryDirectives(Playlist playlist, String playlistUrl, DemoSession session) {
         if (playlist == null || !playlist.hasMediaPlaylist()) {
             return playlist;
         }
@@ -514,7 +518,13 @@ public final class DemoPlaylistPipeline {
             return playlist;
         }
         int target = media.getTargetDuration() > 0 ? media.getTargetDuration() : 6;
-        float skipUntil = 6f * target;
+        float holdBack = LiveCadence.HOLD_BACK_TARGETS * target;
+        float playout = session != null && session.livePlayoutLimit > 0f
+                ? session.livePlayoutLimit : LiveCadence.DEFAULT_PLAYOUT_SEC;
+        // Six target durations is the spec minimum. The tail also has to
+        // contain the interstitial (one hold-back behind the edge) for the
+        // whole pod, with another hold-back of slack so it is not on the boundary.
+        float skipUntil = Math.max(6f * target, holdBack + playout + holdBack);
         com.iheartradio.m3u8.data.ServerControlData existing = media.hasServerControlData()
                 ? media.getServerControlData() : null;
         if (existing != null && existing.hasCanSkipUntil() && existing.getCanSkipUntil() > skipUntil) {
