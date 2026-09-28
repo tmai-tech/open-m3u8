@@ -1,6 +1,6 @@
 import { $ } from "./dom.js";
 import { SAMPLES, state } from "./state.js";
-import { addBreakCard, applyCatalogPreset, bindForm, setFormPlayer, setStrategy, syncProtocolSelect } from "./form.js";
+import { addBreakCard, applyCatalogPreset, bindForm, refreshLiveAdSelect, setFormPlayer, setStrategy, syncProtocolSelect } from "./form.js";
 import { bindSeekMarks } from "./ad-markers.js";
 import { bindPublicUrl } from "./public-url.js";
 import { apply, bindPlayer, destroyPlayer, setOnDestroyed } from "./player.js";
@@ -13,7 +13,10 @@ setCatalogApply((item) => {
   destroyPlayer();
   applyCatalogPreset(item);
 });
-setCatalogReady(syncProtocolSelect);
+setCatalogReady(() => {
+  syncProtocolSelect();
+  refreshLiveAdSelect();
+});
 bindForm();
 if ($("contentUrl")) $("contentUrl").value = SAMPLES.cave;
 bindPlayer();

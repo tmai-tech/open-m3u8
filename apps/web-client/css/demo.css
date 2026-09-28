@@ -35,10 +35,13 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fo
 .section:first-child { border-top: none; }
 .section-title { margin: 0 0 12px; font-size: .95rem; font-weight: 700; }
 label { display: block; font-size: .82rem; color: var(--muted); margin-bottom: 6px; font-weight: 600; }
+label[hidden], .live-ad-pick[hidden] { display: none !important; }
 input[type="url"], input[type="text"], input[type="number"], select {
   width: 100%; background: var(--surface-2); border: 1px solid var(--border); color: var(--text);
+  color-scheme: dark;
   border-radius: 10px; padding: 11px 12px; font-size: .92rem; outline: none; margin-bottom: 12px;
 }
+select option { color: #f5f5f5; background: #1c2230; }
 input:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(91,140,255,.2); }
 input[readonly] { opacity: .95; }
 .hint { color: var(--muted); font-size: .8rem; margin: -6px 0 12px; line-height: 1.4; }
@@ -105,10 +108,20 @@ video { width: 100%; aspect-ratio: 16/9; background: #000; display: block; }
 .session-url-row .col-label { flex: none; min-width: 5.5rem; }
 .url-row input { margin-bottom: 0; flex: 1; }
 .breaks-toolbar {
-  display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 4px 0 8px;
+  display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin: 4px 0 8px;
 }
-.live-ad-pick { flex: 1; min-width: 0; margin: 0; }
-.live-ad-pick select { width: 100%; margin: 0; padding: 6px 8px; font-size: .8rem; }
+.live-ad-pick { flex: 1 1 100%; min-width: 0; margin: 0; }
+.live-ad-menu {
+  max-height: 11rem; overflow: auto; background: var(--surface-2);
+  border: 1px solid var(--border); border-radius: 10px;
+}
+.live-ad-menu button {
+  display: block; width: 100%; margin: 0; padding: 6px 8px; text-align: left;
+  background: transparent; color: var(--text); border: 0; border-radius: 0;
+  font-size: .78rem; font-weight: 500; cursor: pointer;
+}
+.live-ad-menu button.is-on,
+.live-ad-menu button:hover { background: #2a3347; }
 .breaks-toolbar label { margin: 0; }
 .break-row {
   display: grid; grid-template-columns: 76px 1fr 76px 36px; gap: 8px; align-items: center;
