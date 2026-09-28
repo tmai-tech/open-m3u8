@@ -270,40 +270,41 @@ export function syncProtocolSelect() {
 
 function selectedLiveAd() {
   const pick = $("liveAdPick");
-  const chosen = pick && pick.querySelector("button.is-on");
-  if (!pick || pick.hidden || !chosen) return null;
-  const dur = Number(chosen.dataset.duration);
+  const sel = $("liveAdSelect");
+  if (!pick || pick.hidden || !sel || !sel.value) return null;
+  const opt = sel.selectedOptions && sel.selectedOptions[0];
+  const dur = opt ? Number(opt.dataset.duration) : NaN;
   if (!isFinite(dur) || dur <= 0) return null;
   const content = findCatalogItem(($("contentUrl") && $("contentUrl").value) || "");
-  const item = findCatalogItem(chosen.dataset.url || "");
+  const item = findCatalogItem(sel.value);
   const dash = content && protocolForItem(content) === "dash" && item && item.dashUrl;
   const played = Math.min(dur, LIVE_CADENCE.playoutLimit);
-  return { url: toAbsoluteUrl(dash || chosen.dataset.url), durationSec: played };
+  return { url: toAbsoluteUrl(dash || sel.value), durationSec: played };
 }
 
 function showLiveAdSelect() {
   const pick = $("liveAdPick");
-  const menu = $("liveAdMenu");
-  if (!pick || !menu) return;
-  const previous = menu.querySelector("button.is-on");
-  const previousUrl = previous ? previous.dataset.url : "";
+  const sel = $("liveAdSelect");
+  if (!pick || !sel) return;
+  const previous = sel.value;
   const ads = liveAdCandidates();
-  menu.innerHTML = "";
+  sel.innerHTML = "";
   if (!ads.length) {
-    const empty = document.createElement("p");
-    empty.className = "debug-hint";
+    const empty = document.createElement("option");
+    empty.value = "";
     empty.textContent = "No ready titles";
-    menu.appendChild(empty);
+    sel.appendChild(empty);
+    sel.disabled = true;
   } else {
+    sel.disabled = false;
     const nameCount = {};
     ads.forEach((t) => {
       const name = t.title || t.id;
       nameCount[name] = (nameCount[name] || 0) + 1;
     });
     ads.forEach((t) => {
-      const opt = document.createElement("button");
-      opt.type = "button";
-      opt.dataset.url = t.url;
+      const opt = document.createElement("option");
+      opt.value = t.url;
       opt.dataset.duration = String(t.durationSec);
       const shown = Math.round(t.durationSec * 10) / 10;
       let name = t.title || t.id;
@@ -311,16 +312,9 @@ function showLiveAdSelect() {
       opt.textContent = t.durationSec > LIVE_CADENCE.playoutLimit
         ? name + " · " + shown + "s, play " + LIVE_CADENCE.playoutLimit + "s"
         : name + " · " + shown + "s";
-      opt.addEventListener("click", () => {
-        menu.querySelectorAll("button").forEach((b) => b.classList.remove("is-on"));
-        opt.classList.add("is-on");
-      });
-      menu.appendChild(opt);
+      sel.appendChild(opt);
     });
-    const keep = previousUrl && ads.some((t) => t.url === previousUrl)
-      ? menu.querySelector('button[data-url="' + CSS.escape(previousUrl) + '"]')
-      : menu.querySelector("button");
-    if (keep) keep.classList.add("is-on");
+    if (previous && ads.some((t) => t.url === previous)) sel.value = previous;
   }
   pick.hidden = false;
 }
@@ -339,10 +333,10 @@ export function bindForm() {
         return;
       }
       showLiveAdSelect();
-      const chosen = $("liveAdMenu") && $("liveAdMenu").querySelector("button.is-on");
-      setStatus(chosen
+      const sel = $("liveAdSelect");
+      setStatus(sel && sel.value
         ? "One ad under 15s, every minute. Play to apply."
-        : "No ready titles in your library.", chosen ? "ok" : "err");
+        : "No ready titles in your library.", sel && sel.value ? "ok" : "err");
       return;
     }
     addBreakRow();

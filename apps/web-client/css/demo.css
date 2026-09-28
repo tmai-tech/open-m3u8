@@ -110,18 +110,8 @@ video { width: 100%; aspect-ratio: 16/9; background: #000; display: block; }
 .breaks-toolbar {
   display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin: 4px 0 8px;
 }
-.live-ad-pick { flex: 1 1 100%; min-width: 0; margin: 0; }
-.live-ad-menu {
-  max-height: 11rem; overflow: auto; background: var(--surface-2);
-  border: 1px solid var(--border); border-radius: 10px;
-}
-.live-ad-menu button {
-  display: block; width: 100%; margin: 0; padding: 6px 8px; text-align: left;
-  background: transparent; color: var(--text); border: 0; border-radius: 0;
-  font-size: .78rem; font-weight: 500; cursor: pointer;
-}
-.live-ad-menu button.is-on,
-.live-ad-menu button:hover { background: #2a3347; }
+.live-ad-pick { flex: 1; min-width: 12rem; margin: 0; }
+.live-ad-pick select { width: 100%; margin: 0; padding: 6px 8px; font-size: .8rem; }
 .breaks-toolbar label { margin: 0; }
 .break-row {
   display: grid; grid-template-columns: 76px 1fr 76px 36px; gap: 8px; align-items: center;

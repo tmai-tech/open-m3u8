@@ -88,9 +88,9 @@
       <p id="liveCadenceHint" class="debug-hint" hidden>Live SGAI: one ad under 15s every 1 min. Add break to choose it.</p>
       <div class="breaks-toolbar">
         <span class="col-label">Ad breaks</span>
-        <div class="live-ad-pick" id="liveAdPick" hidden>
-          <div id="liveAdMenu" class="live-ad-menu" role="listbox" aria-label="Live ad"></div>
-        </div>
+        <label class="live-ad-pick" id="liveAdPick" hidden>
+          <select id="liveAdSelect" aria-label="Live ad"></select>
+        </label>
         <button type="button" class="btn btn-ghost btn-sm" id="btnAddBreak" title="New cue on the timeline">Add break</button>
       </div>
       <div id="breakList"></div>
