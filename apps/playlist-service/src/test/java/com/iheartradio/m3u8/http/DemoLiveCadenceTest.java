@@ -133,7 +133,17 @@ public class DemoLiveCadenceTest {
         assertTrue(deltaText.contains("#EXT-X-MEDIA-SEQUENCE:100"));
         assertTrue(deltaText.contains("#EXT-X-MAP:URI=\"http://cdn/init.mp4\""));
         assertTrue(deltaText, deltaText.contains("#EXT-X-PROGRAM-DATE-TIME:2020-01-01T00:00:20.000Z"));
+        // Date range is computed on the full window (last PDT minus 3 target
+        // durations = 00:01:00), not clamped to the first segment of the tail.
+        assertEquals(1, count(fullText, "#EXT-X-DATERANGE"));
+        assertTrue(fullText, fullText.contains("START-DATE=2020-01-01T00:01:00.000Z"));
+        int idAt = fullText.indexOf("ID=\"live-");
+        int idEnd = fullText.indexOf('"', idAt + 4);
+        String idAttr = fullText.substring(idAt, idEnd + 1);
         assertEquals(1, count(deltaText, "#EXT-X-DATERANGE"));
+        assertTrue(deltaText, deltaText.contains("START-DATE=2020-01-01T00:01:00.000Z"));
+        assertTrue(deltaText, deltaText.contains(idAttr));
+        assertFalse(deltaText.contains("START-DATE=2020-01-01T00:00:20.000Z"));
     }
 
     @Test
