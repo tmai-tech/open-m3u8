@@ -74,8 +74,10 @@ export function syncSnapshotAdUi() {
   if (toolbar) toolbar.hidden = false;
   if (!cadence) {
     const pick = $("liveAdPick");
+    const preroll = $("livePrerollPick");
     const add = $("btnAddBreak");
     if (pick) pick.hidden = true;
+    if (preroll) preroll.hidden = true;
     if (add) add.disabled = false;
   }
   if (list) list.hidden = !!cadence;

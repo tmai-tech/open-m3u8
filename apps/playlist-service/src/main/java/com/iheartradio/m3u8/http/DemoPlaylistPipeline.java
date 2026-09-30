@@ -1166,7 +1166,7 @@ public final class DemoPlaylistPipeline {
         }
         skipSilentAds(session);
         if (LiveCadence.isBreak(session, breakId)) {
-            return LiveCadence.assetListJson(this, session, publicBase, hlsStartOffset, hlsPrimaryId);
+            return LiveCadence.assetListJson(this, session, publicBase, hlsStartOffset, hlsPrimaryId, breakId);
         }
         DemoSession.Break found = session.findBreak(breakId);
         if (found == null) {

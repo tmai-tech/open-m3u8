@@ -85,10 +85,15 @@
         <input id="contentUrl" type="url" value="/media/titles/the-cave-charles-ancelle/master.m3u8" placeholder="Title" aria-label="Content URL" />
       </div>
 
-      <p id="liveCadenceHint" class="debug-hint" hidden>Live SGAI: one ad under 15s every 1 min. Add break to choose it.</p>
+      <p id="liveCadenceHint" class="debug-hint" hidden>Live SGAI: preroll at join, then one ad under 15s every 1 min.</p>
       <div class="breaks-toolbar">
         <span class="col-label">Ad breaks</span>
+        <label class="live-ad-pick" id="livePrerollPick" hidden>
+          <span class="col-label">Preroll</span>
+          <select id="livePrerollSelect" aria-label="Preroll ad"></select>
+        </label>
         <label class="live-ad-pick" id="liveAdPick" hidden>
+          <span class="col-label">Minute</span>
           <select id="liveAdSelect" aria-label="Live ad"></select>
         </label>
         <button type="button" class="btn btn-ghost btn-sm" id="btnAddBreak" title="New cue on the timeline">Add break</button>

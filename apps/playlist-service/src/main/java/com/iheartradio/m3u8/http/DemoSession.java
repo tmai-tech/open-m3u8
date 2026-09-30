@@ -92,9 +92,14 @@ public final class DemoSession {
     /** Rolling-live SGAI: place a pod every N seconds of program time. 0 = off. */
     public float liveCadenceSec;
     public float livePlayoutLimit = 15f;
-    /** Frozen START-DATE (epoch ms) for the current {@code live-*} id. */
+    /** Optional join preroll. Empty means the live playlist has no CUE=PRE range. */
+    public String prerollAdUrl;
+    public float prerollPlayoutLimit;
+    /** Frozen START-DATE (epoch ms) per {@code live-*} id. */
     public String liveFrozenId;
     public long liveFrozenStartMs;
+    private final java.util.Map<String, Long> liveFrozenStarts =
+            new java.util.HashMap<String, Long>();
     /** Upstream livesim patch URL through {@code publishTime=}. */
     public String dashPatchUpstream;
     /** Period that owns the patch-flow event, and its start on the presentation timeline. */
@@ -105,8 +110,12 @@ public final class DemoSession {
 
     public long freezeLiveCadenceStart(String id, long startMs) {
         synchronized (this) {
-            if (id != null && id.equals(liveFrozenId) && liveFrozenStartMs > 0L) {
-                return liveFrozenStartMs;
+            if (id != null) {
+                Long prev = liveFrozenStarts.get(id);
+                if (prev != null && prev.longValue() > 0L) {
+                    return prev.longValue();
+                }
+                liveFrozenStarts.put(id, Long.valueOf(startMs));
             }
             liveFrozenId = id;
             liveFrozenStartMs = startMs;
@@ -483,6 +492,10 @@ public final class DemoSession {
             sb.append("\"liveCadenceSec\":").append(liveCadenceSec).append(',');
             sb.append("\"livePlayoutLimit\":").append(livePlayoutLimit).append(',');
         }
+        if (prerollAdUrl != null && prerollAdUrl.length() > 0) {
+            sb.append("\"prerollAdUrl\":").append(DemoHttp.jsonString(prerollAdUrl)).append(',');
+            sb.append("\"prerollPlayoutLimit\":").append(prerollPlayoutLimit).append(',');
+        }
         String ext = contentUrl != null && contentUrl.toLowerCase().contains(".mpd")
                 ? "manifest.mpd" : "manifest.m3u8";
         String localManifest = publicBase + "/s/" + id + "/" + ext;
@@ -604,6 +617,19 @@ public final class DemoSession {
                 DemoHttp.jsonNumber(json, "livePlayoutLimit", Double.NaN));
         if (!Double.isNaN(liveLimit) && liveLimit > 0f) {
             session.livePlayoutLimit = liveLimit;
+        }
+        String preroll = DemoHttp.jsonStringValue(sgaiSrc, "prerollAdUrl");
+        if (preroll == null || preroll.isEmpty()) {
+            preroll = DemoHttp.jsonStringValue(json, "prerollAdUrl");
+        }
+        if (preroll != null && !preroll.isEmpty()) {
+            DemoHttp.requireHttpUrl(preroll);
+            session.prerollAdUrl = preroll;
+            float prerollLimit = (float) DemoHttp.jsonNumber(sgaiSrc, "prerollPlayoutLimit",
+                    DemoHttp.jsonNumber(json, "prerollPlayoutLimit", Double.NaN));
+            if (!Double.isNaN(prerollLimit) && prerollLimit > 0f) {
+                session.prerollPlayoutLimit = prerollLimit;
+            }
         }
         return session;
     }

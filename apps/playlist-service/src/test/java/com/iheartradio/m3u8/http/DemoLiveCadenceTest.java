@@ -349,6 +349,45 @@ public class DemoLiveCadenceTest {
     }
 
     @Test
+    public void prerollIsCuePreAtTheFirstSegmentAndUsesItsOwnAd() throws Exception {
+        Playlist content = liveWindow("2020-01-01T00:00:00.000Z", 10f, 4);
+        DemoSession session = DemoSession.fromJson("live-pre",
+                "{\"strategy\":\"sgai\",\"contentUrl\":\"http://cdn/live.m3u8\","
+                        + "\"adUrl\":\"http://ads/minute.m3u8\",\"prerollAdUrl\":\"http://ads/preroll.m3u8\","
+                        + "\"liveCadenceSec\":60,\"livePlayoutLimit\":15,\"prerollPlayoutLimit\":12}");
+        String text = PlaylistRewriteUtil.writeToString(
+                new DemoPlaylistPipeline().apply(session, content, null, "http://127.0.0.1:8765"),
+                Encoding.UTF_8);
+        assertEquals(2, count(text, "#EXT-X-DATERANGE"));
+        assertTrue(text.contains("ID=\"live-preroll\""));
+        assertTrue(text.contains("CUE=\"PRE\""));
+        assertTrue(text.contains("START-DATE=2020-01-01T00:00:00.000Z"));
+        assertTrue(text.contains("X-RESUME-OFFSET=0"));
+        assertTrue(text.contains("X-PLAYOUT-LIMIT=12"));
+        assertTrue(text.contains("/assets/live-preroll.json"));
+        int pre = text.indexOf("ID=\"live-preroll\"");
+        int minute = text.indexOf("START-DATE=2020-01-01T00:00:50.000Z");
+        assertTrue(pre >= 0 && minute > pre);
+        assertFalse(text.substring(minute).contains("CUE="));
+
+        Playlist later = liveWindow("2020-01-01T00:00:10.000Z", 10f, 4);
+        String slid = PlaylistRewriteUtil.writeToString(
+                new DemoPlaylistPipeline().apply(session, later, null, "http://127.0.0.1:8765"),
+                Encoding.UTF_8);
+        assertTrue(slid.contains("ID=\"live-preroll\""));
+        assertTrue(slid.contains("START-DATE=2020-01-01T00:00:00.000Z"));
+        assertFalse(slid.contains("START-DATE=2020-01-01T00:00:10.000Z,"));
+
+        DemoPlaylistPipeline pipeline = new DemoPlaylistPipeline();
+        String prerollJson = pipeline.assetListJson(session, "live-preroll", "http://127.0.0.1:8765");
+        String minuteJson = pipeline.assetListJson(session, "live-1577836800", "http://127.0.0.1:8765");
+        assertTrue(prerollJson.contains("preroll.m3u8"));
+        assertFalse(prerollJson.contains("minute.m3u8"));
+        assertTrue(minuteJson.contains("minute.m3u8"));
+        assertFalse(minuteJson.contains("preroll.m3u8"));
+    }
+
+    @Test
     public void liveAssetListEmptyWhenHlsStartOffsetGreaterThanZero() {
         DemoSession session = DemoSession.fromJson("live-off",
                 "{\"strategy\":\"sgai\",\"contentUrl\":\"http://cdn/live.m3u8\","

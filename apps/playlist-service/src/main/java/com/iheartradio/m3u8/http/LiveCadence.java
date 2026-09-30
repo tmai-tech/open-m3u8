@@ -22,6 +22,8 @@ final class LiveCadence {
     static final long LEAD_MS = 10_000L;
     static final float DEFAULT_INTERVAL_SEC = 60f;
     static final float DEFAULT_PLAYOUT_SEC = 15f;
+    /** One join interstitial per session. Distinct from the per-minute {@code live-} id. */
+    static final String PREROLL_ID = "live-preroll";
 
     private LiveCadence() {}
 
@@ -104,6 +106,19 @@ final class LiveCadence {
         if (host.endsWith("/")) {
             host = host.substring(0, host.length() - 1);
         }
+        if (session.prerollAdUrl != null && session.prerollAdUrl.length() > 0) {
+            float prerollLimit = session.prerollPlayoutLimit > 0f
+                    ? session.prerollPlayoutLimit : DEFAULT_PLAYOUT_SEC;
+            long prerollStart = session.freezeLiveCadenceStart(PREROLL_ID, baseMs);
+            float prerollOff = (prerollStart - baseMs) / 1000f;
+            boolean prerollCurrent = prerollStart + Math.round(prerollLimit * 1000f) > baseMs;
+            if (prerollOff >= -0.01f || prerollCurrent) {
+                String prerollList = host + "/s/" + session.id + "/assets/" + PREROLL_ID + ".json";
+                injected.add(new InterstitialBreak(PREROLL_ID, prerollOff, prerollLimit, null, prerollList,
+                        Float.valueOf(0f), session.defaultRestrict, session.defaultSnap,
+                        prerollLimit, null, null, null, "PRE"));
+            }
+        }
         if (off >= -0.01f || podStillCurrent) {
             String list = host + "/s/" + session.id + "/assets/" + id + ".json";
             injected.add(new InterstitialBreak(id, off, limit, null, list,
@@ -136,9 +151,14 @@ final class LiveCadence {
 
     static String assetListJson(DemoPlaylistPipeline pipeline, DemoSession session, String publicBase,
                                 double hlsStartOffset, String hlsPrimaryId) {
+        return assetListJson(pipeline, session, publicBase, hlsStartOffset, hlsPrimaryId, null);
+    }
+
+    static String assetListJson(DemoPlaylistPipeline pipeline, DemoSession session, String publicBase,
+                                double hlsStartOffset, String hlsPrimaryId, String breakId) {
         if (hlsStartOffset > 0d || Double.isNaN(hlsStartOffset)) {
             DemoLog.event("assets").sid(session.id)
-                    .put("break", "live")
+                    .put("break", breakId == null ? "live" : breakId)
                     .put("primaryId", hlsPrimaryId)
                     .put("startOffset", hlsStartOffset)
                     .put("skipAds", true)
@@ -146,7 +166,8 @@ final class LiveCadence {
                     .write();
             return EMPTY_ASSETS;
         }
-        String uri = session.adUrl;
+        boolean preroll = PREROLL_ID.equals(breakId);
+        String uri = preroll ? session.prerollAdUrl : session.adUrl;
         if (uri == null || uri.length() == 0 || session.isSkippedAd(uri)) {
             return EMPTY_ASSETS;
         }
@@ -155,7 +176,9 @@ final class LiveCadence {
             host = host.substring(0, host.length() - 1);
         }
         String proxyBase = host + "/s/" + session.id;
-        float maxDur = session.livePlayoutLimit > 0f ? session.livePlayoutLimit : DEFAULT_PLAYOUT_SEC;
+        float maxDur = preroll
+                ? (session.prerollPlayoutLimit > 0f ? session.prerollPlayoutLimit : DEFAULT_PLAYOUT_SEC)
+                : (session.livePlayoutLimit > 0f ? session.livePlayoutLimit : DEFAULT_PLAYOUT_SEC);
         float dur = pipeline.actualAdPodDuration(session, uri, maxDur);
         String proxied = PlaylistRewriteUtil.toProxyUrl(proxyBase, uri);
         return "{\"ASSETS\":[{\"URI\":" + DemoHttp.jsonString(proxied)

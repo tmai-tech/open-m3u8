@@ -164,7 +164,8 @@ export function buildLocalSession() {
   if (!contentUrl) throw new Error("Content URL is required");
   if (isLiveCadenceSession()) {
     const ad = selectedLiveAd();
-    if (!ad) throw new Error("Add break, then pick one title under 15s");
+    if (!ad) throw new Error("Pick a minute ad");
+    const preroll = selectedAdFrom("livePrerollSelect");
     const restrictSkip = $("restrictSkip").checked;
     const restrictJump = $("restrictJump").checked;
     const playlistDelta = $("playlistDelta").checked;
@@ -179,6 +180,8 @@ export function buildLocalSession() {
       maxAdDurationSec: ad.durationSec,
       liveCadenceSec: LIVE_CADENCE.intervalSec,
       livePlayoutLimit: ad.durationSec,
+      prerollAdUrl: preroll ? preroll.url : "",
+      prerollPlayoutLimit: preroll ? preroll.durationSec : 0,
       snapToSegment: true,
       restrictSkip,
       restrictJump,
@@ -193,6 +196,8 @@ export function buildLocalSession() {
         playlistDelta,
         liveCadenceSec: LIVE_CADENCE.intervalSec,
         livePlayoutLimit: ad.durationSec,
+        prerollAdUrl: preroll ? preroll.url : "",
+        prerollPlayoutLimit: preroll ? preroll.durationSec : 0,
       },
     };
   }
@@ -268,10 +273,9 @@ export function syncProtocolSelect() {
   }
 }
 
-function selectedLiveAd() {
-  const pick = $("liveAdPick");
-  const sel = $("liveAdSelect");
-  if (!pick || pick.hidden || !sel || !sel.value) return null;
+function selectedAdFrom(selectId) {
+  const sel = $(selectId);
+  if (!sel || !sel.value) return null;
   const opt = sel.selectedOptions && sel.selectedOptions[0];
   const dur = opt ? Number(opt.dataset.duration) : NaN;
   if (!isFinite(dur) || dur <= 0) return null;
@@ -282,12 +286,14 @@ function selectedLiveAd() {
   return { url: toAbsoluteUrl(dash || sel.value), durationSec: played };
 }
 
-function showLiveAdSelect() {
+function selectedLiveAd() {
   const pick = $("liveAdPick");
-  const sel = $("liveAdSelect");
-  if (!pick || !sel) return;
+  if (!pick || pick.hidden) return null;
+  return selectedAdFrom("liveAdSelect");
+}
+
+function fillAdSelect(sel, ads, allowNone) {
   const previous = sel.value;
-  const ads = liveAdCandidates();
   sel.innerHTML = "";
   if (!ads.length) {
     const empty = document.createElement("option");
@@ -295,28 +301,47 @@ function showLiveAdSelect() {
     empty.textContent = "No ready titles";
     sel.appendChild(empty);
     sel.disabled = true;
-  } else {
-    sel.disabled = false;
-    const nameCount = {};
-    ads.forEach((t) => {
-      const name = t.title || t.id;
-      nameCount[name] = (nameCount[name] || 0) + 1;
-    });
-    ads.forEach((t) => {
-      const opt = document.createElement("option");
-      opt.value = t.url;
-      opt.dataset.duration = String(t.durationSec);
-      const shown = Math.round(t.durationSec * 10) / 10;
-      let name = t.title || t.id;
-      if (nameCount[name] > 1) name += " · " + String(t.id).replace(/^grok-video-/, "").slice(0, 8);
-      opt.textContent = t.durationSec > LIVE_CADENCE.playoutLimit
-        ? name + " · " + shown + "s, play " + LIVE_CADENCE.playoutLimit + "s"
-        : name + " · " + shown + "s";
-      sel.appendChild(opt);
-    });
-    if (previous && ads.some((t) => t.url === previous)) sel.value = previous;
+    return;
   }
+  sel.disabled = false;
+  if (allowNone) {
+    const none = document.createElement("option");
+    none.value = "";
+    none.textContent = "None";
+    sel.appendChild(none);
+  }
+  const nameCount = {};
+  ads.forEach((t) => {
+    const name = t.title || t.id;
+    nameCount[name] = (nameCount[name] || 0) + 1;
+  });
+  ads.forEach((t) => {
+    const opt = document.createElement("option");
+    opt.value = t.url;
+    opt.dataset.duration = String(t.durationSec);
+    const shown = Math.round(t.durationSec * 10) / 10;
+    let name = t.title || t.id;
+    if (nameCount[name] > 1) name += " · " + String(t.id).replace(/^grok-video-/, "").slice(0, 8);
+    opt.textContent = t.durationSec > LIVE_CADENCE.playoutLimit
+      ? name + " · " + shown + "s, play " + LIVE_CADENCE.playoutLimit + "s"
+      : name + " · " + shown + "s";
+    sel.appendChild(opt);
+  });
+  if (previous && ads.some((t) => t.url === previous)) sel.value = previous;
+  else if (allowNone) sel.value = "";
+}
+
+function showLiveAdSelect() {
+  const pick = $("liveAdPick");
+  const sel = $("liveAdSelect");
+  const prerollPick = $("livePrerollPick");
+  const prerollSel = $("livePrerollSelect");
+  if (!pick || !sel) return;
+  const ads = liveAdCandidates();
+  fillAdSelect(sel, ads, false);
+  if (prerollSel) fillAdSelect(prerollSel, ads, true);
   pick.hidden = false;
+  if (prerollPick) prerollPick.hidden = false;
 }
 
 export function refreshLiveAdSelect() {
