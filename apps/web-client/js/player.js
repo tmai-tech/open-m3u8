@@ -1,5 +1,5 @@
 import { $, bind } from "./dom.js";
-import { adsAllowed, isLiveCadenceSession, isMpdUrl, protocolForItem, setPlayerEngine, setProtocolPreference, state } from "./state.js";
+import { adsAllowed, bumpPlaybackEpoch, currentPlaybackEpoch, isLiveCadenceSession, isMpdUrl, protocolForItem, setPlayerEngine, setProtocolPreference, state } from "./state.js";
 import { highlight, setStatus } from "./status.js";
 import { createSession, showSessionWarnings } from "./api.js";
 import { setManifestButtons, syncProtocolSelect } from "./form.js";
@@ -64,11 +64,15 @@ export function destroyPlayer() {
 }
 
 export function playUrl(manifestUrl, enableInterstitials, staticSession) {
+  const epoch = currentPlaybackEpoch();
+  const stale = () => epoch !== currentPlaybackEpoch();
   destroyPlayer();
+  if (stale()) return;
   const video = $("video");
   const dash = isMpdUrl(manifestUrl);
   if (dash || state.playerEngine === "shaka") {
     playShaka(manifestUrl).catch((e) => {
+      if (stale()) return;
       if (dash) {
         setStatus("Shaka failed — DASH needs Shaka. " + (e && e.message ? e.message : e), "err");
         showPoster();
@@ -137,6 +141,7 @@ export function playUrl(manifestUrl, enableInterstitials, staticSession) {
       state.hls.on(Hls.Events.INTERSTITIAL_ASSET_PLAYER_CREATED, hookInterstitial);
     }
     state.hls.on(Hls.Events.MANIFEST_PARSED, () => {
+      if (stale()) return;
       syncQualityMenu(state.hls);
       video.play().catch(() => {});
       hidePoster();
@@ -181,10 +186,12 @@ export function playUrl(manifestUrl, enableInterstitials, staticSession) {
       refreshAdLabel();
     });
     state.hls.on(Hls.Events.ERROR, (_, data) => {
+      if (stale() || state.hls == null) return;
       if (data.fatal) setStatus("Player error: " + data.type + " / " + data.details, "err");
     });
     return;
   }
+  if (stale()) return;
   startAdWatch();
   startSeekThumbs(manifestUrl);
   video.src = manifestUrl;
@@ -195,6 +202,8 @@ export function playUrl(manifestUrl, enableInterstitials, staticSession) {
 }
 
 export async function apply(andPlay) {
+  const epoch = andPlay ? bumpPlaybackEpoch() : currentPlaybackEpoch();
+  const stale = () => andPlay && epoch !== currentPlaybackEpoch();
   try {
     if (andPlay) destroyPlayer();
     $("btnApply").disabled = true;
@@ -214,10 +223,13 @@ export async function apply(andPlay) {
         try {
           const res = await fetch(dashUrl, { cache: "no-store" });
           const text = await res.text();
+          if (stale()) return;
           $("preview").innerHTML = highlight(text);
         } catch (_) {
+          if (stale()) return;
           $("preview").textContent = dashUrl;
         }
+        if (stale()) return;
         state.adWindows = [];
         setAdLabel(false);
         setStatus("Ready.", "ok");
@@ -239,6 +251,7 @@ export async function apply(andPlay) {
     }
     setStatus("Starting…");
     const session = await createSession();
+    if (stale()) return;
     state.lastSession = session;
     showSessionId(session && session.id);
     if (session.publicManifestUrl) {
@@ -247,10 +260,12 @@ export async function apply(andPlay) {
     if (!state.useProxy) {
       if (session.strategy === "ssai" && window.HlsDemoRewrite) {
         await window.HlsDemoRewrite.loadAdTracks(session);
+        if (stale()) return;
       }
       const preview = window.HlsDemoRewrite
         ? await window.HlsDemoRewrite.previewMedia(session, session.contentUrl)
         : "// static rewrite unavailable";
+      if (stale()) return;
       $("preview").innerHTML = highlight(preview);
       state.adWindows = parseCueWindows(preview);
       $("manifestUrl").value = session.contentUrl;
@@ -269,7 +284,9 @@ export async function apply(andPlay) {
       " · <strong>" + (session.strategy || state.strategy).toUpperCase() + "</strong>" +
       " · splices [" + (session.splices || []).join(", ") + "]s";
     const res = await fetch(session.manifestUrl, { cache: "no-store" });
+    if (stale()) return;
     let text = await res.text();
+    if (stale()) return;
     if (!res.ok) throw new Error(text);
     if (text.indexOf("#EXT-X-STREAM-INF") >= 0) {
       const mediaUrl = firstMediaPlaylistUrl(text, session.manifestUrl);
@@ -277,16 +294,20 @@ export async function apply(andPlay) {
         try {
           const mediaRes = await fetch(mediaUrl, { cache: "no-store" });
           const mediaText = await mediaRes.text();
+          if (stale()) return;
           if (mediaRes.ok && mediaText.indexOf("#EXTINF") >= 0) text = mediaText;
         } catch (_) { /* keep the master */ }
       }
     }
+    if (stale()) return;
     $("preview").innerHTML = highlight(text);
     state.adWindows = /<MPD[\s>]|<Period[\s>]/i.test(text)
       ? parseDashAdWindows(text) : parseCueWindows(text);
     setStatus("Ready.", "ok");
+    if (stale()) return;
     if (andPlay) playUrl(session.manifestUrl, adsAllowed() && state.strategy === "sgai");
   } catch (e) {
+    if (stale()) return;
     const msg = String(e.message || e);
     showPoster();
     setPosterHint(msg);
@@ -299,6 +320,7 @@ export async function apply(andPlay) {
 export function bindPlayer() {
   bindQuality();
   syncProtocolSelect();
+  let syncingProtocol = false;
   const proto = $("protocol");
   if (proto) {
     proto.value = protocolForItem(findCatalogItem(($("contentUrl") && $("contentUrl").value) || ""));
@@ -309,15 +331,24 @@ export function bindPlayer() {
         setStatus("No DASH pack for this title.", "err");
         return;
       }
-      setProtocolPreference(proto.value);
-      syncProtocolSelect();
-      apply(true);
+      bumpPlaybackEpoch();
+      syncingProtocol = true;
+      try {
+        setProtocolPreference(proto.value);
+        syncProtocolSelect();
+      } finally {
+        syncingProtocol = false;
+      }
+      destroyPlayer();
+      showPoster();
+      setStatus((proto.value === "dash" ? "DASH" : "HLS") + ". Press Play.");
     });
   }
   const engine = $("playerEngine");
   if (engine) {
     engine.value = state.playerEngine === "shaka" ? "shaka" : "hls";
     engine.addEventListener("change", () => {
+      if (syncingProtocol) return;
       const next = engine.value === "shaka" ? "shaka" : "hls";
       if (next === "shaka" && !shakaAvailable()) {
         engine.value = "hls";

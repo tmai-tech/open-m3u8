@@ -1,5 +1,5 @@
 import { $ } from "./dom.js";
-import { isMpdUrl, state } from "./state.js";
+import { currentPlaybackEpoch, isMpdUrl, state } from "./state.js";
 import { setStatus } from "./status.js";
 import { showSessionWarnings } from "./api.js";
 import { hidePoster } from "./ott.js";
@@ -59,6 +59,8 @@ function restoreVideoMount(video) {
 }
 
 export async function playShaka(manifestUrl) {
+  const epoch = currentPlaybackEpoch();
+  const stale = () => epoch !== currentPlaybackEpoch();
   if (!shakaAvailable()) {
     throw new Error("Shaka UI is not loaded");
   }
@@ -78,6 +80,10 @@ export async function playShaka(manifestUrl) {
 
   const player = new shaka.Player();
   await player.attach(video);
+  if (stale()) {
+    try { player.destroy(); } catch (e) { /* format changed */ }
+    return;
+  }
   try {
     player.configure({
       preferredTextLanguage: "en",
@@ -89,12 +95,14 @@ export async function playShaka(manifestUrl) {
   state.shakaUi = ui;
 
   player.addEventListener("error", (ev) => {
+    if (stale() || state.shaka !== player) return;
     const err = ev && ev.detail;
     const code = err && (err.code != null) ? err.code : "";
     const msg = err && err.message ? err.message : String(err || "unknown");
     setStatus("Shaka error " + code + " — " + msg, "err");
   });
   player.addEventListener("loaded", () => {
+    if (stale() || state.shaka !== player) return;
     const dur = Number(video.duration);
     if (isFinite(dur) && dur > state.mediaDuration) state.mediaDuration = dur;
     if (state.liveMode && state.forceVod) state.windowDuration = state.mediaDuration;
@@ -110,10 +118,13 @@ export async function playShaka(manifestUrl) {
   startAdLabelWatch();
   const mime = isMpdUrl(manifestUrl) ? "application/dash+xml" : HLS_MIME;
   await player.load(manifestUrl, /* startTime= */ null, mime);
+  if (stale()) return;
   if (!isMpdUrl(manifestUrl)) {
     await loadCueWindowsFromMaster(manifestUrl);
+    if (stale()) return;
   }
   try { player.setTextTrackVisibility(true); } catch (e) { /* ignore */ }
+  if (stale()) return;
   syncShakaQuality(player);
   showSessionWarnings(state.lastSession && state.lastSession.id, setStatus);
   hidePoster();

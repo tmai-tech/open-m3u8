@@ -43,6 +43,7 @@ export const state = {
   strategy: localStorage.getItem("hls-demo-strategy") || "ssai",
   playerEngine: readPlayerEngine(),
   protocolPreference: readProtocolPreference(),
+  playbackEpoch: 0,
   hls: null,
   shaka: null,
   shakaUi: null,
@@ -100,6 +101,16 @@ function readProtocolPreference() {
 export function setProtocolPreference(name) {
   state.protocolPreference = name === "dash" ? "dash" : "hls";
   try { localStorage.setItem("hls-demo-protocol", state.protocolPreference); } catch (e) { /* ignore */ }
+}
+
+/** Bumped when a format change should drop an in-flight Play. */
+export function currentPlaybackEpoch() {
+  return state.playbackEpoch || 0;
+}
+
+export function bumpPlaybackEpoch() {
+  state.playbackEpoch = (state.playbackEpoch || 0) + 1;
+  return state.playbackEpoch;
 }
 
 export function itemHasDash(item) {
