@@ -47,22 +47,30 @@ export function sgaiRemaining() {
   }
   const im = state.hls && state.hls.interstitialsManager;
   if (!im) return configuredAdLength();
+  // media.duration is the whole file (a 73s creative capped at 15s) or the live
+  // timeline. Count the playout limit, from time already played in the break.
+  const cap = sgaiPlayoutCap();
   const q = im.playerQueue || [];
   for (let i = 0; i < q.length; i++) {
-    const media = q[i] && q[i].media;
+    const asset = q[i];
+    const media = asset && asset.media;
     if (!media || media.paused || media.ended) continue;
-    const d = Number(media.duration);
-    const t = Number(media.currentTime) || 0;
-    if (isFinite(d) && d > 0) return Math.max(0, d - t);
-    return Math.max(0, sgaiPlayoutCap() - t);
+    return Math.max(0, cap - breakTimePlayed(asset, media));
   }
   const player = im.interstitialPlayer;
   if (player) {
     const d = Number(player.duration);
     const t = Number(player.currentTime) || 0;
-    if (isFinite(d) && d > 0 && d < sgaiPlayoutCap() + 0.5) return Math.max(0, d - t);
+    if (isFinite(d) && d > 0) return Math.max(0, Math.min(d, cap) - Math.min(Math.max(0, t), cap));
   }
-  return Math.max(0, sgaiPlayoutCap());
+  return Math.max(0, cap);
+}
+
+function breakTimePlayed(asset, media) {
+  const start = Number(asset && asset.startOffset);
+  const local = Number(asset && asset.currentTime);
+  const t = isFinite(local) ? local : (Number(media && media.currentTime) || 0);
+  return Math.max(0, (isFinite(start) ? start : 0) + Math.max(0, t));
 }
 
 export function sgaiAdOrdinal() {
