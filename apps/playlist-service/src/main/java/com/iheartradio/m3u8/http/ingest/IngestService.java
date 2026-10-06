@@ -73,7 +73,7 @@ public final class IngestService {
             try {
                 long n = Long.parseLong(cl.trim());
                 if (n > MAX_BYTES) {
-                    throw new IllegalArgumentException("file too large (max 512MB)");
+                    throw new IllegalArgumentException(MultipartForm.tooLargeMessage());
                 }
             } catch (NumberFormatException ignored) {
                 // parse the stream with a running cap
@@ -93,7 +93,7 @@ public final class IngestService {
         }
         if (parsed.tempFile.length() > MAX_BYTES) {
             parsed.tempFile.delete();
-            throw new IllegalArgumentException("file too large (max 512MB)");
+            throw new IllegalArgumentException(MultipartForm.tooLargeMessage());
         }
 
         String display = TitleNames.displayTitle(parsed.filename, parsed.title);

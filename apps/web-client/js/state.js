@@ -17,6 +17,7 @@ export const SAMPLES = {
   dashTimeline: "https://livesim2.dashif.org/livesim2/segtimeline_1/patch_60/testpic_2s/Manifest.mpd",
   dashPeriods: "https://livesim2.dashif.org/livesim2/periods_60/continuous_1/testpic_2s/Manifest.mpd",
   mars: "/media/titles/summer-on-mars/master.m3u8",
+  carlos: "/media/titles/summer-in-mars-by-carlos-carlo-milite/master.m3u8",
   cave: "/media/titles/the-cave-charles-ancelle/master.m3u8",
   giff: "/media/titles/giff-day-1/master.m3u8",
   grok: "/media/titles/grok-clip/master.m3u8",

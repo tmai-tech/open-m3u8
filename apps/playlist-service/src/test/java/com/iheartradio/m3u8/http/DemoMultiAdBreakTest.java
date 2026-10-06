@@ -155,6 +155,9 @@ public class DemoMultiAdBreakTest {
                         + "{\"assetUri\":\"http://ads/b.m3u8\",\"durationSec\":5},"
                         + "{\"assetUri\":\"http://ads/c.m3u8\",\"durationSec\":6}]}"
                         + "]}");
+        session.putCachedAd("http://ads/a.m3u8", media(track("http://ads/a0.ts", 8f)));
+        session.putCachedAd("http://ads/b.m3u8", media(track("http://ads/b0.ts", 5f)));
+        session.putCachedAd("http://ads/c.m3u8", media(track("http://ads/c0.ts", 6f)));
 
         String text = PlaylistRewriteUtil.writeToString(
                 new DemoPlaylistPipeline().apply(session, content, null, "http://127.0.0.1:8765"),

@@ -37,12 +37,12 @@ export function showSessionId(id) {
   if (!id || id === "static") {
     label.hidden = true;
     link.textContent = "—";
-    link.href = "/api/logs";
+    link.href = "/logs.html";
     return;
   }
   label.hidden = false;
   link.textContent = id;
-  link.href = "/api/logs?session=" + encodeURIComponent(id);
+  link.href = "/logs.html?session=" + encodeURIComponent(id);
 }
 
 export function destroyPlayer() {
@@ -370,6 +370,6 @@ export function bindPlayer() {
   bind("btnStop", "click", () => { destroyPlayer(); setAdLabel(false); setStatus("Player stopped."); });
   bind("btnLogs", "click", () => {
     const id = state.lastSession && state.lastSession.id;
-    window.open(id ? ("/api/logs?session=" + encodeURIComponent(id)) : "/api/logs", "_blank");
+    window.open(id ? ("/logs.html?session=" + encodeURIComponent(id)) : "/logs.html", "_blank");
   });
 }

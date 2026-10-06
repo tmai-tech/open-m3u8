@@ -15,7 +15,11 @@ import java.util.Locale;
  */
 public final class MultipartForm {
 
-    public static final long MAX_BYTES = 512L * 1024L * 1024L;
+    public static final long MAX_BYTES = 900L * 1024L * 1024L;
+
+    public static String tooLargeMessage() {
+        return "file too large (max " + (MAX_BYTES / (1024L * 1024L)) + "MB)";
+    }
 
     private MultipartForm() {
     }
@@ -246,7 +250,7 @@ public final class MultipartForm {
                         if (have > 0) {
                             written += have;
                             if (written > maxBytes) {
-                                throw new IllegalArgumentException("file too large (max 512MB)");
+                                throw new IllegalArgumentException(tooLargeMessage());
                             }
                             os.write(buf, pos, have);
                             pos = end;
@@ -258,7 +262,7 @@ public final class MultipartForm {
                         int n = idx - pos;
                         written += n;
                         if (written > maxBytes) {
-                            throw new IllegalArgumentException("file too large (max 512MB)");
+                            throw new IllegalArgumentException(tooLargeMessage());
                         }
                         os.write(buf, pos, n);
                         pos = idx + needle.length;
@@ -267,7 +271,7 @@ public final class MultipartForm {
                     int emit = end - pos - needle.length + 1;
                     written += emit;
                     if (written > maxBytes) {
-                        throw new IllegalArgumentException("file too large (max 512MB)");
+                        throw new IllegalArgumentException(tooLargeMessage());
                     }
                     os.write(buf, pos, emit);
                     pos += emit;

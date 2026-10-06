@@ -83,6 +83,7 @@ public final class SessionRegistry {
                 .put("adUrl", session.adUrl)
                 .put("breakCount", session.breaks.size())
                 .putRaw("splices", offs.toString())
+                .play(session)
                 .write();
     }
 }

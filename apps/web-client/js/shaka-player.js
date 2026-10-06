@@ -126,10 +126,10 @@ export async function playShaka(manifestUrl) {
   try { player.setTextTrackVisibility(true); } catch (e) { /* ignore */ }
   if (stale()) return;
   syncShakaQuality(player);
-  showSessionWarnings(state.lastSession && state.lastSession.id, setStatus);
   hidePoster();
   video.play().catch(() => {});
   setStatus("Playing", "ok");
+  showSessionWarnings(state.lastSession && state.lastSession.id, setStatus);
 }
 
 function hookShakaAds(player) {

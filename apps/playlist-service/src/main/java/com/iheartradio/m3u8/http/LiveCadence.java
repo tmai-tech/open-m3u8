@@ -163,6 +163,7 @@ final class LiveCadence {
                     .put("startOffset", hlsStartOffset)
                     .put("skipAds", true)
                     .put("msg", "_HLS_start_offset greater than 0; returning empty ASSETS")
+                    .play(session)
                     .write();
             return EMPTY_ASSETS;
         }

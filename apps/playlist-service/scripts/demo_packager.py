@@ -225,6 +225,8 @@ def package(ffmpeg: str, ffprobe: str, src: Path, dest: Path, root: Path, tid: s
     write_dummy_subs(dest)
     job_log(root, tid, "dummy subs written")
     width, height = probe_video_size(ffprobe, dest / "init.m4s")
+    if rename_source_rung(dest, height):
+        job_log(root, tid, f"source rung v{height}")
     encode_missing_ladder_rungs(ffmpeg, src, dest, height, fps, audio, root, tid)
     variants = collect_variants(dest, ffprobe, fps, dur)
     if variants:
@@ -448,8 +450,11 @@ def backfill_dash(root: Path, ffmpeg: str, ffprobe: str, tid: str) -> None:
     job_log(root, tid, "dashUrl set")
 
 
-# Extra rungs below the source-size encode. Never encode a rung >= source height.
-LADDER_HEIGHTS = (360, 480)
+# Scaled rungs below the source frame. Never encode a rung >= source height,
+# so a 400p master is not upscaled. The first encode always lands on
+# v720.m3u8 + init.m4s; rename_source_rung moves that aside when the frame
+# is not 720 so this list can write a real 720 rung without clobbering it.
+LADDER_HEIGHTS = (360, 480, 720)
 
 
 def encode_missing_ladder_rungs(
@@ -478,6 +483,63 @@ def av_input_args(src: Path, audio: bool) -> list[str]:
 
 def rung_init_name(height: int) -> str:
     return "init.m4s" if height == 720 else f"init{height}.m4s"
+
+
+def rewrite_source_playlist(text: str, height: int) -> str:
+    """Point a source media playlist at v{height} segments and its init."""
+    init_name = rung_init_name(height)
+    replaced_map = False
+    out = []
+    for line in text.splitlines():
+        if line.startswith("#EXT-X-MAP:") and 'URI="init.m4s"' in line:
+            line = line.replace('URI="init.m4s"', f'URI="{init_name}"', 1)
+            replaced_map = True
+        elif line.startswith("v720_"):
+            line = "v" + str(height) + "_" + line[len("v720_"):]
+        out.append(line)
+    if not replaced_map:
+        raise RuntimeError('v720 playlist is missing URI="init.m4s"')
+    body = "\n".join(out)
+    if text.endswith("\n"):
+        body += "\n"
+    return body
+
+
+def rename_source_rung(dest: Path, height: int) -> bool:
+    """Move a non-720 source off v720.m3u8 / init.m4s / v720_*.m4s.
+
+    Those names belong to a real 720p rung. Returns False when the pack is
+    already 720p or has no v720 playlist. Raises if the destination names
+    are already taken.
+    """
+    if height <= 0 or height == 720:
+        return False
+    src_playlist = dest / "v720.m3u8"
+    if not src_playlist.is_file():
+        return False
+    stem = f"v{height}"
+    dst_playlist = dest / f"{stem}.m3u8"
+    if dst_playlist.exists():
+        raise RuntimeError(f"{dst_playlist.name} already exists; not renaming v720")
+    src_init = dest / "init.m4s"
+    dst_init = dest / rung_init_name(height)
+    moves = []
+    if src_init.is_file():
+        if dst_init.exists():
+            raise RuntimeError(f"{dst_init.name} already exists; not renaming init.m4s")
+        moves.append((src_init, dst_init))
+    for seg in sorted(dest.glob("v720_*.m4s")):
+        dst = dest / (stem + seg.name[len("v720"):])
+        if dst.exists():
+            raise RuntimeError(f"{dst.name} already exists; not renaming {seg.name}")
+        moves.append((seg, dst))
+    text = rewrite_source_playlist(
+        src_playlist.read_text(encoding="utf-8"), height)
+    for src, dst in moves:
+        src.rename(dst)
+    dst_playlist.write_text(text, encoding="utf-8")
+    src_playlist.unlink()
+    return True
 
 
 def encode_rung(ffmpeg: str, src: Path, dest: Path, height: int, fps: int,
@@ -833,19 +895,29 @@ def backfill_resolution(root: Path, ffprobe: str) -> None:
 def add_ladder(root: Path, ffmpeg: str, ffprobe: str, tid: str) -> None:
     dest = root / "titles" / tid
     src = root / "inbox" / "done" / f"{tid}.mp4"
-    if not dest.is_dir() or not (dest / "v720.m3u8").is_file():
+    if not dest.is_dir() or not video_playlists(dest):
         raise SystemExit(f"demo-packager: no packaged title {tid}")
     if not src.is_file():
         raise SystemExit(f"demo-packager: missing source {src}")
     dur, fps, audio = probe(ffprobe, src)
-    src_w, src_h = probe_video_size(ffprobe, dest / "init.m4s")
+    stored_h = 0
+    if (dest / "init.m4s").is_file():
+        _stored_w, stored_h = probe_video_size(ffprobe, dest / "init.m4s")
+    if stored_h and stored_h != 720:
+        rename_source_rung(dest, stored_h)
+        job_log(root, tid, f"source rung v{stored_h}")
+    _src_w, src_h = probe_video_size(ffprobe, src)
     if src_h <= 0:
-        src_w, src_h = probe_video_size(ffprobe, src)
+        src_h = stored_h
     encode_missing_ladder_rungs(ffmpeg, src, dest, src_h, fps, audio, root, tid)
     variants = collect_variants(dest, ffprobe, fps, dur)
     if not variants:
         raise SystemExit(f"demo-packager: no video playlists in {dest}")
     write_master_variants(dest, variants, has_subs=(dest / "subs.m3u8").is_file())
+    write_dash_mpd(dest, {
+        "durationSec": dur, "fps": fps, "variants": variants,
+    })
+    job_log(root, tid, "dash mpd written")
     label = ladder_label(variants)
     row = next((t for t in load_catalog(root) if t.get("id") == tid), None)
     if row is not None:
@@ -854,10 +926,14 @@ def add_ladder(root: Path, ffmpeg: str, ffprobe: str, tid: str) -> None:
             shown = round(float(dur_s if dur_s is not None else dur))
         except (TypeError, ValueError):
             shown = round(dur)
-        save_catalog(root, upsert(load_catalog(root), {
+        patch = {
             "id": tid,
             "sub": f"Local · {shown}s · {label}",
-        }))
+        }
+        dash = dash_url_for(tid, dest)
+        if dash:
+            patch["dashUrl"] = dash
+        save_catalog(root, upsert(load_catalog(root), patch))
     print(f"demo-packager: ladder {tid} " + ", ".join(
         f'{v["width"]}x{v["height"]} ({v["uri"]})' for v in variants), flush=True)
 

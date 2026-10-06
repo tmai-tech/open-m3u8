@@ -108,6 +108,38 @@ public final class DemoSession {
     /** Last {@code live-*} id written into a manifest or patch. */
     public String dashPatchEventId;
 
+    /** vod, live (rolling cadence), or snapshot (a live playlist frozen as VOD). */
+    public String modeName() {
+        if (forceVod) {
+            return "snapshot";
+        }
+        if (liveCadenceSec > 0f) {
+            return "live";
+        }
+        return "vod";
+    }
+
+    /** hls or dash, from the content URL. Query strings are ignored. */
+    public String formatName() {
+        return formatName(contentUrl);
+    }
+
+    public static String formatName(String url) {
+        if (url == null) {
+            return "hls";
+        }
+        String path = url;
+        int q = path.indexOf('?');
+        if (q >= 0) {
+            path = path.substring(0, q);
+        }
+        int hash = path.indexOf('#');
+        if (hash >= 0) {
+            path = path.substring(0, hash);
+        }
+        return path.toLowerCase(java.util.Locale.ROOT).endsWith(".mpd") ? "dash" : "hls";
+    }
+
     public long freezeLiveCadenceStart(String id, long startMs) {
         synchronized (this) {
             if (id != null) {
@@ -139,6 +171,12 @@ public final class DemoSession {
             new java.util.concurrent.ConcurrentHashMap<String, String>();
     private final java.util.Set<String> skippedAds =
             java.util.concurrent.ConcurrentHashMap.newKeySet();
+    /** Why a skipped ad was left out of the stitch, keyed by asset URL. */
+    private final java.util.Map<String, String> discardReasons =
+            new java.util.concurrent.ConcurrentHashMap<String, String>();
+    /** One failure per ad URL. Does not block other ads. */
+    private final java.util.Map<String, String> adFailures =
+            new java.util.concurrent.ConcurrentHashMap<String, String>();
 
     public DemoSession(String id, Strategy strategy, String contentUrl, String adUrl,
                        List<Break> breaks, float maxAdDurationSec, StartData startOverride,
@@ -254,6 +292,27 @@ public final class DemoSession {
     public void skipAd(String url) {
         if (url != null && url.length() > 0) {
             skippedAds.add(url);
+        }
+    }
+
+    public void skipAd(String url, String reason) {
+        skipAd(url);
+        if (url != null && reason != null && reason.length() > 0) {
+            discardReasons.put(url, reason);
+        }
+    }
+
+    public String discardReason(String url) {
+        return url == null ? null : discardReasons.get(url);
+    }
+
+    public String adFailure(String url) {
+        return url == null ? null : adFailures.get(url);
+    }
+
+    public void noteAdFailure(String url, String message) {
+        if (url != null && message != null && message.length() > 0) {
+            adFailures.putIfAbsent(url, message);
         }
     }
 

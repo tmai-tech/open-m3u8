@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Logs — Watch</title>
+  <link rel="stylesheet" href="css/demo.css" />
+  <script type="module" src="js/logs.js"></script>
+</head>
+<body class="ott logs-page">
+  <div class="app">
+    <header class="ott-nav">
+      <a class="ott-brand" href="./">Watch</a>
+      <nav class="ott-tabs">
+        <a href="./">Home</a>
+        <a href="uploads.html">My list</a>
+      </nav>
+    </header>
+    <main class="logs-main">
+      <div class="logs-head">
+        <h1>Logs</h1>
+        <p id="logsMeta" class="logs-meta"></p>
+        <label class="logs-filter">Event
+          <select id="logsEvent" aria-label="Event type">
+            <option value="">All</option>
+            <option value="session">session</option>
+            <option value="origin">origin</option>
+            <option value="rewrite">rewrite</option>
+            <option value="warn">warn</option>
+            <option value="error">error</option>
+            <option value="assets">assets</option>
+            <option value="ingest">ingest</option>
+          </select>
+        </label>
+      </div>
+      <div class="logs-table-wrap">
+        <table class="logs-table">
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Event</th>
+              <th>Session</th>
+              <th>Mode</th>
+              <th>Format</th>
+              <th>Discarded ad</th>
+              <th>Message</th>
+            </tr>
+          </thead>
+          <tbody id="logsBody"></tbody>
+        </table>
+      </div>
+      <p id="logsEmpty" class="logs-empty" hidden>No log lines yet.</p>
+      <button type="button" class="btn btn-ghost" id="logsOlder" hidden>Older</button>
+    </main>
+  </div>
+</body>
+</html>

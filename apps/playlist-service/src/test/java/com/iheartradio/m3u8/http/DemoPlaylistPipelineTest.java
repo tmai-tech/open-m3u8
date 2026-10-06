@@ -12,7 +12,9 @@ import com.iheartradio.m3u8.data.TrackData;
 import com.iheartradio.m3u8.data.TrackInfo;
 import org.junit.Test;
 
+import java.io.File;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
@@ -49,6 +51,7 @@ public class DemoPlaylistPipelineTest {
                 "{\"strategy\":\"sgai\",\"contentUrl\":\"http://cdn/prog.m3u8\","
                         + "\"adUrl\":\"http://ads/ad.m3u8\","
                         + "\"breaks\":[{\"offsetSec\":10,\"durationSec\":15}]}");
+        session.putCachedAd("http://ads/ad.m3u8", media(track("http://ads/a0.ts", 8f)));
 
         Playlist out = new DemoPlaylistPipeline().apply(session, content);
         String text = PlaylistRewriteUtil.writeToString(out, Encoding.UTF_8);
@@ -74,6 +77,7 @@ public class DemoPlaylistPipelineTest {
                 "{\"strategy\":\"sgai\",\"contentUrl\":\"http://cdn/prog.m3u8\","
                         + "\"adUrl\":\"http://ads/ad.m3u8\",\"restrictSkip\":true,\"restrictJump\":true,"
                         + "\"breaks\":[{\"offsetSec\":10,\"durationSec\":15}]}");
+        both.putCachedAd("http://ads/ad.m3u8", media(track("http://ads/a0.ts", 8f)));
         String text = PlaylistRewriteUtil.writeToString(
                 new DemoPlaylistPipeline().apply(both, content), Encoding.UTF_8);
         assertTrue(text.contains("X-RESTRICT=\"SKIP,JUMP\""));
@@ -82,6 +86,7 @@ public class DemoPlaylistPipelineTest {
                 "{\"strategy\":\"sgai\",\"contentUrl\":\"http://cdn/prog.m3u8\","
                         + "\"adUrl\":\"http://ads/ad.m3u8\",\"restrictJump\":true,"
                         + "\"breaks\":[{\"offsetSec\":10,\"durationSec\":15}]}");
+        jump.putCachedAd("http://ads/ad.m3u8", media(track("http://ads/a0.ts", 8f)));
         String jumpText = PlaylistRewriteUtil.writeToString(
                 new DemoPlaylistPipeline().apply(jump, content), Encoding.UTF_8);
         assertTrue(jumpText.contains("X-RESTRICT=\"JUMP\""));
@@ -97,6 +102,7 @@ public class DemoPlaylistPipelineTest {
                 "{\"strategy\":\"sgai\",\"contentUrl\":\"http://cdn/prog.m3u8\","
                         + "\"adUrl\":\"http://ads/ad.m3u8\",\"cueOnce\":true,"
                         + "\"breaks\":[{\"offsetSec\":10,\"durationSec\":15}]}");
+        sgai.putCachedAd("http://ads/ad.m3u8", media(track("http://ads/a0.ts", 8f)));
         String sgaiText = PlaylistRewriteUtil.writeToString(
                 new DemoPlaylistPipeline().apply(sgai, content), Encoding.UTF_8);
         assertTrue(sgaiText.contains("CUE=\"ONCE\""));
@@ -462,6 +468,7 @@ public class DemoPlaylistPipelineTest {
                 "{\"strategy\":\"sgai\",\"contentUrl\":\"http://cdn/subs.m3u8\","
                         + "\"adUrl\":\"http://ads/ad.m3u8\","
                         + "\"breaks\":[{\"offsetSec\":4,\"durationSec\":12}]}");
+        session.putCachedAd("http://ads/ad.m3u8", media(track("http://ads/a0.ts", 8f)));
 
         Playlist out = new DemoPlaylistPipeline().apply(session, subs);
         String text = PlaylistRewriteUtil.writeToString(out, Encoding.UTF_8);
@@ -759,6 +766,95 @@ public class DemoPlaylistPipelineTest {
         Playlist out = new DemoPlaylistPipeline().apply(session, master);
         assertTrue(out.hasMasterPlaylist());
         assertFalse(out.hasMediaPlaylist());
+    }
+
+    @Test
+    public void unavailableAdIsDiscardedAndGoodAdStays() throws Exception {
+        File prev = DemoLog.logFile();
+        File tmp = Files.createTempFile("discard-ads", ".jsonl").toFile();
+        tmp.deleteOnExit();
+        DemoLog.setLogFileForTest(tmp);
+        try {
+            DemoHttp.OriginFetch fetch = url -> {
+                if ("http://ads/good.m3u8".equals(url)) {
+                    return ok(mediaText("http://ads/good0.ts"));
+                }
+                if ("http://ads/bad.m3u8".equals(url)) {
+                    return new DemoHttp.FetchResult(404, "text/plain", new byte[0]);
+                }
+                if ("http://ads/gone.m3u8".equals(url)) {
+                    throw new java.io.IOException("connection refused");
+                }
+                return new DemoHttp.FetchResult(404, "text/plain", new byte[0]);
+            };
+            DemoPlaylistPipeline pipe = new DemoPlaylistPipeline(fetch);
+            Playlist content = media(
+                    track("http://cdn/c0.ts", 10f),
+                    track("http://cdn/c1.ts", 10f),
+                    track("http://cdn/c2.ts", 10f),
+                    track("http://cdn/c3.ts", 10f));
+            DemoSession session = DemoSession.fromJson("s-discard",
+                    "{\"strategy\":\"ssai\",\"contentUrl\":\"http://cdn/prog.m3u8\","
+                            + "\"snapToSegment\":false,\"breaks\":["
+                            + "{\"id\":\"break-1\",\"offsetSec\":12,\"ads\":["
+                            + "{\"assetUri\":\"http://ads/good.m3u8\",\"durationSec\":4},"
+                            + "{\"assetUri\":\"http://ads/bad.m3u8\",\"durationSec\":4}]},"
+                            + "{\"id\":\"break-2\",\"offsetSec\":24,\"ads\":["
+                            + "{\"assetUri\":\"http://ads/gone.m3u8\",\"durationSec\":4}]}"
+                            + "]}");
+
+            String text = PlaylistRewriteUtil.writeToString(
+                    pipe.apply(session, content), Encoding.UTF_8);
+            assertTrue(text.contains("http://ads/good0.ts"));
+            assertTrue(text.contains("http://cdn/c0.ts"));
+            assertTrue(text.contains("http://cdn/c3.ts"));
+            assertFalse(text.contains("bad"));
+            assertFalse(text.contains("gone"));
+            assertEquals(1, countOccurrences(text, "#EXT-X-CUE-OUT"));
+            assertTrue(session.isSkippedAd("http://ads/bad.m3u8"));
+            assertTrue(session.isSkippedAd("http://ads/gone.m3u8"));
+            assertFalse(session.isSkippedAd("http://ads/good.m3u8"));
+
+            List<String> warnings = session.getWarnings();
+            assertEquals(2, warnings.size());
+            assertEquals("Break break-1 at 12s discarded\n"
+                            + "  http://ads/bad.m3u8\n"
+                            + "  reason: HTTP 404",
+                    warnings.get(0));
+            assertEquals("Break break-2 at 24s discarded\n"
+                            + "  http://ads/gone.m3u8\n"
+                            + "  reason: connection refused",
+                    warnings.get(1));
+
+            pipe.apply(session, content);
+            assertEquals(2, session.getWarnings().size());
+            String log = new String(Files.readAllBytes(tmp.toPath()), StandardCharsets.UTF_8);
+            assertEquals(2, countOccurrences(log, "\"ev\":\"warn\""));
+            assertTrue(log.contains("Break break-1 at 12s discarded"));
+            assertTrue(log.contains("\"reason\":\"HTTP 404\""));
+            assertTrue(log.contains("\"reason\":\"connection refused\""));
+            assertTrue(log.contains("\"breakId\":\"break-1\""));
+            assertTrue(log.contains("\"breakId\":\"break-2\""));
+
+            DemoSession sgai = DemoSession.fromJson("s-discard-sgai",
+                    "{\"strategy\":\"sgai\",\"contentUrl\":\"http://cdn/prog.m3u8\","
+                            + "\"snapToSegment\":false,\"breaks\":["
+                            + "{\"id\":\"break-1\",\"offsetSec\":12,\"ads\":["
+                            + "{\"assetUri\":\"http://ads/good.m3u8\",\"durationSec\":4},"
+                            + "{\"assetUri\":\"http://ads/bad.m3u8\",\"durationSec\":4}]}"
+                            + "]}");
+            String sgaiText = PlaylistRewriteUtil.writeToString(
+                    pipe.apply(sgai, content, null, "http://127.0.0.1:8765"), Encoding.UTF_8);
+            assertTrue(sgaiText.contains("DURATION=4"));
+            assertFalse(sgaiText.contains("DURATION=8"));
+            String list = pipe.assetListJson(sgai, "break-1", "http://127.0.0.1:8765");
+            assertTrue(list.contains("good.m3u8"));
+            assertFalse(list.contains("bad.m3u8"));
+            assertEquals(1, sgai.getWarnings().size());
+            assertTrue(sgai.getWarnings().get(0).contains("http://ads/bad.m3u8\n  reason: HTTP 404"));
+        } finally {
+            DemoLog.setLogFileForTest(prev);
+        }
     }
 
     private static Playlist media(TrackData... tracks) {

@@ -285,6 +285,7 @@ public final class SessionResourceApi implements HttpHandler {
                     .put("url", mpdUrl)
                     .put("status", e.status)
                     .put("msg", e.getMessage())
+                    .play(session)
                     .write();
             DemoHttp.send(ex, e.status, "application/json; charset=utf-8",
                     "{\"error\":" + DemoHttp.jsonString(e.getMessage())
@@ -296,6 +297,7 @@ public final class SessionResourceApi implements HttpHandler {
                     .put("url", mpdUrl)
                     .put("status", 502)
                     .put("msg", e.getMessage())
+                    .play(session)
                     .write();
             DemoHttp.send(ex, 502, "application/json; charset=utf-8",
                     "{\"error\":" + DemoHttp.jsonString("mpd rewrite failed: " + e.getMessage())
@@ -321,6 +323,7 @@ public final class SessionResourceApi implements HttpHandler {
                     .put("url", playlistUrl)
                     .put("status", e.status)
                     .put("msg", e.getMessage())
+                    .play(session)
                     .write();
             DemoHttp.send(ex, e.status, "application/json; charset=utf-8",
                     "{\"error\":" + DemoHttp.jsonString(e.getMessage())
@@ -332,6 +335,7 @@ public final class SessionResourceApi implements HttpHandler {
                     .put("url", playlistUrl)
                     .put("status", 502)
                     .put("msg", e.getMessage())
+                    .play(session)
                     .write();
             DemoHttp.send(ex, 502, "application/json; charset=utf-8",
                     "{\"error\":" + DemoHttp.jsonString("rewrite failed: " + e.getMessage())

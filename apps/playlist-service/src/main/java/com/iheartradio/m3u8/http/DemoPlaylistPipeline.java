@@ -103,8 +103,13 @@ public final class DemoPlaylistPipeline {
                     || session.isSkippedAd(url)) {
                 continue;
             }
-            ads.put(url, loadAdMediaPlaylist(session, url, target));
+            try {
+                ads.put(url, loadAdMediaPlaylist(session, url, target));
+            } catch (Exception e) {
+                session.skipAd(url, discardReason(e));
+            }
         }
+        publishDiscardedAds(session);
         List<PlaylistSsaiUtil.AdBreak> breaks = session.toSsaiBreaks(ads);
         if (breaks.isEmpty()) {
             return playlist;
@@ -125,6 +130,7 @@ public final class DemoPlaylistPipeline {
                     .put("status", remote.status)
                     .put("bytes", remote.body == null ? 0 : remote.body.length)
                     .put("ms", System.currentTimeMillis() - t0)
+                    .play(session)
                     .write();
         }
         if (remote.status >= 400) {
@@ -133,6 +139,7 @@ public final class DemoPlaylistPipeline {
                     .put("url", playlistUrl)
                     .put("status", remote.status)
                     .put("msg", "origin returned HTTP " + remote.status)
+                    .play(session)
                     .write();
             throw new DemoHttp.HttpException(remote.status > 0 ? remote.status : 502,
                     "origin returned HTTP " + remote.status + " for " + playlistUrl);
@@ -151,7 +158,8 @@ public final class DemoPlaylistPipeline {
                         .put("strategy", session.strategy.wireName())
                         .put("forceVod", true)
                         .put("pin", true)
-                        .put("fallback", false);
+                        .put("fallback", false)
+                        .play(session);
                 DemoLog.summarizePlaylist(pin, pinned);
                 pin.write();
                 return new Result(pinned, "media", false);
@@ -203,7 +211,8 @@ public final class DemoPlaylistPipeline {
                 .put("strategy", session != null ? session.strategy.wireName() : null)
                 .put("forceVod", session != null && session.forceVod)
                 .put("pin", false)
-                .put("fallback", fallback || (result != null && result.fallback));
+                .put("fallback", fallback || (result != null && result.fallback))
+                .play(session);
         if (result != null) {
             DemoLog.summarizePlaylist(ev, result.body);
         }
@@ -265,8 +274,9 @@ public final class DemoPlaylistPipeline {
             try {
                 Playlist ad = cached;
                 if (ad == null) {
-                    if (session.getAdLoadError() != null) {
-                        throw new DemoHttp.HttpException(502, session.getAdLoadError());
+                    String prior = session.adFailure(adUrl);
+                    if (prior != null) {
+                        throw new DemoHttp.HttpException(502, prior);
                     }
                     ad = fetchAndParse(adUrl);
                     session.putCachedAd(adUrl, ad);
@@ -297,17 +307,11 @@ public final class DemoPlaylistPipeline {
                 session.putCachedAd(child, resolved);
                 return resolved;
             } catch (DemoHttp.HttpException e) {
+                session.noteAdFailure(adUrl, e.getMessage() == null ? "unavailable" : e.getMessage());
                 throw e;
             } catch (Exception e) {
                 String msg = "failed to load ad playlist: " + e.getMessage();
-                if (cached == null) {
-                    session.setAdLoadError(msg);
-                }
-                DemoLog.event("error")
-                        .sid(session.id)
-                        .put("url", adUrl)
-                        .put("msg", msg)
-                        .write();
+                session.noteAdFailure(adUrl, msg);
                 throw new DemoHttp.HttpException(502, msg);
             }
         }
@@ -318,25 +322,133 @@ public final class DemoPlaylistPipeline {
             return;
         }
         Resolution target = firstContentResolution(session);
-        String kind = session.strategy == DemoSession.Strategy.SGAI ? "SGAI" : "SSAI";
-        for (String url : session.allAdUrls()) {
-            if (url == null || url.length() == 0 || session.isSkippedAd(url)) {
+        for (DemoSession.Break br : session.breaks) {
+            if (br == null || br.ads == null) {
                 continue;
             }
-            try {
-                Playlist adMedia = loadAdMediaPlaylist(session, url, target);
-                if (!playlistHasAudio(adMedia, url)) {
-                    session.skipAd(url);
-                    String warn = kind + " skipped ad (no audio): " + url;
-                    session.addWarning(warn);
-                    DemoLog.event("warn").sid(session.id).put("url", url)
-                            .put("msg", warn).write();
+            for (DemoSession.Ad creative : br.ads) {
+                String url = creative.assetUri != null && creative.assetUri.length() > 0
+                        ? creative.assetUri : session.adUrl;
+                if (url == null || url.length() == 0 || session.isSkippedAd(url)) {
+                    continue;
                 }
-            } catch (Exception e) {
-                DemoLog.event("warn").sid(session.id).put("url", url)
-                        .put("msg", "ad audio check failed: " + e.getMessage()).write();
+                try {
+                    Playlist adMedia = loadAdMediaPlaylist(session, url, target);
+                    if (!playlistHasAudio(adMedia, url)) {
+                        session.skipAd(url, "no audio");
+                    }
+                } catch (Exception e) {
+                    session.skipAd(url, discardReason(e));
+                }
             }
         }
+        publishDiscardedAds(session);
+    }
+
+    /**
+     * One log line per break that lost an ad. Later playlist requests repeat
+     * the same warning and do not append another log line.
+     */
+    static void publishDiscardedAds(DemoSession session) {
+        if (session == null || session.breaks == null) {
+            return;
+        }
+        int i = 0;
+        for (DemoSession.Break br : session.breaks) {
+            i++;
+            if (br == null || br.ads == null) {
+                continue;
+            }
+            String bid = br.id != null && br.id.length() > 0 ? br.id : ("ssai-" + i);
+            StringBuilder msg = new StringBuilder();
+            StringBuilder discarded = new StringBuilder();
+            msg.append("Break ").append(bid).append(" at ").append(offsetLabel(br.offsetSec))
+                    .append("s discarded");
+            discarded.append('[');
+            int n = 0;
+            for (DemoSession.Ad creative : br.ads) {
+                String url = creative.assetUri != null && creative.assetUri.length() > 0
+                        ? creative.assetUri : session.adUrl;
+                if (url == null || url.length() == 0 || !session.isSkippedAd(url)) {
+                    continue;
+                }
+                String why = session.discardReason(url);
+                if (why == null || why.length() == 0) {
+                    why = "unavailable";
+                }
+                if (n > 0) {
+                    msg.append('\n');
+                    discarded.append(',');
+                }
+                msg.append("\n  ").append(url);
+                msg.append("\n  reason: ").append(why);
+                discarded.append("{\"url\":").append(DemoHttp.jsonString(url))
+                        .append(",\"reason\":").append(DemoHttp.jsonString(why))
+                        .append('}');
+                n++;
+            }
+            discarded.append(']');
+            if (n == 0) {
+                continue;
+            }
+            String text = msg.toString();
+            int before = session.getWarnings().size();
+            session.addWarning(text);
+            if (session.getWarnings().size() == before) {
+                continue;
+            }
+            DemoLog.event("warn")
+                    .sid(session.id)
+                    .put("breakId", bid)
+                    .put("offsetSec", br.offsetSec)
+                    .putRaw("discarded", discarded.toString())
+                    .put("msg", text)
+                    .play(session)
+                    .write();
+        }
+    }
+
+    static String discardReason(Exception e) {
+        String msg = e == null ? null : e.getMessage();
+        if (msg == null || msg.length() == 0) {
+            return "unavailable";
+        }
+        String http = httpStatus(msg);
+        if (http != null) {
+            return http;
+        }
+        String prefix = "failed to load ad playlist: ";
+        if (msg.startsWith(prefix)) {
+            msg = msg.substring(prefix.length());
+            http = httpStatus(msg);
+            if (http != null) {
+                return http;
+            }
+        }
+        if (msg.length() > 80) {
+            return msg.substring(0, 77) + "...";
+        }
+        return msg;
+    }
+
+    private static String httpStatus(String msg) {
+        int i = msg.indexOf("HTTP ");
+        if (i < 0) {
+            return null;
+        }
+        int end = i + 5;
+        int digits = end;
+        while (end < msg.length() && Character.isDigit(msg.charAt(end))) {
+            end++;
+        }
+        return end == digits ? null : msg.substring(i, end);
+    }
+
+    private static String offsetLabel(float sec) {
+        if (Math.abs(sec - Math.round(sec)) < 0.05f) {
+            return Long.toString(Math.round(sec));
+        }
+        return Float.toString(sec);
     }
 
     /**

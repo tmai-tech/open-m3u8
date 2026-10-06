@@ -18,7 +18,7 @@ setCatalogReady(() => {
   refreshLiveAdSelect();
 });
 bindForm();
-if ($("contentUrl")) $("contentUrl").value = SAMPLES.cave;
+if ($("contentUrl")) $("contentUrl").value = SAMPLES.carlos;
 bindPlayer();
 bindPublicUrl();
 bindSeekMarks();

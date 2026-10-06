@@ -26,6 +26,10 @@ public final class LogsApi implements HttpHandler {
         if (sid == null) {
             sid = DemoHttp.decode(DemoHttp.queryParam(q, "id"));
         }
+        String event = DemoHttp.decode(DemoHttp.queryParam(q, "ev"));
+        if (event == null || event.length() == 0) {
+            event = DemoHttp.decode(DemoHttp.queryParam(q, "event"));
+        }
         int limit = DemoLog.DEFAULT_DUMP_LIMIT;
         String limitRaw = DemoHttp.decode(DemoHttp.queryParam(q, "limit"));
         if (limitRaw != null && limitRaw.length() > 0) {
@@ -35,6 +39,16 @@ public final class LogsApi implements HttpHandler {
                 // keep default
             }
         }
-        DemoHttp.send(ex, 200, "application/json; charset=utf-8", DemoLog.dumpJson(sid, limit));
+        long before = -1L;
+        String beforeRaw = DemoHttp.decode(DemoHttp.queryParam(q, "before"));
+        if (beforeRaw != null && beforeRaw.length() > 0) {
+            try {
+                before = Long.parseLong(beforeRaw);
+            } catch (NumberFormatException ignored) {
+                before = -1L;
+            }
+        }
+        DemoHttp.send(ex, 200, "application/json; charset=utf-8",
+                DemoLog.pageJson(sid, event, limit, before));
     }
 }

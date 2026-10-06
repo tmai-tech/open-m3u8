@@ -34,7 +34,7 @@
           <div class="hero-shade"></div>
           <div class="hero-copy">
             <p class="hero-kicker" id="heroKicker">Featured</p>
-            <h2 class="hero-title" id="heroTitle">The Cave</h2>
+            <h2 class="hero-title" id="heroTitle">Summer In Mars By Carlos Carlo Milite</h2>
             <p class="hero-hint" id="posterHint"></p>
             <button type="button" class="btn btn-play" id="btnWatchNow">Play</button>
           </div>
@@ -47,24 +47,8 @@
         </div>
       </div>
       <div class="now-playing-bar" id="nowPlayingBar">
-        <span id="nowPlayingTitle" class="now-playing-title">The Cave</span>
+        <span id="nowPlayingTitle" class="now-playing-title">Summer In Mars By Carlos Carlo Milite</span>
         <span id="nowPlayingKicker" class="now-playing-kicker"></span>
-        <div class="now-playing-tools">
-          <select id="protocol" title="Protocol" aria-label="Protocol">
-            <option value="hls">HLS</option>
-            <option value="dash">DASH</option>
-          </select>
-          <select id="playerEngine" title="Player" aria-label="Player">
-            <option value="hls">hls.js</option>
-            <option value="shaka">Shaka</option>
-          </select>
-          <div class="quality-bar" id="qualityBar">
-            <select id="qualitySelect" aria-label="Quality" disabled>
-              <option value="-1">Auto</option>
-            </select>
-            <span id="qualityHint" class="quality-hint"></span>
-          </div>
-        </div>
       </div>
       <div class="seek-ad-bar" title="Ad positions">
         <div class="seek-ad-marks" id="seekMarks"></div>
@@ -77,12 +61,28 @@
       </div>
       <aside class="card studio" id="studio">
     <div id="app-card">
+      <div class="playback-tools">
+        <select id="protocol" title="Format" aria-label="Format">
+          <option value="hls">HLS</option>
+          <option value="dash">DASH</option>
+        </select>
+        <select id="playerEngine" title="Player" aria-label="Player">
+          <option value="hls">hls.js</option>
+          <option value="shaka">Shaka</option>
+        </select>
+        <div class="quality-bar" id="qualityBar">
+          <select id="qualitySelect" aria-label="Resolution" disabled>
+            <option value="-1">Auto</option>
+          </select>
+          <span id="qualityHint" class="quality-hint"></span>
+        </div>
+      </div>
       <div class="studio-grid">
         <select id="strategy" title="Ad style" aria-label="Ad style">
           <option value="ssai">SSAI</option>
           <option value="sgai">SGAI</option>
         </select>
-        <input id="contentUrl" type="url" value="/media/titles/the-cave-charles-ancelle/master.m3u8" placeholder="Title" aria-label="Content URL" />
+        <input id="contentUrl" type="url" value="/media/titles/summer-in-mars-by-carlos-carlo-milite/master.m3u8" placeholder="Title" aria-label="Content URL" />
       </div>
 
       <p id="liveCadenceHint" class="debug-hint" hidden>Live SGAI: preroll at join, then one ad under 15s every 1 min.</p>
@@ -126,7 +126,7 @@
       <details class="studio-more debug-fold">
         <summary>Debug</summary>
         <div class="debug-body">
-          <p class="session-id" id="sessionIdLabel" hidden>Session <a id="sessionIdLink" href="/api/logs" target="_blank" rel="noopener">—</a></p>
+          <p class="session-id" id="sessionIdLabel" hidden>Session <a id="sessionIdLink" href="/logs.html" target="_blank" rel="noopener">—</a></p>
           <div id="sessionMeta" class="debug-meta"></div>
           <p id="strategyHint" class="debug-hint"></p>
           <p id="adLengthHint" class="debug-hint"></p>

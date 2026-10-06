@@ -118,6 +118,83 @@ public class DemoMpdPipelineTest {
         assertTrue(alt.contains("/media/titles/ad/"));
     }
 
+    @Test
+    public void unavailableDashAdIsDiscardedAndGoodAdStays() throws Exception {
+        final String content = mpd("c", "PT20S", "c_$Number$.m4s", "10000", "1");
+        final String good = mpd("ad", "PT4S", "good_$Number$.m4s", "4000", null);
+        OriginFetch fetch = new OriginFetch() {
+            @Override
+            public FetchResult fetch(String url) {
+                String body = url.contains("/good/manifest.mpd") ? good
+                        : url.endsWith("/content/manifest.mpd") ? content : null;
+                if (body == null) {
+                    return new FetchResult(404, "text/plain", new byte[0]);
+                }
+                return new FetchResult(200, "application/xml",
+                        body.getBytes(StandardCharsets.UTF_8));
+            }
+        };
+        String breaks = "\"breaks\":["
+                + "{\"id\":\"break-1\",\"offsetSec\":10,\"ads\":["
+                + "{\"assetUri\":\"http://ads/good/master.m3u8\",\"durationSec\":4},"
+                + "{\"assetUri\":\"http://ads/bad/master.m3u8\",\"durationSec\":4}]},"
+                + "{\"id\":\"break-2\",\"offsetSec\":0,\"ads\":["
+                + "{\"assetUri\":\"http://ads/gone/master.m3u8\",\"durationSec\":4}]}"
+                + "]}";
+        DemoSession ssai = DemoSession.fromJson("sid-dash",
+                "{\"strategy\":\"ssai\",\"contentUrl\":\"http://cdn/content/manifest.mpd\"," + breaks + "}");
+        String xml = new String(new DemoMpdPipeline(fetch, new MpdIo())
+                .process(ssai, ssai.contentUrl, "http://127.0.0.1:8765").body, StandardCharsets.UTF_8);
+        assertTrue(xml, xml.contains("good_$Number$.m4s"));
+        assertFalse(xml.contains("bad"));
+        assertFalse(xml.contains("gone"));
+        assertEquals(3, countPeriods(xml));
+        assertTrue(ssai.isSkippedAd("http://ads/bad/master.m3u8"));
+        assertTrue(ssai.isSkippedAd("http://ads/gone/master.m3u8"));
+        assertFalse(ssai.isSkippedAd("http://ads/good/master.m3u8"));
+        assertEquals(2, ssai.getWarnings().size());
+        assertEquals("Break break-1 at 10s discarded\n"
+                        + "  http://ads/bad/master.m3u8\n"
+                        + "  reason: no MPD/CMAF",
+                ssai.getWarnings().get(0));
+        assertEquals("Break break-2 at 0s discarded\n"
+                        + "  http://ads/gone/master.m3u8\n"
+                        + "  reason: no MPD/CMAF",
+                ssai.getWarnings().get(1));
+
+        DemoSession sgai = DemoSession.fromJson("sid-dash-sgai",
+                "{\"strategy\":\"sgai\",\"contentUrl\":\"http://cdn/content/manifest.mpd\"," + breaks + "}");
+        DemoMpdPipeline.Result sgaiResult = new DemoMpdPipeline(fetch, new MpdIo())
+                .process(sgai, sgai.contentUrl, "http://127.0.0.1:8765");
+        String sgaiXml = new String(sgaiResult.body, StandardCharsets.UTF_8);
+        assertEquals(1, countPeriods(sgaiXml));
+        assertTrue(sgaiXml.contains("uri=\"/s/sid-dash-sgai/alt/break-1.mpd\""));
+        assertFalse(sgaiXml.contains("break-2.mpd"));
+        String alt = sgai.dashAlt("break-1.mpd");
+        assertNotNull(alt);
+        assertEquals(1, countPeriods(alt));
+        assertTrue(alt.contains("good_$Number$.m4s"));
+        assertEquals("Break break-1 at 10s discarded\n"
+                        + "  http://ads/bad/master.m3u8\n"
+                        + "  reason: no MPD/CMAF",
+                sgai.getWarnings().get(0));
+    }
+
+    private static String mpd(String id, String dur, String media, String d, String r) {
+        String repeat = r == null ? "" : " r=\"" + r + "\"";
+        return "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+                + "<MPD xmlns=\"urn:mpeg:dash:schema:mpd:2011\" type=\"static\""
+                + " mediaPresentationDuration=\"" + dur + "\" minBufferTime=\"PT2S\">"
+                + "<Period id=\"" + id + "\" duration=\"" + dur + "\">"
+                + "<AdaptationSet contentType=\"video\" mimeType=\"video/mp4\">"
+                + "<Representation id=\"v\" bandwidth=\"800000\">"
+                + "<SegmentTemplate timescale=\"1000\" initialization=\"init.m4s\""
+                + " media=\"" + media + "\" startNumber=\"0\">"
+                + "<SegmentTimeline><S t=\"0\" d=\"" + d + "\"" + repeat + "/></SegmentTimeline>"
+                + "</SegmentTemplate></Representation></AdaptationSet>"
+                + "</Period></MPD>";
+    }
+
     private static int countPeriods(String xml) {
         int n = 0;
         int i = 0;

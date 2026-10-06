@@ -13,7 +13,7 @@ export function showSessionWarnings(id, setStatus) {
   if (!id || id === "static" || !setStatus) return;
   fetchSession(id).then((s) => {
     const w = (s && s.warnings) || [];
-    if (w.length) setStatus(w.join(" · "), "warn");
+    if (w.length) setStatus(w.join("\n\n"), "warn");
   }).catch(() => {});
 }
 

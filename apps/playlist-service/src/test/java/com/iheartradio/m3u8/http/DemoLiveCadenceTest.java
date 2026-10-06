@@ -330,6 +330,19 @@ public class DemoLiveCadenceTest {
                 "{\"strategy\":\"sgai\",\"contentUrl\":\"http://cdn/live.m3u8\","
                         + "\"adUrl\":\"http://ads/grok.m3u8\",\"liveCadenceSec\":60,\"forceVod\":true,"
                         + "\"breaks\":[{\"offsetSec\":10,\"durationSec\":15}]}");
+        session.putCachedAd("http://ads/grok.m3u8", new Playlist.Builder()
+                .withExtended(true)
+                .withCompatibilityVersion(3)
+                .withMediaPlaylist(new MediaPlaylist.Builder()
+                        .withTargetDuration(15)
+                        .withMediaSequenceNumber(0)
+                        .withIsOngoing(false)
+                        .withTracks(Arrays.asList(new TrackData.Builder()
+                                .withUri("http://ads/a0.ts")
+                                .withTrackInfo(new TrackInfo(15f, null))
+                                .build()))
+                        .build())
+                .build());
         String text = PlaylistRewriteUtil.writeToString(
                 new DemoPlaylistPipeline().apply(session, content), Encoding.UTF_8);
         assertFalse(text.contains("ID=\"live-"));

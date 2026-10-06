@@ -274,7 +274,7 @@ public final class DemoMpdPipeline {
                 }
                 Period period = loadAdPeriod(creative.assetUri);
                 if (period == null) {
-                    session.addWarning("DASH SGAI skipped ad with no MPD/CMAF: " + creative.assetUri);
+                    session.skipAd(creative.assetUri, "no MPD/CMAF");
                     continue;
                 }
                 String pid = br.ads.size() > 1 ? (bid + "-" + j) : bid;
@@ -298,6 +298,7 @@ public final class DemoMpdPipeline {
             events.add(new MpdSgaiUtil.Event(bid, br.offsetSec, sum,
                     "/s/" + session.id + "/alt/" + bid + ".mpd"));
         }
+        DemoPlaylistPipeline.publishDiscardedAds(session);
         return events;
     }
 
@@ -329,7 +330,7 @@ public final class DemoMpdPipeline {
                 }
                 Period period = loadAdPeriod(creative.assetUri);
                 if (period == null) {
-                    session.addWarning("DASH SSAI skipped ad with no MPD/CMAF: " + creative.assetUri);
+                    session.skipAd(creative.assetUri, "no MPD/CMAF");
                     continue;
                 }
                 String bid = br.id != null && br.id.length() > 0 ? br.id : ("ad-" + i);
@@ -339,6 +340,7 @@ public final class DemoMpdPipeline {
                 out.add(new MpdSsaiUtil.AdBreak(bid, br.offsetSec, period));
             }
         }
+        DemoPlaylistPipeline.publishDiscardedAds(session);
         return out;
     }
 
