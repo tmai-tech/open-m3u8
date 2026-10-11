@@ -48,6 +48,9 @@ final class LiveCadence {
         if (!media.isOngoing() || media.isIframesOnly() || isAudioOrKeyframeUrl(playlistUrl)) {
             return false;
         }
+        if (playlistUrl != null && playlistUrl.contains("/media/ads/")) {
+            return false;
+        }
         if (playlistUrl != null && session.adUrl != null && session.adUrl.length() > 0) {
             if (playlistUrl.equals(session.adUrl) || playlistUrl.startsWith(session.adUrl)) {
                 return false;
@@ -106,7 +109,7 @@ final class LiveCadence {
         if (host.endsWith("/")) {
             host = host.substring(0, host.length() - 1);
         }
-        if (session.prerollAdUrl != null && session.prerollAdUrl.length() > 0) {
+        if ((session.prerollAdUrl != null && session.prerollAdUrl.length() > 0) || session.prerollFill) {
             float prerollLimit = session.prerollPlayoutLimit > 0f
                     ? session.prerollPlayoutLimit : DEFAULT_PLAYOUT_SEC;
             long prerollStart = session.freezeLiveCadenceStart(PREROLL_ID, baseMs);
@@ -156,6 +159,15 @@ final class LiveCadence {
 
     static String assetListJson(DemoPlaylistPipeline pipeline, DemoSession session, String publicBase,
                                 double hlsStartOffset, String hlsPrimaryId, String breakId) {
+        if (pipeline != null && pipeline.picker() != null) {
+            boolean preroll = PREROLL_ID.equals(breakId);
+            java.util.List<DemoSession.Ad> chosen = pipeline.picker().chooseLive(
+                    session, breakId, preroll, hlsStartOffset, publicBase);
+            if (chosen.isEmpty()) {
+                return EMPTY_ASSETS;
+            }
+            return pipeline.assetsJson(session, publicBase, chosen);
+        }
         if (hlsStartOffset > 0d || Double.isNaN(hlsStartOffset)) {
             DemoLog.event("assets").sid(session.id)
                     .put("break", breakId == null ? "live" : breakId)

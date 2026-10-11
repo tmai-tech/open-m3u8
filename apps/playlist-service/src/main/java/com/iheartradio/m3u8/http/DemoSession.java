@@ -54,14 +54,31 @@ public final class DemoSession {
         public final float offsetSec;
         public final List<Ad> ads;
 
+        /** Server-chosen slot. {@code durationSec} is the budget. No creative is named yet. */
+        public final boolean fill;
+        public final float slotDurationSec;
+        public final int maxAds;
+
         public Break(String id, float offsetSec, float durationSec, String assetUri) {
             this(id, offsetSec, Arrays.asList(new Ad(assetUri, durationSec)));
         }
 
         public Break(String id, float offsetSec, List<Ad> ads) {
+            this(id, offsetSec, ads, false, 0f, 0);
+        }
+
+        public Break(String id, float offsetSec, List<Ad> ads, boolean fill,
+                     float slotDurationSec, int maxAds) {
             this.id = id;
             this.offsetSec = offsetSec;
             this.ads = ads == null ? new ArrayList<Ad>() : new ArrayList<Ad>(ads);
+            this.fill = fill;
+            this.slotDurationSec = slotDurationSec;
+            int count = maxAds;
+            if (count < 1) {
+                count = this.ads.isEmpty() ? 1 : this.ads.size();
+            }
+            this.maxAds = count;
         }
 
         public String firstAssetUri() {
@@ -95,6 +112,10 @@ public final class DemoSession {
     /** Optional join preroll. Empty means the live playlist has no CUE=PRE range. */
     public String prerollAdUrl;
     public float prerollPlayoutLimit;
+    /** Live minute slot with no pinned URL. The decision walks inventory. */
+    public boolean liveFill;
+    /** Preroll slot with no pinned URL. */
+    public boolean prerollFill;
     /** Frozen START-DATE (epoch ms) per {@code live-*} id. */
     public String liveFrozenId;
     public long liveFrozenStartMs;
@@ -320,6 +341,10 @@ public final class DemoSession {
         return url != null && skippedAds.contains(url);
     }
 
+    public List<String> skippedAdUrls() {
+        return new ArrayList<String>(skippedAds);
+    }
+
     public void setCachedContentMaster(Playlist playlist) {
         if (playlist != null && playlist.hasMasterPlaylist()) {
             this.cachedContentMaster = playlist;
@@ -366,7 +391,8 @@ public final class DemoSession {
         for (Break br : breaks) {
             i++;
             List<Ad> live = liveAds(br);
-            if (live.isEmpty()) {
+            boolean serverChooses = br.fill && live.isEmpty();
+            if (live.isEmpty() && !serverChooses) {
                 continue;
             }
             String bid = br.id;
@@ -374,8 +400,12 @@ public final class DemoSession {
                 bid = PlaylistRewriteUtil.USER_AD_ID_PREFIX + i;
             }
             float dur = 0f;
-            for (Ad ad : live) {
-                dur += ad.durationSec > 0f ? ad.durationSec : 15f;
+            if (serverChooses) {
+                dur = br.slotDurationSec > 0f ? br.slotDurationSec : 15f;
+            } else {
+                for (Ad ad : live) {
+                    dur += ad.durationSec > 0f ? ad.durationSec : 15f;
+                }
             }
             String list = base + "/s/" + id + "/assets/" + bid + ".json";
             injected.add(new InterstitialBreak(bid, br.offsetSec, dur, null, list,
@@ -541,7 +571,12 @@ public final class DemoSession {
                         .append("\"durationSec\":").append(a.durationSec)
                         .append('}');
             }
-            sb.append("]}");
+            sb.append(']');
+            if (b.fill) {
+                sb.append(",\"fill\":true,\"durationSec\":").append(b.slotDurationSec)
+                        .append(",\"maxAds\":").append(b.maxAds);
+            }
+            sb.append('}');
         }
         sb.append("],");
         sb.append("\"maxAdDurationSec\":").append(maxAdDurationSec).append(',');
@@ -604,6 +639,10 @@ public final class DemoSession {
         if (strategy == Strategy.SSAI && !breaks.isEmpty()) {
             boolean hasAd = ad != null && ad.length() > 0;
             for (int i = 0; !hasAd && i < breaks.size(); i++) {
+                if (breaks.get(i).fill) {
+                    hasAd = true;
+                    break;
+                }
                 String u = breaks.get(i).firstAssetUri();
                 hasAd = u != null && u.length() > 0;
             }
@@ -690,6 +729,13 @@ public final class DemoSession {
                 session.prerollPlayoutLimit = prerollLimit;
             }
         }
+        session.liveFill = DemoHttp.jsonBool(sgaiSrc, "liveFill",
+                DemoHttp.jsonBool(json, "liveFill", false));
+        session.prerollFill = DemoHttp.jsonBool(sgaiSrc, "prerollFill",
+                DemoHttp.jsonBool(json, "prerollFill", false));
+        if (session.prerollFill && session.prerollPlayoutLimit <= 0f) {
+            session.prerollPlayoutLimit = 15f;
+        }
         return session;
     }
 
@@ -748,10 +794,15 @@ public final class DemoSession {
                 float off = (float) DemoHttp.jsonNumber(item, "offsetSec",
                         DemoHttp.jsonNumber(item, "offset", 0));
                 List<Ad> ads = parseAds(item, defaultAd);
-                if (ads.isEmpty()) {
+                boolean fill = DemoHttp.jsonBool(item, "fill", false);
+                if (ads.isEmpty() && !fill) {
                     continue;
                 }
-                breaks.add(new Break(bid, off, ads));
+                // A pinned card stores durationSec on each ad. Only a fill slot
+                // uses the break-level duration as the decision budget.
+                float slot = fill ? (float) DemoHttp.jsonNumber(item, "durationSec", 0) : 0f;
+                int maxAds = (int) DemoHttp.jsonNumber(item, "maxAds", 0);
+                breaks.add(new Break(bid, off, ads, fill, slot, maxAds));
             }
             return breaks;
         }

@@ -4,6 +4,7 @@ import com.iheartradio.m3u8.Encoding;
 import com.iheartradio.m3u8.ParseException;
 import com.iheartradio.m3u8.PlaylistException;
 import com.iheartradio.m3u8.ads.PlaylistRewriteUtil;
+import com.iheartradio.m3u8.http.ads.AdBreakPicker;
 import com.iheartradio.m3u8.ads.PlaylistRewriteUtil.InjectConfig;
 import com.iheartradio.m3u8.ads.PlaylistRewriteUtil.UriMapper;
 import com.iheartradio.m3u8.ads.PlaylistSsaiUtil;
@@ -46,6 +47,7 @@ public final class DemoPlaylistPipeline {
     }
 
     private final DemoHttp.OriginFetch fetch;
+    private AdBreakPicker picker;
 
     public DemoPlaylistPipeline() {
         this(new DemoHttp.OriginFetch() {
@@ -58,6 +60,14 @@ public final class DemoPlaylistPipeline {
 
     public DemoPlaylistPipeline(DemoHttp.OriginFetch fetch) {
         this.fetch = fetch;
+    }
+
+    public void setPicker(AdBreakPicker picker) {
+        this.picker = picker;
+    }
+
+    AdBreakPicker picker() {
+        return picker;
     }
 
     /**
@@ -97,6 +107,9 @@ public final class DemoPlaylistPipeline {
             return PlaylistRewriteUtil.injectMediaTags(playlist, cfg);
         }
         Resolution target = resolveContentResolution(session, playlistUrl);
+        if (picker != null) {
+            return stitchFromDecision(session, playlist, publicBase, target);
+        }
         java.util.Map<String, Playlist> ads = new java.util.HashMap<String, Playlist>();
         for (String url : session.allAdUrls()) {
             if (url == null || url.length() == 0 || ads.containsKey(url)
@@ -111,6 +124,60 @@ public final class DemoPlaylistPipeline {
         }
         publishDiscardedAds(session);
         List<PlaylistSsaiUtil.AdBreak> breaks = session.toSsaiBreaks(ads);
+        if (breaks.isEmpty()) {
+            return playlist;
+        }
+        Playlist stitched = PlaylistSsaiUtil.stitch(
+                playlist, breaks, PlaylistSsaiUtil.StitchOptions.defaults());
+        return ensureVodHints(stitched);
+    }
+
+    private Playlist stitchFromDecision(DemoSession session, Playlist playlist,
+                                        String publicBase, Resolution target) throws Exception {
+        java.util.Map<String, Playlist> loaded = new java.util.HashMap<String, Playlist>();
+        List<PlaylistSsaiUtil.AdBreak> breaks = new java.util.ArrayList<PlaylistSsaiUtil.AdBreak>();
+        int i = 0;
+        for (DemoSession.Break br : session.breaks) {
+            List<DemoSession.Ad> chosen = picker.chooseBreak(session, br, "hls", publicBase);
+            int j = 0;
+            for (DemoSession.Ad creative : chosen) {
+                i++;
+                j++;
+                String uri = creative.assetUri;
+                if (uri == null || uri.length() == 0 || session.isSkippedAd(uri)) {
+                    continue;
+                }
+                Playlist ad = loaded.get(uri);
+                if (ad == null) {
+                    try {
+                        ad = loadAdMediaPlaylist(session, uri, target);
+                        loaded.put(uri, ad);
+                    } catch (Exception e) {
+                        session.skipAd(uri, discardReason(e));
+                        continue;
+                    }
+                }
+                if (ad == null || !ad.hasMediaPlaylist()) {
+                    continue;
+                }
+                float maxDur = creative.durationSec > 0f ? creative.durationSec : session.maxAdDurationSec;
+                String bid = br.id != null && br.id.length() > 0 ? br.id : ("ssai-" + i);
+                if (chosen.size() > 1) {
+                    bid = bid + "-" + j;
+                }
+                PlaylistSsaiUtil.AdBreak.Builder b = PlaylistSsaiUtil.AdBreak.builder()
+                        .withId(bid)
+                        .withAdPlaylist(ad, maxDur)
+                        .withEmitDateRange(true);
+                if (br.offsetSec <= 0f) {
+                    b.preRoll();
+                } else {
+                    b.atOffsetSec(br.offsetSec);
+                }
+                breaks.add(b.build());
+            }
+        }
+        publishDiscardedAds(session);
         if (breaks.isEmpty()) {
             return playlist;
         }
@@ -1284,6 +1351,13 @@ public final class DemoPlaylistPipeline {
         if (found == null) {
             return null;
         }
+        List<DemoSession.Ad> live = picker != null
+                ? picker.chooseBreak(session, found, "hls", publicBase)
+                : session.liveAds(found);
+        return assetsJson(session, publicBase, live);
+    }
+
+    String assetsJson(DemoSession session, String publicBase, List<DemoSession.Ad> live) {
         String base = publicBase == null ? "" : publicBase;
         if (base.endsWith("/")) {
             base = base.substring(0, base.length() - 1);
@@ -1291,21 +1365,22 @@ public final class DemoPlaylistPipeline {
         String proxyBase = base + "/s/" + session.id;
         StringBuilder sb = new StringBuilder();
         sb.append("{\"ASSETS\":[");
-        List<DemoSession.Ad> live = session.liveAds(found);
-        for (int i = 0; i < live.size(); i++) {
-            DemoSession.Ad ad = live.get(i);
-            float maxDur = ad.durationSec > 0f ? ad.durationSec : session.maxAdDurationSec;
-            if (maxDur <= 0f) {
-                maxDur = 15f;
+        if (live != null) {
+            for (int i = 0; i < live.size(); i++) {
+                DemoSession.Ad ad = live.get(i);
+                float maxDur = ad.durationSec > 0f ? ad.durationSec : session.maxAdDurationSec;
+                if (maxDur <= 0f) {
+                    maxDur = 15f;
+                }
+                float dur = actualAdPodDuration(session, ad.assetUri, maxDur);
+                String uri = PlaylistRewriteUtil.toProxyUrl(proxyBase, ad.assetUri);
+                if (i > 0) {
+                    sb.append(',');
+                }
+                sb.append("{\"URI\":").append(DemoHttp.jsonString(uri))
+                        .append(",\"DURATION\":").append(dur)
+                        .append('}');
             }
-            float dur = actualAdPodDuration(session, ad.assetUri, maxDur);
-            String uri = PlaylistRewriteUtil.toProxyUrl(proxyBase, ad.assetUri);
-            if (i > 0) {
-                sb.append(',');
-            }
-            sb.append("{\"URI\":").append(DemoHttp.jsonString(uri))
-                    .append(",\"DURATION\":").append(dur)
-                    .append('}');
         }
         sb.append("]}");
         return sb.toString();

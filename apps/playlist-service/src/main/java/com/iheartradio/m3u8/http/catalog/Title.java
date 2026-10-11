@@ -32,6 +32,8 @@ public final class Title {
     public String duplicateOf;
     /** Null = unknown. False = source had no audio (silent AAC may still be muxed). */
     public Boolean hasAudio;
+    /** True when this ready title may be chosen to fill an ad slot. */
+    public boolean adEligible;
 
     public Title() {
         this.adUrl = null;

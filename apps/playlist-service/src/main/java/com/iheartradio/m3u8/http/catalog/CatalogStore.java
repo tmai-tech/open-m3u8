@@ -213,6 +213,7 @@ public final class CatalogStore {
             if (obj.indexOf("\"hasAudio\"") >= 0) {
                 t.hasAudio = Boolean.valueOf(DemoHttp.jsonBool(obj, "hasAudio", true));
             }
+            t.adEligible = DemoHttp.jsonBool(obj, "adEligible", false);
             if (t.id != null && t.id.length() > 0) {
                 out.add(t);
             }
@@ -287,6 +288,9 @@ public final class CatalogStore {
         }
         if (t.hasAudio != null) {
             sb.append(",\"hasAudio\":").append(t.hasAudio.booleanValue() ? "true" : "false");
+        }
+        if (t.adEligible) {
+            sb.append(",\"adEligible\":true");
         }
         sb.append('}');
     }

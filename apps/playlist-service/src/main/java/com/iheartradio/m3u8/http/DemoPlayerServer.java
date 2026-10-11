@@ -1,5 +1,7 @@
 package com.iheartradio.m3u8.http;
 
+import com.iheartradio.m3u8.http.ads.AdBreakPicker;
+import com.iheartradio.m3u8.http.api.AdDecisionApi;
 import com.iheartradio.m3u8.http.api.CatalogApi;
 import com.iheartradio.m3u8.http.api.HealthApi;
 import com.iheartradio.m3u8.http.api.IngestApi;
@@ -133,10 +135,14 @@ public final class DemoPlayerServer {
         server.createContext("/api/session", new SessionApi(port, sessions));
         server.createContext("/api/logs", new LogsApi());
         server.createContext("/api/catalog", new CatalogApi(catalog));
+        server.createContext("/api/ads/decision", new AdDecisionApi(catalog, mediaRoot));
         server.createContext("/api/ingest", new IngestApi(ingest));
         server.createContext("/play", new PlayApi(port, sessions));
-        server.createContext("/s/", new SessionResourceApi(port, sessions, pipeline,
-                new DemoMpdPipeline()));
+        AdBreakPicker picker = new AdBreakPicker(catalog, mediaRoot);
+        pipeline.setPicker(picker);
+        DemoMpdPipeline mpdPipeline = new DemoMpdPipeline();
+        mpdPipeline.setPicker(picker);
+        server.createContext("/s/", new SessionResourceApi(port, sessions, pipeline, mpdPipeline));
         server.createContext("/media/", new MediaApi(mediaRoot));
         server.createContext("/patch/", new com.iheartradio.m3u8.http.api.PatchProxyApi());
         server.setExecutor(Executors.newFixedThreadPool(16));
@@ -155,6 +161,7 @@ public final class DemoPlayerServer {
         System.out.println("  Manifest: http://127.0.0.1:" + port + "/s/{id}/manifest.m3u8");
         System.out.println("  Logs:     http://127.0.0.1:" + port + "/logs.html");
         System.out.println("  Catalog:  GET  http://127.0.0.1:" + port + "/api/catalog");
+        System.out.println("  Ads:      POST http://127.0.0.1:" + port + "/api/ads/decision");
         System.out.println("  Ingest:   POST http://127.0.0.1:" + port + "/api/ingest");
         System.out.println("  Engine:   DemoPlaylistPipeline (injectMediaTags | stitch)");
         System.out.println("  Static:   " + staticRoot.getAbsolutePath());

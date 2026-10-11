@@ -64,6 +64,26 @@ export function readBreaksFromDom() {
       }
       ads.push({ assetUri, durationSec });
     });
+    const source = card.querySelector(".brk-source");
+    if (source && source.value === "fill") {
+      const durationSec = Number(card.querySelector(".brk-slot").value);
+      const maxAds = Number(card.querySelector(".brk-max").value);
+      if (Number.isNaN(durationSec) || durationSec <= 0) {
+        throw new Error("Break " + (i + 1) + ": slot length must be greater than 0");
+      }
+      if (Number.isNaN(maxAds) || maxAds < 1) {
+        throw new Error("Break " + (i + 1) + ": ad count must be at least 1");
+      }
+      out.push({
+        id: card.dataset.breakId || nextBreakId(),
+        offsetSec,
+        fill: true,
+        durationSec,
+        maxAds,
+        ads: [],
+      });
+      return;
+    }
     if (!ads.length) return;
     out.push({
       id: card.dataset.breakId || nextBreakId(),
@@ -91,6 +111,18 @@ export function addBreakCard(offsetSec, ads) {
       '<span class="col-label">s</span>' +
       '<button type="button" class="btn btn-ghost btn-sm brk-remove" title="Remove this break">Remove break</button>' +
     '</div>' +
+    '<div class="break-source">' +
+      '<select class="brk-source" aria-label="How this break picks ads">' +
+        '<option value="pinned">These ads</option>' +
+        '<option value="fill">Server chooses</option>' +
+      '</select>' +
+      '<span class="brk-fill-fields hidden">' +
+        '<input class="brk-slot" type="number" min="1" step="any" value="15" aria-label="Slot length in seconds" />' +
+        '<span class="col-label">s</span>' +
+        '<input class="brk-max" type="number" min="1" step="1" value="1" aria-label="Maximum ads" />' +
+        '<span class="col-label">ads</span>' +
+      '</span>' +
+    '</div>' +
     '<div class="ad-list"></div>' +
     '<button type="button" class="btn btn-ad btn-sm brk-add-ad">Add ad</button>';
   card.querySelector(".brk-off").value = offsetSec != null ? offsetSec : 0;
@@ -99,6 +131,12 @@ export function addBreakCard(offsetSec, ads) {
     card.remove();
     renderTimeline();
   };
+  card.querySelector(".brk-source").addEventListener("change", () => {
+    const fill = card.querySelector(".brk-source").value === "fill";
+    card.querySelector(".brk-fill-fields").classList.toggle("hidden", !fill);
+    card.querySelector(".ad-list").classList.toggle("hidden", fill);
+    card.querySelector(".brk-add-ad").classList.toggle("hidden", fill);
+  });
   card.querySelector(".brk-add-ad").onclick = () => {
     const last = card.querySelector(".ad-row:last-child");
     addCreativeRow(card, last ? last.querySelector(".brk-url").value : inherit.url,
@@ -172,7 +210,7 @@ export function buildLocalSession() {
     return {
       strategy: "sgai",
       contentUrl,
-      adUrl: ad.url,
+      adUrl: ad.any ? "" : ad.url,
       breaks: [],
       splices: [],
       offsets: [],
@@ -180,8 +218,10 @@ export function buildLocalSession() {
       maxAdDurationSec: ad.durationSec,
       liveCadenceSec: LIVE_CADENCE.intervalSec,
       livePlayoutLimit: ad.durationSec,
-      prerollAdUrl: preroll ? preroll.url : "",
+      liveFill: !!ad.any,
+      prerollAdUrl: preroll && !preroll.any ? preroll.url : "",
       prerollPlayoutLimit: preroll ? preroll.durationSec : 0,
+      prerollFill: !!(preroll && preroll.any),
       snapToSegment: true,
       restrictSkip,
       restrictJump,
@@ -196,8 +236,10 @@ export function buildLocalSession() {
         playlistDelta,
         liveCadenceSec: LIVE_CADENCE.intervalSec,
         livePlayoutLimit: ad.durationSec,
-        prerollAdUrl: preroll ? preroll.url : "",
+        liveFill: !!ad.any,
+        prerollAdUrl: preroll && !preroll.any ? preroll.url : "",
         prerollPlayoutLimit: preroll ? preroll.durationSec : 0,
+        prerollFill: !!(preroll && preroll.any),
       },
     };
   }
@@ -276,6 +318,7 @@ export function syncProtocolSelect() {
 function selectedAdFrom(selectId) {
   const sel = $(selectId);
   if (!sel || !sel.value) return null;
+  if (sel.value === "any") return { url: "", durationSec: 15, any: true };
   const opt = sel.selectedOptions && sel.selectedOptions[0];
   const dur = opt ? Number(opt.dataset.duration) : NaN;
   if (!isFinite(dur) || dur <= 0) return null;
@@ -296,11 +339,18 @@ function fillAdSelect(sel, ads, allowNone) {
   const previous = sel.value;
   sel.innerHTML = "";
   if (!ads.length) {
-    const empty = document.createElement("option");
-    empty.value = "";
-    empty.textContent = "No ready titles";
-    sel.appendChild(empty);
-    sel.disabled = true;
+    sel.disabled = false;
+    if (allowNone) {
+      const none = document.createElement("option");
+      none.value = "";
+      none.textContent = "None";
+      sel.appendChild(none);
+    }
+    const any = document.createElement("option");
+    any.value = "any";
+    any.textContent = "Any eligible ad";
+    sel.appendChild(any);
+    if (!allowNone) sel.value = "any";
     return;
   }
   sel.disabled = false;
@@ -310,6 +360,10 @@ function fillAdSelect(sel, ads, allowNone) {
     none.textContent = "None";
     sel.appendChild(none);
   }
+  const any = document.createElement("option");
+  any.value = "any";
+  any.textContent = "Any eligible ad";
+  sel.appendChild(any);
   const nameCount = {};
   ads.forEach((t) => {
     const name = t.title || t.id;
@@ -327,7 +381,7 @@ function fillAdSelect(sel, ads, allowNone) {
       : name + " · " + shown + "s";
     sel.appendChild(opt);
   });
-  if (previous && ads.some((t) => t.url === previous)) sel.value = previous;
+  if (previous && (previous === "any" || ads.some((t) => t.url === previous))) sel.value = previous;
   else if (allowNone) sel.value = "";
 }
 

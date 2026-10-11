@@ -5,6 +5,7 @@ import com.iheartradio.m3u8.Encoding;
 import com.iheartradio.m3u8.ads.MpdSgaiUtil;
 import com.iheartradio.m3u8.ads.MpdSsaiUtil;
 import com.iheartradio.m3u8.ads.PlaylistRewriteUtil;
+import com.iheartradio.m3u8.http.ads.AdBreakPicker;
 import com.iheartradio.m3u8.data.MapInfo;
 import com.iheartradio.m3u8.data.MediaPlaylist;
 import com.iheartradio.m3u8.data.Playlist;
@@ -42,6 +43,11 @@ public final class DemoMpdPipeline {
     private final DemoHttp.OriginFetch fetch;
     private final MpdIo io;
     private final LongSupplier clock;
+    private AdBreakPicker picker;
+
+    public void setPicker(AdBreakPicker picker) {
+        this.picker = picker;
+    }
 
     public DemoMpdPipeline() {
         this(url -> DemoHttp.fetchRemote(url, null), new MpdIo(), null);
@@ -75,7 +81,7 @@ public final class DemoMpdPipeline {
             if (session != null && MpdLiveCadence.uses(session, parsed)) {
                 session.dashPatchUpstream = upstreamPatchBase(xml, mpdUrl);
                 String owned = retargetPatchLocations(kept, "/s/" + session.id + "/patch.mpp?publishTime=");
-                return liveReplaceInto(session, parsed, owned, true);
+                return liveReplaceInto(session, parsed, owned, true, publicBase);
             }
             return new Result(kept.getBytes(StandardCharsets.UTF_8));
         }
@@ -89,12 +95,12 @@ public final class DemoMpdPipeline {
         }
 
         if (session != null && MpdLiveCadence.uses(session, mpd)) {
-            return liveReplace(session, mpd);
+            return liveReplace(session, mpd, publicBase);
         }
         if (session != null && session.strategy == DemoSession.Strategy.SGAI) {
             String written = new String(io.writeBytes(mpd), StandardCharsets.UTF_8);
             java.util.Map<String, String> alts = new java.util.LinkedHashMap<String, String>();
-            List<MpdSgaiUtil.Event> events = sgaiEvents(session, alts);
+            List<MpdSgaiUtil.Event> events = sgaiEvents(session, alts, publicBase);
             session.setDashAlt(alts);
             if (!events.isEmpty()) {
                 written = MpdSgaiUtil.inject(written, events);
@@ -114,8 +120,9 @@ public final class DemoMpdPipeline {
         return new Result(io.writeBytes(mpd));
     }
 
-    private Result liveReplace(DemoSession session, MPD mpd) throws Exception {
-        return liveReplaceInto(session, mpd, new String(io.writeBytes(mpd), StandardCharsets.UTF_8), false);
+    private Result liveReplace(DemoSession session, MPD mpd, String publicBase) throws Exception {
+        return liveReplaceInto(session, mpd,
+                new String(io.writeBytes(mpd), StandardCharsets.UTF_8), false, publicBase);
     }
 
     /**
@@ -138,23 +145,25 @@ public final class DemoMpdPipeline {
         MpdLiveCadence.Place place = MpdLiveCadence.placeAheadFromPublish(
                 session, published != null ? published : publishTime);
         if (place != null && !place.breakId.equals(session.dashPatchEventId)) {
-            xml = appendEventReplace(xml, session, place);
+            xml = appendEventReplace(xml, session, place, null);
             session.dashPatchEventId = place.breakId;
         }
         return xml.getBytes(StandardCharsets.UTF_8);
     }
 
     /** Inject the replacement into {@code xml} without rewriting the rest of the document. */
-    private Result liveReplaceInto(DemoSession session, MPD mpd, String xml, boolean ahead) throws Exception {
+    private Result liveReplaceInto(DemoSession session, MPD mpd, String xml, boolean ahead,
+                                    String publicBase) throws Exception {
         String written = xml;
         java.util.Map<String, String> alts = new java.util.LinkedHashMap<String, String>();
         MpdLiveCadence.Place place = ahead
                 ? MpdLiveCadence.placeAhead(mpd, session, clock.getAsLong())
                 : MpdLiveCadence.place(mpd, session, clock.getAsLong());
-        if (place != null && session.adUrl != null && session.adUrl.length() > 0) {
-            Period ad = loadAdPeriod(session.adUrl);
+        String creative = liveCreative(session, place, publicBase);
+        if (creative != null) {
+            Period ad = loadAdPeriod(creative);
             if (ad == null) {
-                session.addWarning("DASH live SGAI skipped ad with no MPD/CMAF: " + session.adUrl);
+                session.addWarning("DASH live SGAI skipped ad with no MPD/CMAF: " + creative);
             } else {
                 float dur = session.livePlayoutLimit > 0f ? session.livePlayoutLimit : 15f;
                 if (ad.getDuration() == null) {
@@ -175,8 +184,10 @@ public final class DemoMpdPipeline {
         return new Result(written.getBytes(StandardCharsets.UTF_8));
     }
 
-    private String appendEventReplace(String xml, DemoSession session, MpdLiveCadence.Place place) throws Exception {
-        Period ad = loadAdPeriod(session.adUrl);
+    private String appendEventReplace(String xml, DemoSession session, MpdLiveCadence.Place place,
+                                      String publicBase) throws Exception {
+        String creative = liveCreative(session, place, publicBase);
+        Period ad = creative == null ? null : loadAdPeriod(creative);
         if (ad == null) {
             return xml;
         }
@@ -255,7 +266,29 @@ public final class DemoMpdPipeline {
         return m.find() ? m.group(1) : null;
     }
 
+    private String liveCreative(DemoSession session, MpdLiveCadence.Place place, String publicBase) {
+        if (place == null) {
+            return null;
+        }
+        if (picker != null) {
+            List<DemoSession.Ad> chosen = picker.chooseLive(session, place.breakId, false, 0d, publicBase);
+            if (chosen.isEmpty()) {
+                return null;
+            }
+            return chosen.get(0).assetUri;
+        }
+        if (session.adUrl != null && session.adUrl.length() > 0) {
+            return session.adUrl;
+        }
+        return null;
+    }
+
     List<MpdSgaiUtil.Event> sgaiEvents(DemoSession session, java.util.Map<String, String> alts) {
+        return sgaiEvents(session, alts, null);
+    }
+
+    List<MpdSgaiUtil.Event> sgaiEvents(DemoSession session, java.util.Map<String, String> alts,
+                                       String publicBase) {
         List<MpdSgaiUtil.Event> events = new ArrayList<MpdSgaiUtil.Event>();
         if (session.breaks.isEmpty()) {
             return events;
@@ -267,7 +300,10 @@ public final class DemoMpdPipeline {
             List<Period> periods = new ArrayList<Period>();
             float sum = 0f;
             int j = 0;
-            for (DemoSession.Ad creative : session.liveAds(br)) {
+            List<DemoSession.Ad> creatives = picker != null
+                    ? picker.chooseBreak(session, br, "dash", publicBase)
+                    : session.liveAds(br);
+            for (DemoSession.Ad creative : creatives) {
                 j++;
                 if (session.isSkippedAd(creative.assetUri)) {
                     continue;
@@ -277,7 +313,7 @@ public final class DemoMpdPipeline {
                     session.skipAd(creative.assetUri, "no MPD/CMAF");
                     continue;
                 }
-                String pid = br.ads.size() > 1 ? (bid + "-" + j) : bid;
+                String pid = creatives.size() > 1 ? (bid + "-" + j) : bid;
                 float dur = creative.durationSec > 0f ? creative.durationSec
                         : (period.getDuration() != null ? period.getDuration().toMillis() / 1000f : 0f);
                 if (period.getDuration() == null && dur > 0f) {
@@ -322,7 +358,10 @@ public final class DemoMpdPipeline {
         int i = 0;
         for (DemoSession.Break br : session.breaks) {
             int j = 0;
-            for (DemoSession.Ad creative : session.liveAds(br)) {
+            List<DemoSession.Ad> creatives = picker != null
+                    ? picker.chooseBreak(session, br, "dash", publicBase)
+                    : session.liveAds(br);
+            for (DemoSession.Ad creative : creatives) {
                 i++;
                 j++;
                 if (session.isSkippedAd(creative.assetUri)) {
@@ -334,7 +373,7 @@ public final class DemoMpdPipeline {
                     continue;
                 }
                 String bid = br.id != null && br.id.length() > 0 ? br.id : ("ad-" + i);
-                if (br.ads.size() > 1) {
+                if (creatives.size() > 1) {
                     bid = bid + "-" + j;
                 }
                 out.add(new MpdSsaiUtil.AdBreak(bid, br.offsetSec, period));
