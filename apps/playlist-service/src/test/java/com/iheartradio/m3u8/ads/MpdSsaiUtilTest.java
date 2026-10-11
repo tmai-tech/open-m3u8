@@ -3,6 +3,8 @@ package com.iheartradio.m3u8.ads;
 import com.iheartradio.dash.MpdIo;
 import io.lindstrom.mpd.data.MPD;
 import io.lindstrom.mpd.data.Period;
+import io.lindstrom.mpd.data.Representation;
+import io.lindstrom.mpd.data.Segment;
 import org.junit.Test;
 
 import java.util.ArrayList;
@@ -119,6 +121,68 @@ public class MpdSsaiUtilTest {
         assertEquals(Long.valueOf(12_000L), pto);
         assertEquals(Long.valueOf(12_000L), out.getPeriods().get(3).getAdaptationSets().get(0)
                 .getRepresentations().get(0).getSegmentTemplate().getSegmentTimeline().get(0).getT());
+    }
+
+    /** A 72s ad clipped to a 9s remainder keeps two whole 4s segments, on every rendition. */
+    @Test
+    public void clipPeriodKeepsWholeSegmentsThatFitTheSlot() throws Exception {
+        String longAd = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+                + "<MPD xmlns=\"urn:mpeg:dash:schema:mpd:2011\""
+                + " profiles=\"urn:mpeg:dash:profile:isoff-live:2011\""
+                + " type=\"static\" mediaPresentationDuration=\"PT72S\" minBufferTime=\"PT2S\">\n"
+                + "  <Period id=\"ad\" duration=\"PT72S\">\n"
+                + "    <AdaptationSet id=\"0\" contentType=\"video\" mimeType=\"video/mp4\">\n"
+                + "      <Representation id=\"v360\" bandwidth=\"600000\" width=\"640\" height=\"360\">\n"
+                + "        <SegmentTemplate timescale=\"1000\" initialization=\"init360.m4s\"\n"
+                + "                         media=\"v360_$Number$.m4s\" startNumber=\"0\">\n"
+                + "          <SegmentTimeline><S t=\"0\" d=\"4000\" r=\"17\"/></SegmentTimeline>\n"
+                + "        </SegmentTemplate>\n"
+                + "      </Representation>\n"
+                + "      <Representation id=\"v720\" bandwidth=\"1700000\" width=\"1280\" height=\"720\">\n"
+                + "        <SegmentTemplate timescale=\"1000\" initialization=\"init.m4s\"\n"
+                + "                         media=\"v720_$Number$.m4s\" startNumber=\"0\">\n"
+                + "          <SegmentTimeline><S t=\"0\" d=\"4000\" r=\"17\"/></SegmentTimeline>\n"
+                + "        </SegmentTemplate>\n"
+                + "      </Representation>\n"
+                + "    </AdaptationSet>\n"
+                + "    <AdaptationSet id=\"1\" contentType=\"audio\" mimeType=\"audio/mp4\">\n"
+                + "      <Representation id=\"a\" bandwidth=\"128000\">\n"
+                + "        <SegmentTemplate timescale=\"1000\" initialization=\"init.m4s\"\n"
+                + "                         media=\"a_$Number$.m4s\" startNumber=\"0\">\n"
+                + "          <SegmentTimeline><S t=\"0\" d=\"4000\" r=\"17\"/></SegmentTimeline>\n"
+                + "        </SegmentTemplate>\n"
+                + "      </Representation>\n"
+                + "    </AdaptationSet>\n"
+                + "  </Period>\n"
+                + "</MPD>\n";
+        MpdIo io = new MpdIo();
+        Period ad = io.parse(longAd).getPeriods().get(0);
+        Period clipped = MpdSsaiUtil.clipPeriod(ad, 9f);
+        assertEquals(8_000L, clipped.getDuration().toMillis());
+        assertEquals(2, segmentCount(clipped, 0, 0));
+        assertEquals(2, segmentCount(clipped, 0, 1));
+        assertEquals(2, segmentCount(clipped, 1, 0));
+        for (int set = 0; set < 2; set++) {
+            int reps = set == 0 ? 2 : 1;
+            for (int rep = 0; rep < reps; rep++) {
+                Representation r = clipped.getAdaptationSets().get(set).getRepresentations().get(rep);
+                assertEquals(Long.valueOf(0L), r.getSegmentTemplate().getStartNumber());
+                assertNull(r.getSegmentTemplate().getPresentationTimeOffset());
+            }
+        }
+        Period untouched = MpdSsaiUtil.clipPeriod(ad, 72f);
+        assertEquals(72_000L, untouched.getDuration().toMillis());
+        assertEquals(18, segmentCount(untouched, 0, 0));
+    }
+
+    private static int segmentCount(Period period, int set, int rep) {
+        int n = 0;
+        for (Segment s : period.getAdaptationSets().get(set).getRepresentations().get(rep)
+                .getSegmentTemplate().getSegmentTimeline()) {
+            long repeat = s.getR() == null ? 0L : s.getR();
+            n += (int) repeat + 1;
+        }
+        return n;
     }
 
     @Test

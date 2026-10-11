@@ -313,12 +313,9 @@ public final class DemoMpdPipeline {
                     session.skipAd(creative.assetUri, "no MPD/CMAF");
                     continue;
                 }
+                period = MpdSsaiUtil.clipPeriod(period, creative.durationSec);
                 String pid = creatives.size() > 1 ? (bid + "-" + j) : bid;
-                float dur = creative.durationSec > 0f ? creative.durationSec
-                        : (period.getDuration() != null ? period.getDuration().toMillis() / 1000f : 0f);
-                if (period.getDuration() == null && dur > 0f) {
-                    period = period.buildUpon().withDuration(Duration.ofMillis(Math.round(dur * 1000f))).build();
-                }
+                float dur = periodSeconds(period, creative.durationSec);
                 periods.add(period.buildUpon().withId(pid).build());
                 sum += dur;
             }
@@ -372,6 +369,7 @@ public final class DemoMpdPipeline {
                     session.skipAd(creative.assetUri, "no MPD/CMAF");
                     continue;
                 }
+                period = MpdSsaiUtil.clipPeriod(period, creative.durationSec);
                 String bid = br.id != null && br.id.length() > 0 ? br.id : ("ad-" + i);
                 if (creatives.size() > 1) {
                     bid = bid + "-" + j;
@@ -381,6 +379,13 @@ public final class DemoMpdPipeline {
         }
         DemoPlaylistPipeline.publishDiscardedAds(session);
         return out;
+    }
+
+    private static float periodSeconds(Period period, float fallback) {
+        if (period != null && period.getDuration() != null) {
+            return period.getDuration().toMillis() / 1000f;
+        }
+        return fallback;
     }
 
     Period loadAdPeriod(String assetUri) {

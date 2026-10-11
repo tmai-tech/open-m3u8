@@ -126,6 +126,27 @@ public final class MpdSsaiUtil {
                 .build(), text);
     }
 
+    /**
+     * Keep whole segments from the start of {@code period} until the next one would
+     * pass {@code maxSec}. A non-positive cap, or a period that already fits, is unchanged.
+     * The first segment is kept even when it is longer than the cap.
+     */
+    public static Period clipPeriod(Period period, float maxSec) {
+        if (period == null || maxSec <= 0f) {
+            return period;
+        }
+        Timeline tl = Timeline.from(period);
+        if (tl.flats.isEmpty()) {
+            return period;
+        }
+        int keep = tl.segmentsThatFit(maxSec);
+        if (keep >= tl.flats.size()) {
+            return period;
+        }
+        String id = period.getId() != null && period.getId().length() > 0 ? period.getId() : "ad";
+        return tl.sliceContent(period, 0, keep, id, null, null, null, null);
+    }
+
     static Period prepareAdPeriod(AdBreak br) {
         Period src = br.period;
         List<AdaptationSet> sets = new ArrayList<AdaptationSet>();
@@ -218,6 +239,24 @@ public final class MpdSsaiUtil {
                 }
             }
             return best;
+        }
+
+        /** Whole segments from the start. At least one, matching HLS trimTracksToMaxDuration. */
+        int segmentsThatFit(float maxSec) {
+            int keep = 0;
+            double cumulative = 0d;
+            for (Flat f : flats) {
+                double seconds = f.d / (double) timescale;
+                if (keep > 0 && cumulative + seconds > maxSec + 1e-4d) {
+                    break;
+                }
+                keep++;
+                cumulative += seconds;
+                if (cumulative >= maxSec - 1e-4d) {
+                    break;
+                }
+            }
+            return keep < 1 ? 1 : keep;
         }
 
         long durationMs() {
