@@ -48,9 +48,6 @@ final class LiveCadence {
         if (!media.isOngoing() || media.isIframesOnly() || isAudioOrKeyframeUrl(playlistUrl)) {
             return false;
         }
-        if (playlistUrl != null && playlistUrl.contains("/media/ads/")) {
-            return false;
-        }
         if (playlistUrl != null && session.adUrl != null && session.adUrl.length() > 0) {
             if (playlistUrl.equals(session.adUrl) || playlistUrl.startsWith(session.adUrl)) {
                 return false;

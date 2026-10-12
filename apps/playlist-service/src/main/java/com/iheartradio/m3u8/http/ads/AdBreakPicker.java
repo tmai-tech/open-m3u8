@@ -95,7 +95,7 @@ public final class AdBreakPicker {
         Request request = new Request(session.id, mode, fmt, strategy, session.contentUrl,
                 breakId, 0f, durationSec, maxAds < 1 ? 1 : maxAds, startOffset,
                 pinned, session.skippedAdUrls());
-        Result result = decision.decide(request, AdInventory.load(catalog, adsDir()),
+        Result result = decision.decide(request, AdInventory.load(catalog),
                 new MediaFileProbe(mediaRoot));
         log(session, breakId, fmt, durationSec, result);
         if (!result.fill) {
@@ -106,10 +106,6 @@ public final class AdBreakPicker {
             ads.add(new DemoSession.Ad(absolute(ad.url, publicBase), ad.durationSec));
         }
         return ads;
-    }
-
-    private File adsDir() {
-        return mediaRoot == null ? null : new File(mediaRoot, "ads");
     }
 
     private static void log(DemoSession session, String breakId, String format,

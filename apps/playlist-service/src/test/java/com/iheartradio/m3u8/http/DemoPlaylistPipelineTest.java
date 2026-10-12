@@ -558,9 +558,6 @@ public class DemoPlaylistPipelineTest {
         assertEquals("/media/titles/x/subs_0.vtt",
                 DemoPlaylistPipeline.mapOriginUri(
                         "http://127.0.0.1:8765/media/titles/x/subs_0.vtt", proxy, pub));
-        assertEquals("/media/ads/grok-clip/ad_0.m4s",
-                DemoPlaylistPipeline.mapOriginUri(
-                        "http://127.0.0.1:8765/media/ads/grok-clip/ad_0.m4s", proxy, pub));
         String child = "http://127.0.0.1:8765/media/titles/x/v360.m3u8";
         String mappedChild = DemoPlaylistPipeline.mapOriginUri(child, proxy, pub);
         assertTrue(mappedChild.contains("/s/s1/proxy?url="));

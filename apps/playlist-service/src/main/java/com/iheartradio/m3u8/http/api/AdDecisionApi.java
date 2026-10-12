@@ -44,8 +44,7 @@ public final class AdDecisionApi implements HttpHandler {
                     "{\"error\":" + DemoHttp.jsonString(e.getMessage()) + "}");
             return;
         }
-        File adsDir = mediaRoot == null ? null : new File(mediaRoot, "ads");
-        String json = decision.decide(request, AdInventory.load(catalog, adsDir),
+        String json = decision.decide(request, AdInventory.load(catalog),
                 new MediaFileProbe(mediaRoot)).toJson();
         DemoHttp.send(ex, 200, "application/json; charset=utf-8", json);
     }

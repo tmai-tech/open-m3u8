@@ -10,13 +10,16 @@ import com.iheartradio.m3u8.http.DemoHttp.FetchResult;
 import com.iheartradio.m3u8.http.DemoHttp.OriginFetch;
 import com.iheartradio.m3u8.http.ads.AdBreakPicker;
 import com.iheartradio.m3u8.http.catalog.CatalogStore;
+import com.iheartradio.m3u8.http.catalog.Title;
 import org.junit.Test;
 
 import java.io.File;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
+import java.util.List;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -59,7 +62,7 @@ public class AdPlaybackDecisionTest {
     @Test
     public void pinnedAssetListStaysOnTheCardUrl() throws Exception {
         File root = Files.createTempDirectory("ad-pin").toFile();
-        writePack(new File(root, "ads/tears"), AD_MEDIA, false);
+        addEligible(root, "house", 12f, false);
         DemoSession session = DemoSession.fromJson("pin",
                 "{\"strategy\":\"sgai\",\"contentUrl\":\"http://cdn/prog.m3u8\",\"breaks\":["
                         + "{\"id\":\"b\",\"offsetSec\":12,\"ads\":["
@@ -68,14 +71,14 @@ public class AdPlaybackDecisionTest {
         pipeline.setPicker(new AdBreakPicker(new CatalogStore(root), root));
         String list = pipeline.assetListJson(session, "b", "http://127.0.0.1:8765");
         assertTrue(list, list.contains("pinned.m3u8"));
-        assertFalse(list, list.contains("/media/ads/"));
+        assertFalse(list, list.contains("/media/titles/house/"));
     }
 
     @Test
     public void unpinnedHlsAssetListWalksInventoryAndStaysStable() throws Exception {
         File root = Files.createTempDirectory("ad-walk").toFile();
-        writePack(new File(root, "ads/alpha"), "#EXTM3U\n#EXTINF:4.0,\na.ts\n", false);
-        writePack(new File(root, "ads/beta"), "#EXTM3U\n#EXTINF:6.0,\nb.ts\n", false);
+        addEligible(root, "alpha", 4f, false);
+        addEligible(root, "beta", 6f, false);
         DemoSession session = DemoSession.fromJson("walk",
                 "{\"strategy\":\"sgai\",\"contentUrl\":\"http://cdn/prog.m3u8\",\"breaks\":["
                         + "{\"id\":\"keep\",\"offsetSec\":12,\"fill\":true,\"durationSec\":32,\"maxAds\":3}]}");
@@ -84,8 +87,8 @@ public class AdPlaybackDecisionTest {
         String first = pipeline.assetListJson(session, "keep", "http://127.0.0.1:8765");
         String second = pipeline.assetListJson(session, "keep", "http://127.0.0.1:8765");
         assertEquals(first, second);
-        assertTrue(first, first.contains("%2Fmedia%2Fads%2Falpha%2Fmaster.m3u8"));
-        assertTrue(first, first.contains("%2Fmedia%2Fads%2Fbeta%2Fmaster.m3u8"));
+        assertTrue(first, first.contains("%2Fmedia%2Ftitles%2Falpha%2Fmaster.m3u8"));
+        assertTrue(first, first.contains("%2Fmedia%2Ftitles%2Fbeta%2Fmaster.m3u8"));
         assertTrue(first, first.contains("/s/walk/proxy?url="));
         String dump = DemoLog.dumpJson("walk", 20);
         assertTrue(dump.contains("\"ev\":\"decision\""));
@@ -109,7 +112,7 @@ public class AdPlaybackDecisionTest {
     @Test
     public void ssaiStitchesTheUrlTheDecisionReturned() throws Exception {
         File root = Files.createTempDirectory("ad-ssai").toFile();
-        writePack(new File(root, "ads/clip"), AD_MEDIA, false);
+        addEligible(root, "clip", 10f, false);
         DemoSession session = DemoSession.fromJson("ssai-dec",
                 "{\"strategy\":\"ssai\",\"contentUrl\":\"http://cdn/prog.m3u8\",\"breaks\":["
                         + "{\"id\":\"pod\",\"offsetSec\":0,\"fill\":true,\"durationSec\":10,\"maxAds\":1}]}");
@@ -124,7 +127,7 @@ public class AdPlaybackDecisionTest {
     @Test
     public void dashSgaiStoresAltMpdForTheDecidedUrl() throws Exception {
         File root = Files.createTempDirectory("ad-dash").toFile();
-        writePack(new File(root, "ads/clip"), AD_MEDIA, true);
+        addEligible(root, "clip", 16f, true);
         DemoSession session = DemoSession.fromJson("dash-dec",
                 "{\"strategy\":\"sgai\",\"contentUrl\":\"http://cdn/prog.mpd\",\"breaks\":["
                         + "{\"id\":\"pod\",\"offsetSec\":12,\"fill\":true,\"durationSec\":16,\"maxAds\":1}]}");
@@ -139,7 +142,7 @@ public class AdPlaybackDecisionTest {
     @Test
     public void dashFillWithNoMpdIsNoFill() throws Exception {
         File root = Files.createTempDirectory("ad-nompd").toFile();
-        writePack(new File(root, "ads/clip"), AD_MEDIA, false);
+        addEligible(root, "clip", 16f, false);
         DemoSession session = DemoSession.fromJson("dash-none",
                 "{\"strategy\":\"sgai\",\"contentUrl\":\"http://cdn/prog.mpd\",\"breaks\":["
                         + "{\"id\":\"pod\",\"offsetSec\":12,\"fill\":true,\"durationSec\":16,\"maxAds\":1}]}");
@@ -168,10 +171,25 @@ public class AdPlaybackDecisionTest {
                 .build();
     }
 
-    private static void writePack(File dir, String playlist, boolean mpd) throws Exception {
+    private static void addEligible(File root, String id, float durationSec, boolean dash) throws Exception {
+        Title t = new Title();
+        t.id = id;
+        t.title = id;
+        t.url = "/media/titles/" + id + "/master.m3u8";
+        if (dash) {
+            t.dashUrl = "/media/titles/" + id + "/manifest.mpd";
+        }
+        t.durationSec = durationSec;
+        t.status = DemoJobStatus.READY;
+        t.adEligible = true;
+        CatalogStore store = new CatalogStore(root);
+        List<Title> titles = new ArrayList<Title>(store.load());
+        titles.add(t);
+        store.save(titles);
+        File dir = new File(root, "titles/" + id);
         dir.mkdirs();
-        Files.write(new File(dir, "master.m3u8").toPath(), playlist.getBytes(StandardCharsets.UTF_8));
-        if (mpd) {
+        Files.write(new File(dir, "master.m3u8").toPath(), AD_MEDIA.getBytes(StandardCharsets.UTF_8));
+        if (dash) {
             Files.write(new File(dir, "manifest.mpd").toPath(), AD_MPD.getBytes(StandardCharsets.UTF_8));
         }
     }

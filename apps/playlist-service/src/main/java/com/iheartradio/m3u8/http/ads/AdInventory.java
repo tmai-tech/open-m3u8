@@ -9,13 +9,11 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Comparator;
 import java.util.List;
 
 /**
  * Creatives the decision server may choose when a slot names none.
- * Ready catalog titles with {@code adEligible}, then packs under {@code media/ads}.
+ * Ready catalog titles with {@code adEligible}. One title, one media tree.
  */
 public final class AdInventory {
 
@@ -38,7 +36,7 @@ public final class AdInventory {
 
     private AdInventory() {}
 
-    public static List<Creative> load(CatalogStore catalog, File adsDir) {
+    public static List<Creative> load(CatalogStore catalog) {
         List<Title> titles = new ArrayList<Title>();
         if (catalog != null) {
             try {
@@ -47,38 +45,16 @@ public final class AdInventory {
                 titles = new ArrayList<Title>();
             }
         }
-        return load(titles, adsDir);
+        return load(titles);
     }
 
-    public static List<Creative> load(List<Title> titles, File adsDir) {
+    public static List<Creative> load(List<Title> titles) {
         List<Creative> out = new ArrayList<Creative>();
         if (titles != null) {
             for (Title t : titles) {
                 Creative creative = fromTitle(t);
                 if (creative != null) {
                     out.add(creative);
-                }
-            }
-        }
-        if (adsDir != null && adsDir.isDirectory()) {
-            File[] dirs = adsDir.listFiles();
-            if (dirs != null) {
-                List<File> sorted = new ArrayList<File>();
-                Collections.addAll(sorted, dirs);
-                Collections.sort(sorted, new Comparator<File>() {
-                    @Override
-                    public int compare(File a, File b) {
-                        return a.getName().compareTo(b.getName());
-                    }
-                });
-                for (File dir : sorted) {
-                    if (dir == null || !dir.isDirectory() || containsId(out, dir.getName())) {
-                        continue;
-                    }
-                    Creative creative = fromPack(dir);
-                    if (creative != null) {
-                        out.add(creative);
-                    }
                 }
             }
         }
@@ -96,31 +72,6 @@ public final class AdInventory {
             return null;
         }
         return new Creative(t.id, t.url, t.dashUrl, t.durationSec, true);
-    }
-
-    static Creative fromPack(File dir) {
-        File master = new File(dir, "master.m3u8");
-        if (!master.isFile()) {
-            return null;
-        }
-        float dur = readDuration(master);
-        if (dur <= 0f) {
-            return null;
-        }
-        String id = dir.getName();
-        String hls = "/media/ads/" + id + "/master.m3u8";
-        File mpd = new File(dir, "manifest.mpd");
-        String dash = mpd.isFile() ? "/media/ads/" + id + "/manifest.mpd" : null;
-        return new Creative(id, hls, dash, dur, true);
-    }
-
-    private static boolean containsId(List<Creative> list, String id) {
-        for (Creative c : list) {
-            if (id.equals(c.id)) {
-                return true;
-            }
-        }
-        return false;
     }
 
     /** Media length in seconds, or 0 when the file has no readable duration. */

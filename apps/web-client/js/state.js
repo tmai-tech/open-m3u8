@@ -23,9 +23,6 @@ export const SAMPLES = {
   grok: "/media/titles/grok-clip/master.m3u8",
   grok8e30: "/media/titles/grok-video-8e30b4bc-5d97-4e1e-ab64-129b5/master.m3u8",
   grok27bf: "/media/titles/grok-video-27bf43d8-2faf-4e7e-b7a0-aaab9/master.m3u8",
-  adMars: "/media/ads/mars-clip/master.m3u8",
-  adGiff: "/media/ads/giff-day-1/master.m3u8",
-  adGrok: "/media/ads/grok-clip/master.m3u8",
 };
 
 export const HINTS = {

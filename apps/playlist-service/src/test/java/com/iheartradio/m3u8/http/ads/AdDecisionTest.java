@@ -82,14 +82,14 @@ public class AdDecisionTest {
                 + "\"skipped\":[]"
                 + "}";
         List<Creative> inventory = Arrays.asList(new Creative(
-                "grok-clip",
-                "http://127.0.0.1:8765/media/ads/grok-clip/master.m3u8",
-                "http://127.0.0.1:8765/media/ads/grok-clip/manifest.mpd",
+                "grok",
+                "http://127.0.0.1:8765/media/titles/grok/master.m3u8",
+                "http://127.0.0.1:8765/media/titles/grok/manifest.mpd",
                 15f,
                 true));
         Result result = decision.decide(Request.parse(body), inventory, AdDecision.DECLARED);
         assertEquals("{\"fill\":true,\"breakId\":\"user-ad-1\",\"ads\":[{"
-                + "\"url\":\"http://127.0.0.1:8765/media/ads/grok-clip/master.m3u8\","
+                + "\"url\":\"http://127.0.0.1:8765/media/titles/grok/master.m3u8\","
                 + "\"durationSec\":15}]}", result.toJson());
     }
 
@@ -103,13 +103,13 @@ public class AdDecisionTest {
                 + "\"pinned\":[]"
                 + "}";
         List<Creative> inventory = Arrays.asList(new Creative(
-                "grok-clip",
-                "/media/ads/grok-clip/master.m3u8",
-                "/media/ads/grok-clip/manifest.mpd",
+                "grok",
+                "/media/titles/grok/master.m3u8",
+                "/media/titles/grok/manifest.mpd",
                 20f,
                 true));
         Result result = decision.decide(Request.parse(body), inventory, AdDecision.DECLARED);
-        assertEquals("/media/ads/grok-clip/manifest.mpd", result.ads.get(0).url);
+        assertEquals("/media/titles/grok/manifest.mpd", result.ads.get(0).url);
         assertEquals(16f, result.ads.get(0).durationSec, 0.01f);
     }
 
@@ -153,7 +153,7 @@ public class AdDecisionTest {
         assertFalse(empty.fill);
 
         List<Creative> silent = Arrays.asList(new Creative(
-                "quiet", "/media/ads/quiet/master.m3u8", null, 12f, false));
+                "quiet", "/media/titles/quiet/master.m3u8", null, 12f, false));
         Result skippedAudio = decision.decide(Request.parse(body), silent, AdDecision.DECLARED);
         assertEquals(AdDecision.NONE_ELIGIBLE, skippedAudio.reason);
     }
@@ -247,8 +247,7 @@ public class AdDecisionTest {
     }
 
     @Test
-    public void catalogAndPackInventory() throws Exception {
-        File root = Files.createTempDirectory("ad-inv").toFile();
+    public void catalogInventoryIsEligibleTitlesOnly() throws Exception {
         Title ready = new Title();
         ready.id = "house";
         ready.title = "House";
@@ -263,24 +262,12 @@ public class AdDecisionTest {
         content.url = "/media/titles/film/master.m3u8";
         content.durationSec = 90f;
         content.status = DemoJobStatus.READY;
-        File pack = new File(root, "ads/grok-clip");
-        pack.mkdirs();
-        Files.write(new File(pack, "master.m3u8").toPath(),
-                ("#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=800000\n"
-                        + "v720.m3u8\n").getBytes(StandardCharsets.UTF_8));
-        Files.write(new File(pack, "v720.m3u8").toPath(),
-                ("#EXTM3U\n#EXTINF:6.0,\na.m4s\n#EXTINF:9.0,\nb.m4s\n")
-                        .getBytes(StandardCharsets.UTF_8));
-        Files.write(new File(pack, "manifest.mpd").toPath(),
-                "<MPD mediaPresentationDuration=\"PT15S\"></MPD>"
-                        .getBytes(StandardCharsets.UTF_8));
 
-        List<Creative> loaded = AdInventory.load(Arrays.asList(ready, content), new File(root, "ads"));
-        assertEquals(2, loaded.size());
+        List<Creative> loaded = AdInventory.load(Arrays.asList(ready, content));
+        assertEquals(1, loaded.size());
         assertEquals("house", loaded.get(0).id);
-        assertEquals("grok-clip", loaded.get(1).id);
-        assertEquals(15f, loaded.get(1).durationSec, 0.01f);
-        assertEquals("/media/ads/grok-clip/manifest.mpd", loaded.get(1).dashUrl);
+        assertEquals("/media/titles/house/master.m3u8", loaded.get(0).hlsUrl);
+        assertEquals("/media/titles/house/manifest.mpd", loaded.get(0).dashUrl);
 
         String written = CatalogStore.write(Arrays.asList(ready));
         Title round = CatalogStore.parse(written).get(0);
@@ -291,22 +278,22 @@ public class AdDecisionTest {
     }
 
     @Test
-    public void localFileProbeTrimsAndRejectsAMissingPack() throws Exception {
+    public void localFileProbeTrimsAndRejectsAMissingTitle() throws Exception {
         File root = Files.createTempDirectory("ad-probe").toFile();
-        File dir = new File(root, "ads/clip");
+        File dir = new File(root, "titles/clip");
         dir.mkdirs();
         Files.write(new File(dir, "master.m3u8").toPath(),
                 "#EXTM3U\n#EXTINF:4.0,\na.m4s\n#EXTINF:6.0,\nb.m4s\n"
                         .getBytes(StandardCharsets.UTF_8));
         MediaFileProbe probe = new MediaFileProbe(root);
-        assertEquals(10f, probe.mediaSeconds("http://127.0.0.1:8765/media/ads/clip/master.m3u8"), 0.01f);
+        assertEquals(10f, probe.mediaSeconds("http://127.0.0.1:8765/media/titles/clip/master.m3u8"), 0.01f);
         try {
-            probe.mediaSeconds("/media/ads/missing/master.m3u8");
+            probe.mediaSeconds("/media/titles/missing/master.m3u8");
         } catch (Unavailable e) {
             String body = "{"
                     + "\"breakId\":\"user-ad-1\","
                     + "\"durationSec\":16,"
-                    + "\"pinned\":[{\"url\":\"/media/ads/missing/master.m3u8\",\"durationSec\":16}]"
+                    + "\"pinned\":[{\"url\":\"/media/titles/missing/master.m3u8\",\"durationSec\":16}]"
                     + "}";
             Result result = decision.decide(Request.parse(body), null, probe);
             assertEquals(AdDecision.UNAVAILABLE, result.reason);
@@ -318,9 +305,17 @@ public class AdDecisionTest {
     @Test
     public void postReturnsTheDecision() throws Exception {
         File root = Files.createTempDirectory("ad-api").toFile();
-        File pack = new File(root, "ads/grok-clip");
-        pack.mkdirs();
-        Files.write(new File(pack, "master.m3u8").toPath(),
+        Title ready = new Title();
+        ready.id = "grok";
+        ready.title = "Grok";
+        ready.url = "/media/titles/grok/master.m3u8";
+        ready.durationSec = 15f;
+        ready.status = DemoJobStatus.READY;
+        ready.adEligible = true;
+        new CatalogStore(root).save(Arrays.asList(ready));
+        File dir = new File(root, "titles/grok");
+        dir.mkdirs();
+        Files.write(new File(dir, "master.m3u8").toPath(),
                 "#EXTM3U\n#EXTINF:15.0,\na.m4s\n".getBytes(StandardCharsets.UTF_8));
         HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext("/api/ads/decision", new AdDecisionApi(new CatalogStore(root), root));
@@ -330,7 +325,7 @@ public class AdDecisionTest {
             String filled = post(server.getAddress().getPort(), "{"
                     + "\"breakId\":\"user-ad-1\",\"durationSec\":16,\"maxAds\":1,\"pinned\":[]}");
             assertTrue(filled.contains("\"fill\":true"));
-            assertTrue(filled.contains("\"url\":\"/media/ads/grok-clip/master.m3u8\""));
+            assertTrue(filled.contains("\"url\":\"/media/titles/grok/master.m3u8\""));
             assertEquals(15d, DemoHttp.jsonNumber(
                     DemoHttp.jsonArray(filled, "ads").substring(1), "durationSec", 0), 0.01);
 
