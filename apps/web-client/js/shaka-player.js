@@ -135,10 +135,14 @@ export async function playShaka(manifestUrl) {
 function hookShakaAds(player) {
   const onStart = (ev) => {
     state.shakaAdPlaying = true;
-    state.shakaAd = (ev && (ev.ad || (ev.detail && ev.detail.ad))) || null;
+    const ad = ev && (ev.ad || (ev.detail && ev.detail.ad));
+    if (ad) state.shakaAd = ad;
     refreshAdLabel();
   };
-  const onEnd = () => {
+  // Shaka sends ad-complete after the next creative's ad-started, and ad-skipped
+  // before it drops the rest of an asset-list pod. The break is over on
+  // ad-break-ended, which is also the return to content after a skip.
+  const onBreakEnd = () => {
     state.shakaAdPlaying = false;
     state.shakaAd = null;
     refreshAdLabel();
@@ -147,19 +151,28 @@ function hookShakaAds(player) {
     if (!target || !target.addEventListener) return;
     const AM = window.shaka && shaka.ads && shaka.ads.AdManager;
     const starts = ["ad-started", "ad-impression"];
-    const ends = ["ad-complete", "ad-skipped", "ad-stopped", "ad-ended"];
+    const ends = ["ad-break-ended"];
     if (AM) {
       if (AM.AD_STARTED) starts.push(AM.AD_STARTED);
-      if (AM.AD_COMPLETE) ends.push(AM.AD_COMPLETE);
-      if (AM.AD_SKIPPED) ends.push(AM.AD_SKIPPED);
-      if (AM.AD_STOPPED) ends.push(AM.AD_STOPPED);
+      if (AM.AD_IMPRESSION) starts.push(AM.AD_IMPRESSION);
+      if (AM.AD_BREAK_ENDED) ends.push(AM.AD_BREAK_ENDED);
     }
-    starts.forEach((n) => target.addEventListener(n, onStart));
-    ends.forEach((n) => target.addEventListener(n, onEnd));
+    listen(target, starts, onStart);
+    listen(target, ends, onBreakEnd);
   };
   bind(player);
   if (typeof player.getAdManager === "function") {
     try { bind(player.getAdManager()); } catch (e) { /* ignore */ }
+  }
+}
+
+function listen(target, names, fn) {
+  const seen = Object.create(null);
+  for (let i = 0; i < names.length; i++) {
+    const name = names[i];
+    if (!name || seen[name]) continue;
+    seen[name] = true;
+    target.addEventListener(name, fn);
   }
 }
 
