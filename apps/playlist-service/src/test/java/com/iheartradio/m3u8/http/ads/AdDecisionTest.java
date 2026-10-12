@@ -212,6 +212,30 @@ public class AdDecisionTest {
     }
 
     @Test
+    public void unlimitedMaxAdsFillsUntilTheSlotOrTheInventoryRunsOut() {
+        List<Creative> inventory = Arrays.asList(
+                new Creative("a", "http://ads/a.m3u8", null, 10f, true),
+                new Creative("b", "http://ads/b.m3u8", null, 10f, true),
+                new Creative("c", "http://ads/c.m3u8", null, 10f, true));
+        String body = "{\"sessionId\":\"s\",\"breakId\":\"user-ad-1\","
+                + "\"durationSec\":25,\"maxAds\":-1,\"pinned\":[]}";
+        assertEquals(-1, Request.parse(body).maxAds);
+        Result result = decision.decide(Request.parse(body), inventory, AdDecision.DECLARED);
+        assertTrue(result.fill);
+        assertEquals(3, result.ads.size());
+        assertEquals(10f, result.ads.get(0).durationSec, 0.01f);
+        assertEquals(10f, result.ads.get(1).durationSec, 0.01f);
+        assertEquals(5f, result.ads.get(2).durationSec, 0.01f);
+
+        String wide = "{\"sessionId\":\"s\",\"breakId\":\"user-ad-1\","
+                + "\"durationSec\":40,\"maxAds\":-1,\"pinned\":[]}";
+        Result all = decision.decide(Request.parse(wide), inventory, AdDecision.DECLARED);
+        assertEquals(3, all.ads.size());
+        assertEquals(1, Request.parse(
+                "{\"breakId\":\"b\",\"durationSec\":25,\"maxAds\":0,\"pinned\":[]}").maxAds);
+    }
+
+    @Test
     public void sameSessionKeepsTheSameCreative() {
         List<Creative> inventory = Arrays.asList(
                 new Creative("a", "http://ads/a.m3u8", null, 10f, true),

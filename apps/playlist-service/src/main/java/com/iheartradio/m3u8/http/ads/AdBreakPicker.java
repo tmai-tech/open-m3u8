@@ -57,10 +57,7 @@ public final class AdBreakPicker {
             slot = 15f;
         }
         int maxAds = br.fill ? br.maxAds : pins.size();
-        if (maxAds < 1) {
-            maxAds = 1;
-        }
-        return choose(session, bid, format, slot, maxAds, pins, 0d, publicBase);
+        return choose(session, bid, format, slot, AdDecision.normalizeMaxAds(maxAds), pins, 0d, publicBase);
     }
 
     /** Minute pod or preroll. A selected URL is pinned. {@code fill} walks inventory. */
@@ -93,7 +90,7 @@ public final class AdBreakPicker {
         String strategy = session.strategy == null ? "sgai" : session.strategy.wireName();
         String fmt = format == null || format.length() == 0 ? session.formatName() : format;
         Request request = new Request(session.id, mode, fmt, strategy, session.contentUrl,
-                breakId, 0f, durationSec, maxAds < 1 ? 1 : maxAds, startOffset,
+                breakId, 0f, durationSec, AdDecision.normalizeMaxAds(maxAds), startOffset,
                 pinned, session.skippedAdUrls());
         Result result = decision.decide(request, AdInventory.load(catalog),
                 new MediaFileProbe(mediaRoot));

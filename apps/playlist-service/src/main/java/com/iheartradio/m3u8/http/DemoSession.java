@@ -75,7 +75,7 @@ public final class DemoSession {
             this.fill = fill;
             this.slotDurationSec = slotDurationSec;
             int count = maxAds;
-            if (count < 1) {
+            if (count != -1 && count < 1) {
                 count = this.ads.isEmpty() ? 1 : this.ads.size();
             }
             this.maxAds = count;

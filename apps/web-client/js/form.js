@@ -71,8 +71,8 @@ export function readBreaksFromDom() {
       if (Number.isNaN(durationSec) || durationSec <= 0) {
         throw new Error("Break " + (i + 1) + ": slot length must be greater than 0");
       }
-      if (Number.isNaN(maxAds) || maxAds < 1) {
-        throw new Error("Break " + (i + 1) + ": ad count must be at least 1");
+      if (!Number.isInteger(maxAds) || (maxAds !== -1 && maxAds < 1)) {
+        throw new Error("Break " + (i + 1) + ": ad count must be at least 1, or -1 for no limit");
       }
       out.push({
         id: card.dataset.breakId || nextBreakId(),
@@ -119,7 +119,7 @@ export function addBreakCard(offsetSec, ads) {
       '<span class="brk-fill-fields hidden">' +
         '<input class="brk-slot" type="number" min="1" step="any" value="15" aria-label="Slot length in seconds" />' +
         '<span class="col-label">s</span>' +
-        '<input class="brk-max" type="number" min="1" step="1" value="1" aria-label="Maximum ads" />' +
+        '<input class="brk-max" type="number" min="-1" step="1" value="1" aria-label="Maximum ads, -1 for no limit" title="-1 uses as many ads as fit the slot" />' +
         '<span class="col-label">ads</span>' +
       '</span>' +
     '</div>' +

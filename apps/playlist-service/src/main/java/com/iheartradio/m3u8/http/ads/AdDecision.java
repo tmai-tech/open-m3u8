@@ -89,10 +89,7 @@ public final class AdDecision {
             if (breakId == null || breakId.length() == 0) {
                 throw new IllegalArgumentException("breakId is required");
             }
-            int maxAds = (int) DemoHttp.jsonNumber(json, "maxAds", 1);
-            if (maxAds < 1) {
-                maxAds = 1;
-            }
+            int maxAds = normalizeMaxAds((int) DemoHttp.jsonNumber(json, "maxAds", 1));
             float duration = (float) DemoHttp.jsonNumber(json, "durationSec", 15);
             if (duration < 0f) {
                 duration = 0f;
@@ -202,11 +199,12 @@ public final class AdDecision {
         }
         int start = request.pinned.isEmpty() ? startIndex(request, slots.size()) : 0;
         float budget = request.durationSec > 0f ? request.durationSec : 15f;
-        int capCount = request.maxAds < 1 ? 1 : request.maxAds;
+        int capCount = normalizeMaxAds(request.maxAds);
+        boolean unlimited = capCount < 0;
         List<Ad> chosen = new ArrayList<Ad>();
         List<String> usedUrls = new ArrayList<String>();
         boolean sawFailure = false;
-        for (int n = 0; n < slots.size() && chosen.size() < capCount && budget > 0.05f; n++) {
+        for (int n = 0; n < slots.size() && (unlimited || chosen.size() < capCount) && budget > 0.05f; n++) {
             Pin pin = slots.get((start + n) % slots.size());
             if (pin.url == null || pin.url.length() == 0 || contains(usedUrls, pin.url)
                     || contains(request.skipped, pin.url)) {
@@ -259,6 +257,14 @@ public final class AdDecision {
             out.add(new Pin(url, c.durationSec));
         }
         return out;
+    }
+
+    /** {@code -1} means no count cap. Any other value below 1 is one ad. */
+    public static int normalizeMaxAds(int maxAds) {
+        if (maxAds == -1) {
+            return -1;
+        }
+        return maxAds < 1 ? 1 : maxAds;
     }
 
     private static int startIndex(Request request, int size) {

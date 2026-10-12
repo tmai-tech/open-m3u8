@@ -51,6 +51,10 @@ public class AdPlaybackDecisionTest {
         assertEquals(1, session.breaks.size());
         assertTrue(session.breaks.get(0).fill);
         assertEquals(3, session.breaks.get(0).maxAds);
+        DemoSession unlimited = DemoSession.fromJson("u",
+                "{\"contentUrl\":\"http://cdn/prog.m3u8\",\"breaks\":["
+                        + "{\"id\":\"b\",\"offsetSec\":0,\"fill\":true,\"durationSec\":30,\"maxAds\":-1}]}");
+        assertEquals(-1, unlimited.breaks.get(0).maxAds);
         String text = PlaylistRewriteUtil.writeToString(
                 new DemoPlaylistPipeline().apply(session, content(), null, "http://127.0.0.1:8765"),
                 Encoding.UTF_8);
