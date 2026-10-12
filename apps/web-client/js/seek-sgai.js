@@ -1,4 +1,3 @@
-import { $ } from "./dom.js";
 import { state } from "./state.js";
 import { configuredAdLength } from "./form.js";
 import { nativeCurrentTime, snapTime } from "./seek-media.js";
@@ -32,19 +31,7 @@ export function sgaiPlayoutCap() {
 }
 
 export function sgaiRemaining() {
-  if (state.shakaAdPlaying) {
-    const ad = state.shakaAd;
-    if (ad && typeof ad.getRemainingTime === "function") {
-      const left = Number(ad.getRemainingTime());
-      if (isFinite(left)) return Math.max(0, left);
-    }
-    if (ad && typeof ad.getDuration === "function") {
-      const d = Number(ad.getDuration());
-      const t = Number(($("video") && $("video").currentTime) || 0);
-      if (isFinite(d) && d > 0) return Math.max(0, d - t);
-    }
-    return configuredAdLength();
-  }
+  if (state.shakaAdPlaying) return shakaAdRemaining();
   const im = state.hls && state.hls.interstitialsManager;
   if (!im) return configuredAdLength();
   // media.duration is the whole file (a 73s creative capped at 15s) or the live
@@ -64,6 +51,44 @@ export function sgaiRemaining() {
     if (isFinite(d) && d > 0) return Math.max(0, Math.min(d, cap) - Math.min(Math.max(0, t), cap));
   }
   return Math.max(0, cap);
+}
+
+function shakaAdRemaining() {
+  const ad = state.shakaAd;
+  const cap = shakaAssetCap(ad);
+  let fileDur = NaN;
+  let fileLeft = NaN;
+  if (ad && typeof ad.getDuration === "function") fileDur = Number(ad.getDuration());
+  if (ad && typeof ad.getRemainingTime === "function") fileLeft = Number(ad.getRemainingTime());
+  const ready = isFinite(fileDur) && fileDur > 0 && isFinite(fileLeft) && fileLeft >= 0;
+  if (!ready) return cap > 0 ? cap : configuredAdLength();
+  const played = Math.max(0, fileDur - fileLeft);
+  if (cap > 0) return Math.max(0, cap - played);
+  return Math.max(0, fileLeft);
+}
+
+function shakaAssetCap(ad) {
+  const table = state.shakaAssetDurations || {};
+  if (!ad) return 0;
+  let breakId = "";
+  let index = -1;
+  if (typeof ad.getAdId === "function") {
+    const m = String(ad.getAdId() || "").match(/^(.*)_shaka_asset_(\d+)$/);
+    if (m) {
+      breakId = m[1];
+      index = Number(m[2]);
+    }
+  }
+  const ids = Object.keys(table);
+  if (index < 0 && ids.length === 1 && typeof ad.getPositionInSequence === "function") {
+    const pos = Number(ad.getPositionInSequence());
+    if (pos >= 1) {
+      breakId = ids[0];
+      index = pos - 1;
+    }
+  }
+  const n = table[breakId] && Number(table[breakId][index]);
+  return isFinite(n) && n > 0 ? n : 0;
 }
 
 function breakTimePlayed(asset, media) {

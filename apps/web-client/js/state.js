@@ -47,6 +47,7 @@ export const state = {
   shakaUi: null,
   shakaAd: null,
   shakaAdPlaying: false,
+  shakaAssetDurations: {},
   lastSession: null,
   mediaDuration: 0,
   useProxy: false,

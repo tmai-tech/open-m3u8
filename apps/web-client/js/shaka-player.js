@@ -5,7 +5,7 @@ import { showSessionWarnings } from "./api.js";
 import { hidePoster } from "./ott.js";
 import { renderTimeline } from "./ad-markers.js";
 import { resetQualityMenu, syncShakaQuality } from "./quality.js";
-import { rememberPlaylist } from "./cues.js";
+import { parseInterstitialAssetLists, rememberPlaylist } from "./cues.js";
 import { refreshAdLabel, startAdLabelWatch, stopAdLabelWatch } from "./ad-overlay.js";
 
 const HLS_MIME = "application/vnd.apple.mpegurl";
@@ -21,6 +21,7 @@ export function destroyShaka() {
   state.shaka = null;
   state.shakaAd = null;
   state.shakaAdPlaying = false;
+  state.shakaAssetDurations = {};
   stopAdLabelWatch();
   document.body.classList.remove("shaka-mode");
   const video = $("video");
@@ -176,6 +177,27 @@ function listen(target, names, fn) {
   }
 }
 
+async function rememberShakaAssetDurations(playlistText, mediaUrl) {
+  const lists = parseInterstitialAssetLists(playlistText);
+  const durations = {};
+  for (let i = 0; i < lists.length; i++) {
+    const item = lists[i];
+    try {
+      const href = new URL(item.url, mediaUrl).href;
+      const body = await (await fetch(href, { cache: "no-store" })).json();
+      const assets = (body && (body.ASSETS || body.assets)) || [];
+      const durs = [];
+      for (let j = 0; j < assets.length; j++) {
+        const raw = assets[j].DURATION != null ? assets[j].DURATION : assets[j].duration;
+        const n = Number(raw);
+        if (isFinite(n) && n > 0) durs.push(n);
+      }
+      if (durs.length) durations[item.id] = durs;
+    } catch (e) { /* this break keeps the file length */ }
+  }
+  state.shakaAssetDurations = durations;
+}
+
 async function loadCueWindowsFromMaster(masterUrl) {
   try {
     const master = await (await fetch(masterUrl, { cache: "no-store" })).text();
@@ -194,6 +216,7 @@ async function loadCueWindowsFromMaster(masterUrl) {
     const url = new URL(child, masterUrl).href;
     const media = await (await fetch(url, { cache: "no-store" })).text();
     rememberPlaylist(media);
+    await rememberShakaAssetDurations(media, url);
     refreshAdLabel();
   } catch (e) {
     /* cue windows stay empty; badge stays off */

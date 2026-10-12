@@ -69,3 +69,24 @@ export function rememberPlaylist(text) {
     renderSeekMarks();
   }
 }
+
+/** Interstitial date ranges that name an asset list. */
+export function parseInterstitialAssetLists(playlistText) {
+  const lists = [];
+  if (!playlistText) return lists;
+  String(playlistText).replace(/\r/g, "").split("\n").forEach((raw) => {
+    const line = raw.trim();
+    if (line.indexOf("#EXT-X-DATERANGE:") !== 0) return;
+    const id = dateRangeAttr(line, "ID");
+    const url = dateRangeAttr(line, "X-ASSET-LIST");
+    if (id && url) lists.push({ id: id, url: url });
+  });
+  return lists;
+}
+
+function dateRangeAttr(line, name) {
+  const quoted = line.match(new RegExp("(?:^|[,:])" + name + "=\"([^\"]*)\"", "i"));
+  if (quoted) return quoted[1];
+  const bare = line.match(new RegExp("(?:^|[,:])" + name + "=([^,]*)", "i"));
+  return bare ? bare[1] : "";
+}
