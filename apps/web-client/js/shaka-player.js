@@ -5,7 +5,7 @@ import { showSessionWarnings } from "./api.js";
 import { hidePoster } from "./ott.js";
 import { renderTimeline } from "./ad-markers.js";
 import { resetQualityMenu, syncShakaQuality } from "./quality.js";
-import { parseInterstitialAssetLists, rememberPlaylist } from "./cues.js";
+import { parseDashAltPresentations, parseDashPeriods, parseInterstitialAssetLists, rememberPlaylist } from "./cues.js";
 import { refreshAdLabel, startAdLabelWatch, stopAdLabelWatch } from "./ad-overlay.js";
 
 const HLS_MIME = "application/vnd.apple.mpegurl";
@@ -22,6 +22,7 @@ export function destroyShaka() {
   state.shakaAd = null;
   state.shakaAdPlaying = false;
   state.shakaAssetDurations = {};
+  state.shakaDashPeriods = {};
   stopAdLabelWatch();
   document.body.classList.remove("shaka-mode");
   const video = $("video");
@@ -118,6 +119,12 @@ export async function playShaka(manifestUrl) {
   hookShakaAds(player);
   startAdLabelWatch();
   const mime = isMpdUrl(manifestUrl) ? "application/dash+xml" : HLS_MIME;
+  // A preroll starts inside load(). The period table has to be ready first,
+  // or the badge counts the whole alternative MPD until the fetch returns.
+  if (isMpdUrl(manifestUrl)) {
+    await rememberShakaDashPeriods(manifestUrl, stale);
+    if (stale()) return;
+  }
   await player.load(manifestUrl, /* startTime= */ null, mime);
   if (stale()) return;
   if (!isMpdUrl(manifestUrl)) {
@@ -196,6 +203,26 @@ async function rememberShakaAssetDurations(playlistText, mediaUrl) {
     } catch (e) { /* this break keeps the file length */ }
   }
   state.shakaAssetDurations = durations;
+}
+
+async function rememberShakaDashPeriods(manifestUrl, stale) {
+  const periods = {};
+  try {
+    const xml = await (await fetch(manifestUrl, { cache: "no-store" })).text();
+    const events = parseDashAltPresentations(xml);
+    for (let i = 0; i < events.length; i++) {
+      const ev = events[i];
+      try {
+        const href = new URL(ev.url, manifestUrl).href;
+        const alt = await (await fetch(href, { cache: "no-store" })).text();
+        const list = parseDashPeriods(alt);
+        if (list.length) periods[ev.id] = list;
+      } catch (e) { /* this break keeps the whole-presentation timer */ }
+    }
+  } catch (e) { /* badge stays the whole presentation */ }
+  if (stale && stale()) return;
+  state.shakaDashPeriods = periods;
+  refreshAdLabel();
 }
 
 async function loadCueWindowsFromMaster(masterUrl) {

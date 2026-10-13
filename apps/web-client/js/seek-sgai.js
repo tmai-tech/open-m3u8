@@ -1,6 +1,7 @@
 import { state } from "./state.js";
 import { configuredAdLength } from "./form.js";
 import { nativeCurrentTime, snapTime } from "./seek-media.js";
+import { dashPeriodAt } from "./cues.js";
 
 export function isSgaiAdPlaying() {
   if (state.shakaAdPlaying) return true;
@@ -55,16 +56,47 @@ export function sgaiRemaining() {
 
 function shakaAdRemaining() {
   const ad = state.shakaAd;
+  const periods = shakaDashPeriodsFor(ad);
+  const played = shakaAdClock(ad);
+  // One InsertPresentation is one Shaka ad. The creatives are periods inside
+  // that alternative MPD, so the countdown follows the period under the playhead.
+  if (periods) return dashPeriodAt(periods, played).remaining;
   const cap = shakaAssetCap(ad);
+  if (played == null) return cap > 0 ? cap : configuredAdLength();
+  if (cap > 0) return Math.max(0, cap - played);
+  let fileLeft = NaN;
+  if (ad && typeof ad.getRemainingTime === "function") fileLeft = Number(ad.getRemainingTime());
+  return Math.max(0, isFinite(fileLeft) ? fileLeft : 0);
+}
+
+function shakaAdClock(ad) {
   let fileDur = NaN;
   let fileLeft = NaN;
   if (ad && typeof ad.getDuration === "function") fileDur = Number(ad.getDuration());
   if (ad && typeof ad.getRemainingTime === "function") fileLeft = Number(ad.getRemainingTime());
-  const ready = isFinite(fileDur) && fileDur > 0 && isFinite(fileLeft) && fileLeft >= 0;
-  if (!ready) return cap > 0 ? cap : configuredAdLength();
-  const played = Math.max(0, fileDur - fileLeft);
-  if (cap > 0) return Math.max(0, cap - played);
-  return Math.max(0, fileLeft);
+  if (!(isFinite(fileDur) && fileDur > 0 && isFinite(fileLeft) && fileLeft >= 0)) return null;
+  return Math.max(0, fileDur - fileLeft);
+}
+
+function shakaDashPeriodsFor(ad) {
+  const table = state.shakaDashPeriods || {};
+  const ids = Object.keys(table);
+  if (!ad || !ids.length) return null;
+  if (typeof ad.getAdId === "function") {
+    const id = String(ad.getAdId() || "");
+    if (id && table[id] && table[id].length) return table[id];
+  }
+  if (typeof ad.getMediaUrl === "function") {
+    const url = String(ad.getMediaUrl() || "");
+    const m = url.match(/\/alt\/([^/?#]+)\.mpd/i);
+    if (m) {
+      let id = m[1];
+      try { id = decodeURIComponent(id); } catch (e) { /* keep the raw id */ }
+      if (table[id] && table[id].length) return table[id];
+    }
+  }
+  if (ids.length === 1 && table[ids[0]].length) return table[ids[0]];
+  return null;
 }
 
 function shakaAssetCap(ad) {
@@ -101,6 +133,13 @@ function breakTimePlayed(asset, media) {
 export function sgaiAdOrdinal() {
   if (state.shakaAdPlaying && state.shakaAd) {
     const ad = state.shakaAd;
+    const periods = shakaDashPeriodsFor(ad);
+    // Shaka's sequence length stays 1 for a DASH pod: every creative shares
+    // the one alternative MPD. Count periods once there is more than one.
+    if (periods && periods.length >= 2) {
+      const at = dashPeriodAt(periods, shakaAdClock(ad));
+      return { index: at.index, total: at.total };
+    }
     const pos = typeof ad.getPositionInSequence === "function" ? Number(ad.getPositionInSequence()) : NaN;
     const len = typeof ad.getSequenceLength === "function" ? Number(ad.getSequenceLength()) : NaN;
     if (len >= 2 && pos >= 1) return { index: pos, total: len };
