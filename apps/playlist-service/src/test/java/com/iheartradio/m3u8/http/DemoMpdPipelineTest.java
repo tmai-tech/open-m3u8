@@ -7,10 +7,8 @@ import io.lindstrom.mpd.data.AdaptationSet;
 import io.lindstrom.mpd.data.MPD;
 import org.junit.Test;
 
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.List;
 
 import static org.junit.Assert.assertEquals;
@@ -223,11 +221,10 @@ public class DemoMpdPipelineTest {
     }
 
     private static String readCave(String name) throws Exception {
-        Path path = Paths.get("media/titles/the-cave-charles-ancelle", name);
-        if (!Files.isRegularFile(path)) {
-            path = Paths.get("../../media/titles/the-cave-charles-ancelle", name);
+        String resource = "/fixtures/the-cave-charles-ancelle/" + name;
+        try (InputStream in = DemoMpdPipelineTest.class.getResourceAsStream(resource)) {
+            assertNotNull("missing " + resource, in);
+            return new String(in.readAllBytes(), StandardCharsets.UTF_8);
         }
-        assertTrue("missing " + path.toAbsolutePath(), Files.isRegularFile(path));
-        return new String(Files.readAllBytes(path), StandardCharsets.UTF_8);
     }
 }
