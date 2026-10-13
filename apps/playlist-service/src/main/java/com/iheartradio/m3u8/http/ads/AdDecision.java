@@ -135,27 +135,51 @@ public final class AdDecision {
         }
     }
 
+    /** A pinned URL the probe rejected. Inventory misses are not discards. */
+    public static final class Discard {
+        public final String url;
+        public final String reason;
+
+        public Discard(String url, String reason) {
+            this.url = url;
+            this.reason = reason;
+        }
+    }
+
     public static final class Result {
         public final boolean fill;
         public final String breakId;
         public final List<Ad> ads;
         public final String reason;
+        public final List<Discard> discarded;
 
-        private Result(boolean fill, String breakId, List<Ad> ads, String reason) {
+        private Result(boolean fill, String breakId, List<Ad> ads, String reason,
+                       List<Discard> discarded) {
             this.fill = fill;
             this.breakId = breakId;
             this.ads = ads == null
                     ? Collections.<Ad>emptyList()
                     : Collections.unmodifiableList(new ArrayList<Ad>(ads));
             this.reason = reason;
+            this.discarded = discarded == null
+                    ? Collections.<Discard>emptyList()
+                    : Collections.unmodifiableList(new ArrayList<Discard>(discarded));
         }
 
         public static Result filled(String breakId, List<Ad> ads) {
-            return new Result(true, breakId, ads, null);
+            return filled(breakId, ads, null);
+        }
+
+        public static Result filled(String breakId, List<Ad> ads, List<Discard> discarded) {
+            return new Result(true, breakId, ads, null, discarded);
         }
 
         public static Result none(String breakId, String reason) {
-            return new Result(false, breakId, Collections.<Ad>emptyList(), reason);
+            return none(breakId, reason, null);
+        }
+
+        public static Result none(String breakId, String reason, List<Discard> discarded) {
+            return new Result(false, breakId, Collections.<Ad>emptyList(), reason, discarded);
         }
 
         public String toJson() {
@@ -203,6 +227,8 @@ public final class AdDecision {
         boolean unlimited = capCount < 0;
         List<Ad> chosen = new ArrayList<Ad>();
         List<String> usedUrls = new ArrayList<String>();
+        List<Discard> discarded = new ArrayList<Discard>();
+        boolean pinned = !request.pinned.isEmpty();
         boolean sawFailure = false;
         for (int n = 0; n < slots.size() && (unlimited || chosen.size() < capCount) && budget > 0.05f; n++) {
             Pin pin = slots.get((start + n) % slots.size());
@@ -215,9 +241,11 @@ public final class AdDecision {
                 media = used.mediaSeconds(pin.url);
             } catch (Unavailable e) {
                 sawFailure = true;
+                notePinnedDiscard(pinned, discarded, pin.url);
                 continue;
             } catch (RuntimeException e) {
                 sawFailure = true;
+                notePinnedDiscard(pinned, discarded, pin.url);
                 continue;
             }
             float own = pin.durationSec > 0f ? pin.durationSec : budget;
@@ -225,6 +253,7 @@ public final class AdDecision {
             float dur = media > 0f ? Math.min(media, cap) : cap;
             if (dur <= 0f) {
                 sawFailure = true;
+                notePinnedDiscard(pinned, discarded, pin.url);
                 continue;
             }
             chosen.add(new Ad(pin.url, dur));
@@ -232,9 +261,22 @@ public final class AdDecision {
             budget -= dur;
         }
         if (!chosen.isEmpty()) {
-            return Result.filled(request.breakId, chosen);
+            return Result.filled(request.breakId, chosen, discarded);
         }
-        return Result.none(request.breakId, sawFailure ? UNAVAILABLE : NONE_ELIGIBLE);
+        return Result.none(request.breakId, sawFailure ? UNAVAILABLE : NONE_ELIGIBLE, discarded);
+    }
+
+    /** One entry per pinned URL. A repeated card shares that URL and is logged later. */
+    private static void notePinnedDiscard(boolean pinned, List<Discard> discarded, String url) {
+        if (!pinned || url == null || url.length() == 0) {
+            return;
+        }
+        for (Discard d : discarded) {
+            if (url.equals(d.url)) {
+                return;
+            }
+        }
+        discarded.add(new Discard(url, UNAVAILABLE));
     }
 
     private static List<Pin> candidates(Request request, List<Creative> inventory) {

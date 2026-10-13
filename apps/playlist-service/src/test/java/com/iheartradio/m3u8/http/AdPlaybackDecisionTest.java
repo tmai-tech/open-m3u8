@@ -144,6 +144,36 @@ public class AdPlaybackDecisionTest {
     }
 
     @Test
+    public void dashPinnedMissingFileIsDiscardedInTheLog() throws Exception {
+        File root = Files.createTempDirectory("ad-dash-discard").toFile();
+        addEligible(root, "grok", 15f, true);
+        String grok = "http://127.0.0.1:8765/media/titles/grok/master.m3u8";
+        String missing = "http://127.0.0.1:8765/media/titles/err-video/master.m3u8";
+        DemoSession session = DemoSession.fromJson("dash-miss",
+                "{\"strategy\":\"sgai\",\"contentUrl\":\"http://cdn/prog.mpd\",\"breaks\":["
+                        + "{\"id\":\"ssai-1\",\"offsetSec\":12,\"ads\":["
+                        + "{\"assetUri\":\"" + grok + "\",\"durationSec\":16},"
+                        + "{\"assetUri\":\"" + missing + "\",\"durationSec\":16},"
+                        + "{\"assetUri\":\"" + missing + "\",\"durationSec\":16}"
+                        + "]}]}");
+        DemoMpdPipeline pipeline = new DemoMpdPipeline(mpdFetch(), new com.iheartradio.dash.MpdIo());
+        pipeline.setPicker(new AdBreakPicker(new CatalogStore(root), root));
+        java.util.Map<String, String> alts = new LinkedHashMap<String, String>();
+        assertEquals(1, pipeline.sgaiEvents(session, alts, "http://127.0.0.1:8765").size());
+        assertFalse(session.isSkippedAd(grok));
+        assertTrue(session.isSkippedAd(missing));
+        assertEquals(1, session.getWarnings().size());
+        String warn = session.getWarnings().get(0);
+        assertTrue(warn, warn.startsWith("Break ssai-1 at 12s discarded"));
+        assertEquals(2, countOf(warn, missing));
+        assertTrue(warn, warn.contains("reason: unavailable"));
+        assertNotNull(alts.get("ssai-1"));
+        String dump = DemoLog.dumpJson("dash-miss", 20);
+        assertTrue(dump, dump.contains("\"ev\":\"warn\""));
+        assertTrue(dump, dump.contains("unavailable"));
+    }
+
+    @Test
     public void dashFillWithNoMpdIsNoFill() throws Exception {
         File root = Files.createTempDirectory("ad-nompd").toFile();
         addEligible(root, "clip", 16f, false);
@@ -173,6 +203,16 @@ public class AdPlaybackDecisionTest {
                                 .build()))
                         .build())
                 .build();
+    }
+
+    private static int countOf(String text, String token) {
+        int n = 0;
+        int i = 0;
+        while (text != null && (i = text.indexOf(token, i)) >= 0) {
+            n++;
+            i += token.length();
+        }
+        return n;
     }
 
     private static void addEligible(File root, String id, float durationSec, boolean dash) throws Exception {

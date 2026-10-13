@@ -94,6 +94,9 @@ public final class AdBreakPicker {
                 pinned, session.skippedAdUrls());
         Result result = decision.decide(request, AdInventory.load(catalog),
                 new MediaFileProbe(mediaRoot));
+        for (AdDecision.Discard drop : result.discarded) {
+            session.skipAd(drop.url, drop.reason);
+        }
         log(session, breakId, fmt, durationSec, result);
         if (!result.fill) {
             return Collections.emptyList();

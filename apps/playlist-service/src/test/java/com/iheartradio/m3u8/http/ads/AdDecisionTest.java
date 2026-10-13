@@ -168,6 +168,10 @@ public class AdDecisionTest {
         };
         Result failed = decision.decide(Request.parse(PINNED), null, down);
         assertEquals(AdDecision.UNAVAILABLE, failed.reason);
+        assertEquals(1, failed.discarded.size());
+        assertEquals("http://127.0.0.1:8765/media/titles/grok-video-8e30b4bc-5d97-4e1e-ab64-129b5/master.m3u8",
+                failed.discarded.get(0).url);
+        assertEquals(AdDecision.UNAVAILABLE, failed.discarded.get(0).reason);
 
         String body = "{"
                 + "\"sessionId\":\"s\","
@@ -191,6 +195,8 @@ public class AdDecisionTest {
         Result next = decision.decide(Request.parse(body), null, firstDown);
         assertTrue(next.fill);
         assertEquals("http://ads/ok.m3u8", next.ads.get(0).url);
+        assertEquals(1, next.discarded.size());
+        assertEquals("http://ads/missing.m3u8", next.discarded.get(0).url);
     }
 
     @Test
@@ -321,6 +327,8 @@ public class AdDecisionTest {
                     + "}";
             Result result = decision.decide(Request.parse(body), null, probe);
             assertEquals(AdDecision.UNAVAILABLE, result.reason);
+            assertEquals(1, result.discarded.size());
+            assertEquals("/media/titles/missing/master.m3u8", result.discarded.get(0).url);
             return;
         }
         throw new AssertionError("expected missing creative");
