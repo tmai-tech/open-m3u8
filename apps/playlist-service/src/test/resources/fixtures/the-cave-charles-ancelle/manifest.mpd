@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<MPD xmlns="urn:mpeg:dash:schema:mpd:2011"
+     profiles="urn:mpeg:dash:profile:isoff-live:2011"
+     type="static"
+     mediaPresentationDuration="PT238.667S"
+     minBufferTime="PT2S">
+  <Period id="p0" duration="PT238.667S">
+    <AdaptationSet id="0" contentType="video" mimeType="video/mp4" codecs="avc1.640029,mp4a.40.2" segmentAlignment="true" startWithSAP="1" maxWidth="1280" maxHeight="720" maxFrameRate="24">
+      <Representation id="v360" bandwidth="594213" width="640" height="360" frameRate="24">
+        <SegmentTemplate timescale="1000" initialization="init360.m4s"
+                         media="v360_$Number$.m4s" startNumber="0">
+          <SegmentTimeline>
+            <S t="0" d="4000" r="58"/>
+            <S d="2667"/>
+          </SegmentTimeline>
+        </SegmentTemplate>
+      </Representation>
+      <Representation id="v480" bandwidth="911978" width="854" height="480" frameRate="24">
+        <SegmentTemplate timescale="1000" initialization="init480.m4s"
+                         media="v480_$Number$.m4s" startNumber="0">
+          <SegmentTimeline>
+            <S t="0" d="4000" r="58"/>
+            <S d="2667"/>
+          </SegmentTimeline>
+        </SegmentTemplate>
+      </Representation>
+      <Representation id="v720" bandwidth="1859480" width="1280" height="720" frameRate="24">
+        <SegmentTemplate timescale="1000" initialization="init.m4s"
+                         media="v720_$Number$.m4s" startNumber="0">
+          <SegmentTimeline>
+            <S t="0" d="4000" r="58"/>
+            <S d="2667"/>
+          </SegmentTimeline>
+        </SegmentTemplate>
+      </Representation>
+    </AdaptationSet>
+    <AdaptationSet id="1" contentType="text" mimeType="text/vtt" lang="en">
+      <Role schemeIdUri="urn:mpeg:dash:role:2011" value="subtitle"/>
+      <Representation id="subs" bandwidth="256">
+        <BaseURL>subs-dash.vtt</BaseURL>
+      </Representation>
+    </AdaptationSet>
+  </Period>
+</MPD>
