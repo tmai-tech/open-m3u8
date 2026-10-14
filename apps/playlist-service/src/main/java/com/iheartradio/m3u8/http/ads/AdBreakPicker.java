@@ -83,6 +83,35 @@ public final class AdBreakPicker {
         return choose(session, bid, session.formatName(), limit, 1, pins, startOffset, publicBase);
     }
 
+    /**
+     * A pinned file that will not play is skipped before the decision.
+     * Same order as HLS {@code skipSilentAds}: mark it, then the existing
+     * discard log lists every card that used the URL.
+     */
+    public void skipMissingPins(DemoSession session) {
+        if (session == null || session.breaks == null) {
+            return;
+        }
+        MediaFileProbe probe = new MediaFileProbe(mediaRoot);
+        for (DemoSession.Break br : session.breaks) {
+            if (br == null || br.ads == null) {
+                continue;
+            }
+            for (DemoSession.Ad creative : br.ads) {
+                String url = creative.assetUri != null && creative.assetUri.length() > 0
+                        ? creative.assetUri : session.adUrl;
+                if (url == null || url.length() == 0 || session.isSkippedAd(url)) {
+                    continue;
+                }
+                try {
+                    probe.mediaSeconds(url);
+                } catch (AdDecision.Unavailable e) {
+                    session.skipAd(url, AdDecision.UNAVAILABLE);
+                }
+            }
+        }
+    }
+
     public List<DemoSession.Ad> choose(DemoSession session, String breakId, String format,
                                        float durationSec, int maxAds, List<Pin> pinned,
                                        double startOffset, String publicBase) {
@@ -94,9 +123,6 @@ public final class AdBreakPicker {
                 pinned, session.skippedAdUrls());
         Result result = decision.decide(request, AdInventory.load(catalog),
                 new MediaFileProbe(mediaRoot));
-        for (AdDecision.Discard drop : result.discarded) {
-            session.skipAd(drop.url, drop.reason);
-        }
         log(session, breakId, fmt, durationSec, result);
         if (!result.fill) {
             return Collections.emptyList();
