@@ -167,7 +167,7 @@ public class AdDecisionTest {
             }
         };
         Result failed = decision.decide(Request.parse(PINNED), null, down);
-        assertEquals(AdDecision.UNAVAILABLE, failed.reason);
+        assertEquals(AdDecision.NONE_ELIGIBLE, failed.reason);
 
         String body = "{"
                 + "\"sessionId\":\"s\","
