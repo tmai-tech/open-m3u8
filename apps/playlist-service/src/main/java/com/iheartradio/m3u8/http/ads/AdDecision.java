@@ -163,11 +163,16 @@ public final class AdDecision {
             sb.append("{\"fill\":").append(fill ? "true" : "false");
             sb.append(",\"breakId\":").append(DemoHttp.jsonString(breakId));
             sb.append(",\"ads\":[");
+            int written = 0;
             for (int i = 0; i < ads.size(); i++) {
-                if (i > 0) {
+                Ad ad = ads.get(i);
+                if (ad == null || ad.url == null || ad.url.length() == 0) {
+                    continue;
+                }
+                if (written > 0) {
                     sb.append(',');
                 }
-                Ad ad = ads.get(i);
+                written++;
                 sb.append("{\"url\":").append(DemoHttp.jsonString(ad.url));
                 sb.append(",\"durationSec\":").append(trimFloat(ad.durationSec));
                 sb.append('}');
@@ -206,8 +211,8 @@ public final class AdDecision {
         boolean sawFailure = false;
         for (int n = 0; n < slots.size() && (unlimited || chosen.size() < capCount) && budget > 0.05f; n++) {
             Pin pin = slots.get((start + n) % slots.size());
-            if (pin.url == null || pin.url.length() == 0 || contains(usedUrls, pin.url)
-                    || contains(request.skipped, pin.url)) {
+            if (pin == null || pin.url == null || pin.url.length() == 0
+                    || contains(usedUrls, pin.url) || contains(request.skipped, pin.url)) {
                 continue;
             }
             float media;

@@ -242,11 +242,17 @@ public final class CatalogStore {
         StringBuilder sb = new StringBuilder();
         sb.append("{\"titles\":[");
         if (titles != null) {
+            int written = 0;
             for (int i = 0; i < titles.size(); i++) {
-                if (i > 0) {
+                Title row = titles.get(i);
+                if (row == null) {
+                    continue;
+                }
+                if (written > 0) {
                     sb.append(',');
                 }
-                writeTitle(sb, titles.get(i));
+                written++;
+                writeTitle(sb, row);
             }
         }
         sb.append("]}");

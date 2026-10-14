@@ -69,6 +69,9 @@ public final class DemoMpdPipeline {
     }
 
     public Result process(DemoSession session, String mpdUrl, String publicBase) throws Exception {
+        if (mpdUrl == null || mpdUrl.length() == 0) {
+            throw new DemoHttp.HttpException(400, "mpd url is required");
+        }
         DemoHttp.FetchResult remote = fetch.fetch(mpdUrl);
         if (remote.status >= 400) {
             throw new DemoHttp.HttpException(remote.status > 0 ? remote.status : 502,

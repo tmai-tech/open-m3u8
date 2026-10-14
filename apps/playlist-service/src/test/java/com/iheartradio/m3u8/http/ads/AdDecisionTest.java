@@ -2,6 +2,7 @@ package com.iheartradio.m3u8.http.ads;
 
 import com.iheartradio.m3u8.http.DemoHttp;
 import com.iheartradio.m3u8.http.DemoJobStatus;
+import com.iheartradio.m3u8.http.ads.AdDecision.Pin;
 import com.iheartradio.m3u8.http.ads.AdDecision.Probe;
 import com.iheartradio.m3u8.http.ads.AdDecision.Request;
 import com.iheartradio.m3u8.http.ads.AdDecision.Result;
@@ -20,6 +21,7 @@ import java.net.InetSocketAddress;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
@@ -324,6 +326,23 @@ public class AdDecisionTest {
             return;
         }
         throw new AssertionError("expected missing creative");
+    }
+
+    @Test
+    public void nullPinIsSkipped() {
+        List<Pin> pins = new ArrayList<Pin>();
+        pins.add(null);
+        pins.add(new Pin("http://ads/ok.m3u8", 8f));
+        Request request = new Request("s", "vod", "hls", "sgai", null, "b", 0f, 16f, 1, 0d, pins, null);
+        Result result = decision.decide(request, null, AdDecision.DECLARED);
+        assertTrue(result.fill);
+        assertEquals("http://ads/ok.m3u8", result.ads.get(0).url);
+        List<AdDecision.Ad> withHole = new ArrayList<AdDecision.Ad>();
+        withHole.add(null);
+        withHole.add(result.ads.get(0));
+        String json = Result.filled("b", withHole).toJson();
+        assertTrue(json.contains("http://ads/ok.m3u8"));
+        assertFalse(json.contains("null"));
     }
 
     @Test

@@ -27,7 +27,11 @@ public final class MediaApi implements HttpHandler {
             DemoHttp.send(ex, 405, "text/plain", "method not allowed");
             return;
         }
-        String path = ex.getRequestURI().getPath();
+        if (mediaRoot == null) {
+            DemoHttp.sendError(ex, 500, "media root unavailable");
+            return;
+        }
+        String path = ex.getRequestURI() == null ? null : ex.getRequestURI().getPath();
         String rel = path != null && path.startsWith("/media") ? path.substring("/media".length()) : path;
         if (!DemoHttp.serveStatic(ex, mediaRoot, rel)) {
             DemoHttp.send(ex, 404, "text/plain", "not found");

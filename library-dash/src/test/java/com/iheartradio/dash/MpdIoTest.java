@@ -7,9 +7,12 @@ import io.lindstrom.mpd.data.PresentationType;
 import io.lindstrom.mpd.data.Representation;
 import org.junit.Test;
 
+import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+
+import static org.junit.Assert.fail;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
@@ -137,6 +140,29 @@ public class MpdIoTest {
         assertEquals(2, videoRepCount(again));
         assertEquals("v360", again.getPeriods().get(0).getAdaptationSets().get(0)
                 .getRepresentations().get(0).getId());
+    }
+
+    @Test
+    public void nullMpdIsRejected() throws Exception {
+        MpdIo io = new MpdIo();
+        try {
+            io.parse((InputStream) null);
+            fail("null stream");
+        } catch (IOException e) {
+            assertTrue(e.getMessage().contains("null"));
+        }
+        try {
+            io.parse((String) null);
+            fail("null xml");
+        } catch (IOException e) {
+            assertTrue(e.getMessage().contains("null"));
+        }
+        try {
+            io.write(null);
+            fail("null write");
+        } catch (IOException e) {
+            assertTrue(e.getMessage().contains("null"));
+        }
     }
 
     private static int videoRepCount(MPD mpd) {

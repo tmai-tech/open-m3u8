@@ -28,6 +28,10 @@ public final class SessionApi implements HttpHandler {
             DemoHttp.sendCors(ex, 204, new byte[0], "application/json");
             return;
         }
+        if (sessions == null) {
+            DemoHttp.sendError(ex, 500, "sessions unavailable");
+            return;
+        }
         if ("GET".equalsIgnoreCase(method)) {
             String id = DemoHttp.decode(DemoHttp.queryParam(ex.getRequestURI().getRawQuery(), "id"));
             DemoSession s = sessions.require(id);
@@ -48,13 +52,11 @@ public final class SessionApi implements HttpHandler {
                         + s.toJson(DemoHttp.publicBase(ex, port)) + "}";
                 DemoHttp.send(ex, 200, "application/json; charset=utf-8", resp);
             } catch (IllegalArgumentException e) {
-                DemoLog.event("error").put("evSrc", "session").put("msg", e.getMessage()).write();
-                DemoHttp.send(ex, 400, "application/json; charset=utf-8",
-                        "{\"error\":" + DemoHttp.jsonString(e.getMessage()) + "}");
+                DemoLog.event("error").put("evSrc", "session").put("msg", DemoHttp.errorText(e)).write();
+                DemoHttp.sendError(ex, 400, DemoHttp.errorText(e));
             } catch (Exception e) {
-                DemoLog.event("error").put("evSrc", "session").put("msg", e.getMessage()).write();
-                DemoHttp.send(ex, 400, "application/json; charset=utf-8",
-                        "{\"error\":" + DemoHttp.jsonString(e.getMessage()) + "}");
+                DemoLog.event("error").put("evSrc", "session").put("msg", DemoHttp.errorText(e)).write();
+                DemoHttp.sendError(ex, 500, DemoHttp.errorText(e));
             }
             return;
         }

@@ -43,8 +43,19 @@ public final class SessionResourceApi implements HttpHandler {
             DemoHttp.send(ex, 405, "text/plain", "method not allowed");
             return;
         }
+        if (sessions == null) {
+            DemoHttp.sendError(ex, 500, "sessions unavailable");
+            return;
+        }
+        if (ex.getRequestURI() == null) {
+            DemoHttp.sendError(ex, 400, "missing request uri");
+            return;
+        }
 
         String path = ex.getRequestURI().getPath();
+        if (path == null) {
+            path = "";
+        }
         String rest = path.startsWith("/s/") ? path.substring(3) : "";
         int slash = rest.indexOf('/');
         if (slash <= 0) {
@@ -134,6 +145,10 @@ public final class SessionResourceApi implements HttpHandler {
         } catch (Exception ignored) {
             // keep raw
         }
+        if (pipeline == null) {
+            DemoHttp.sendError(ex, 500, "playlist pipeline unavailable");
+            return;
+        }
         String rawQuery = ex.getRequestURI().getRawQuery();
         double startOffset = DemoHttp.hlsStartOffset(rawQuery);
         String primaryId = DemoHttp.hlsPrimaryId(rawQuery);
@@ -175,9 +190,7 @@ public final class SessionResourceApi implements HttpHandler {
                 DemoHttp.streamRemote(ex, target, rangeHeader);
             } catch (Exception e) {
                 try {
-                    DemoHttp.send(ex, 502, "application/json; charset=utf-8",
-                            "{\"error\":" + DemoHttp.jsonString("fetch failed: " + e.getMessage())
-                                    + ",\"url\":" + DemoHttp.jsonString(target) + "}");
+                    DemoHttp.sendError(ex, 502, "fetch failed: " + DemoHttp.errorText(e));
                 } catch (Exception ignored) {
                     // response may already be committed
                 }
@@ -209,9 +222,7 @@ public final class SessionResourceApi implements HttpHandler {
             }
             DemoHttp.sendCors(ex, 200, body, "text/vtt; charset=utf-8");
         } catch (Exception e) {
-            DemoHttp.send(ex, 502, "application/json; charset=utf-8",
-                    "{\"error\":" + DemoHttp.jsonString("vtt fetch failed: " + e.getMessage())
-                            + ",\"url\":" + DemoHttp.jsonString(origin) + "}");
+            DemoHttp.sendError(ex, 502, "vtt fetch failed: " + DemoHttp.errorText(e));
         }
     }
 
@@ -259,87 +270,103 @@ public final class SessionResourceApi implements HttpHandler {
             DemoHttp.send(ex, 400, "text/plain", "publishTime required");
             return;
         }
+        if (mpdPipeline == null) {
+            DemoHttp.sendError(ex, 500, "mpd pipeline unavailable");
+            return;
+        }
         try {
             byte[] body = mpdPipeline.adPatch(session, publishTime);
+            if (body == null) {
+                DemoHttp.send(ex, 502, "text/plain", "empty patch");
+                return;
+            }
             if ("HEAD".equalsIgnoreCase(ex.getRequestMethod())) {
                 body = new byte[0];
             }
             DemoHttp.sendCors(ex, 200, body, "application/dash-patch+xml");
         } catch (DemoHttp.HttpException e) {
-            DemoHttp.send(ex, e.status, "text/plain", e.getMessage() == null ? "patch failed" : e.getMessage());
+            DemoHttp.send(ex, e.status, "text/plain", DemoHttp.errorText(e));
         } catch (Exception e) {
-            DemoHttp.send(ex, 502, "text/plain", "patch failed: " + e.getMessage());
+            DemoHttp.send(ex, 502, "text/plain", "patch failed: " + DemoHttp.errorText(e));
         }
     }
 
     private void handleMpd(HttpExchange ex, DemoSession session, String mpdUrl)
             throws IOException {
+        if (mpdPipeline == null) {
+            DemoHttp.sendError(ex, 500, "mpd pipeline unavailable");
+            return;
+        }
+        if (mpdUrl == null || mpdUrl.length() == 0) {
+            DemoHttp.sendError(ex, 400, "mpd url is required");
+            return;
+        }
         try {
             DemoMpdPipeline.Result result = mpdPipeline.process(
                     session, mpdUrl, DemoHttp.publicBase(ex, port));
-            DemoHttp.writePlaylistResponse(ex, result.body, mpdUrl, "mpd",
-                    session.strategy.wireName());
+            if (result == null || result.body == null) {
+                DemoHttp.sendError(ex, 502, "empty mpd");
+                return;
+            }
+            DemoHttp.writePlaylistResponse(ex, result.body, mpdUrl, "mpd", strategyName(session));
         } catch (DemoHttp.HttpException e) {
-            DemoLog.event("error")
-                    .sid(session.id)
-                    .put("url", mpdUrl)
-                    .put("status", e.status)
-                    .put("msg", e.getMessage())
-                    .play(session)
-                    .write();
-            DemoHttp.send(ex, e.status, "application/json; charset=utf-8",
-                    "{\"error\":" + DemoHttp.jsonString(e.getMessage())
-                            + ",\"url\":" + DemoHttp.jsonString(mpdUrl) + "}");
+            logPlayError(session, mpdUrl, e.status, DemoHttp.errorText(e));
+            DemoHttp.sendError(ex, e.status, DemoHttp.errorText(e));
         } catch (Exception e) {
-            e.printStackTrace();
-            DemoLog.event("error")
-                    .sid(session.id)
-                    .put("url", mpdUrl)
-                    .put("status", 502)
-                    .put("msg", e.getMessage())
-                    .play(session)
-                    .write();
-            DemoHttp.send(ex, 502, "application/json; charset=utf-8",
-                    "{\"error\":" + DemoHttp.jsonString("mpd rewrite failed: " + e.getMessage())
-                            + ",\"url\":" + DemoHttp.jsonString(mpdUrl) + "}");
+            logPlayError(session, mpdUrl, 502, DemoHttp.errorText(e));
+            DemoHttp.sendError(ex, 502, "mpd rewrite failed: " + DemoHttp.errorText(e));
         }
     }
 
     private void handlePlaylist(HttpExchange ex, DemoSession session, String playlistUrl)
             throws IOException {
+        if (pipeline == null) {
+            DemoHttp.sendError(ex, 500, "playlist pipeline unavailable");
+            return;
+        }
+        if (playlistUrl == null || playlistUrl.length() == 0) {
+            DemoHttp.sendError(ex, 400, "playlist url is required");
+            return;
+        }
         try {
             DemoPlaylistPipeline.Result result = pipeline.process(
                     session, playlistUrl, DemoHttp.publicBase(ex, port));
+            if (result == null || result.body == null) {
+                DemoHttp.sendError(ex, 502, "empty playlist");
+                return;
+            }
             if (result.fallback) {
                 Headers h = ex.getResponseHeaders();
                 DemoHttp.applyCorsHeaders(ex);
                 h.set("X-Rewrite-Fallback", "uri-only");
             }
             DemoHttp.writePlaylistResponse(ex, result.body, playlistUrl, result.kind,
-                    session.strategy.wireName());
+                    strategyName(session));
         } catch (DemoHttp.HttpException e) {
-            DemoLog.event("error")
-                    .sid(session.id)
-                    .put("url", playlistUrl)
-                    .put("status", e.status)
-                    .put("msg", e.getMessage())
-                    .play(session)
-                    .write();
-            DemoHttp.send(ex, e.status, "application/json; charset=utf-8",
-                    "{\"error\":" + DemoHttp.jsonString(e.getMessage())
-                            + ",\"url\":" + DemoHttp.jsonString(playlistUrl) + "}");
+            logPlayError(session, playlistUrl, e.status, DemoHttp.errorText(e));
+            DemoHttp.sendError(ex, e.status, DemoHttp.errorText(e));
         } catch (Exception e) {
-            e.printStackTrace();
-            DemoLog.event("error")
-                    .sid(session.id)
-                    .put("url", playlistUrl)
-                    .put("status", 502)
-                    .put("msg", e.getMessage())
-                    .play(session)
-                    .write();
-            DemoHttp.send(ex, 502, "application/json; charset=utf-8",
-                    "{\"error\":" + DemoHttp.jsonString("rewrite failed: " + e.getMessage())
-                            + ",\"url\":" + DemoHttp.jsonString(playlistUrl) + "}");
+            logPlayError(session, playlistUrl, 502, DemoHttp.errorText(e));
+            DemoHttp.sendError(ex, 502, "rewrite failed: " + DemoHttp.errorText(e));
         }
+    }
+
+    private static String strategyName(DemoSession session) {
+        if (session == null || session.strategy == null) {
+            return "";
+        }
+        return session.strategy.wireName();
+    }
+
+    private static void logPlayError(DemoSession session, String url, int status, String msg) {
+        DemoLog.Event ev = DemoLog.event("error")
+                .sid(session == null ? null : session.id)
+                .put("url", url)
+                .put("status", status)
+                .put("msg", msg);
+        if (session != null) {
+            ev.play(session);
+        }
+        ev.write();
     }
 }

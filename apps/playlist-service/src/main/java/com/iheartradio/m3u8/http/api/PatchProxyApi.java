@@ -27,23 +27,29 @@ public final class PatchProxyApi implements HttpHandler {
             DemoHttp.send(ex, 405, "text/plain", "method not allowed");
             return;
         }
-        String path = ex.getRequestURI().getRawPath();
-        String query = ex.getRequestURI().getRawQuery();
+        String path = ex.getRequestURI() == null ? null : ex.getRequestURI().getRawPath();
+        String query = ex.getRequestURI() == null ? null : ex.getRequestURI().getRawQuery();
         String target = UPSTREAM + (path == null ? "/patch/" : path)
                 + (query == null || query.length() == 0 ? "" : "?" + query);
-        DemoHttp.FetchResult remote = DemoHttp.fetchRemote(target, null);
-        byte[] body = remote.body == null ? new byte[0] : remote.body;
-        String type = remote.contentType == null ? "application/dash-patch+xml" : remote.contentType;
-        if (remote.status < 400 && body.length > 0 && body.length < 1_000_000) {
-            String text = new String(body, StandardCharsets.UTF_8);
-            String rewritten = text.replace(">/patch/", ">" + UPSTREAM + "/patch/");
-            if (!rewritten.equals(text)) {
-                body = rewritten.getBytes(StandardCharsets.UTF_8);
+        try {
+            DemoHttp.FetchResult remote = DemoHttp.fetchRemote(target, null);
+            byte[] body = remote == null || remote.body == null ? new byte[0] : remote.body;
+            int status = remote == null ? 502 : remote.status;
+            String type = remote == null || remote.contentType == null
+                    ? "application/dash-patch+xml" : remote.contentType;
+            if (status < 400 && body.length > 0 && body.length < 1_000_000) {
+                String text = new String(body, StandardCharsets.UTF_8);
+                String rewritten = text.replace(">/patch/", ">" + UPSTREAM + "/patch/");
+                if (!rewritten.equals(text)) {
+                    body = rewritten.getBytes(StandardCharsets.UTF_8);
+                }
             }
+            if ("HEAD".equalsIgnoreCase(ex.getRequestMethod())) {
+                body = new byte[0];
+            }
+            DemoHttp.sendCors(ex, status > 0 ? status : 502, body, type);
+        } catch (Exception e) {
+            DemoHttp.sendError(ex, 502, "patch fetch failed: " + DemoHttp.errorText(e));
         }
-        if ("HEAD".equalsIgnoreCase(ex.getRequestMethod())) {
-            body = new byte[0];
-        }
-        DemoHttp.sendCors(ex, remote.status > 0 ? remote.status : 502, body, type);
     }
 }

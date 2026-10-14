@@ -98,6 +98,9 @@ public final class AdBreakPicker {
                 continue;
             }
             for (DemoSession.Ad creative : br.ads) {
+                if (creative == null) {
+                    continue;
+                }
                 String url = creative.assetUri != null && creative.assetUri.length() > 0
                         ? creative.assetUri : session.adUrl;
                 if (url == null || url.length() == 0 || session.isSkippedAd(url)) {
@@ -106,6 +109,8 @@ public final class AdBreakPicker {
                 try {
                     probe.mediaSeconds(url);
                 } catch (AdDecision.Unavailable e) {
+                    session.skipAd(url, AdDecision.UNAVAILABLE);
+                } catch (RuntimeException e) {
                     session.skipAd(url, AdDecision.UNAVAILABLE);
                 }
             }

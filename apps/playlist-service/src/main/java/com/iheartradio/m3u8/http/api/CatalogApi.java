@@ -29,12 +29,15 @@ public final class CatalogApi implements HttpHandler {
             DemoHttp.send(ex, 405, "text/plain", "method not allowed");
             return;
         }
+        if (catalog == null) {
+            DemoHttp.sendError(ex, 500, "catalog unavailable");
+            return;
+        }
         try {
             List<Title> titles = catalog.loadOrDiscover();
             DemoHttp.send(ex, 200, "application/json; charset=utf-8", CatalogStore.write(titles));
         } catch (Exception e) {
-            DemoHttp.send(ex, 500, "application/json; charset=utf-8",
-                    "{\"error\":" + DemoHttp.jsonString(e.getMessage()) + "}");
+            DemoHttp.sendError(ex, 500, DemoHttp.errorText(e));
         }
     }
 }

@@ -31,10 +31,11 @@ public final class HealthApi implements HttpHandler {
         }
         DemoHttp.publicBase(ex, port);
         String pub = DemoHttp.advertisedPublicBase();
+        int sessionCount = sessions == null ? 0 : sessions.size();
         String body = "{\"ok\":true,\"proxy\":true,\"engine\":\""
                 + DemoHttp.ENGINE + "\",\"port\":" + port
                 + ",\"strategies\":[\"sgai\",\"ssai\"],\"sessions\":"
-                + sessions.size()
+                + sessionCount
                 + ",\"publicBase\":"
                 + (pub == null ? "null" : DemoHttp.jsonString(pub))
                 + "}";

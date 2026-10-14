@@ -31,6 +31,10 @@ public final class PlayApi implements HttpHandler {
             DemoHttp.send(ex, 405, "text/plain", "method not allowed");
             return;
         }
+        if (sessions == null) {
+            DemoHttp.sendError(ex, 500, "sessions unavailable");
+            return;
+        }
         String q = ex.getRequestURI().getRawQuery();
         String content = DemoHttp.decode(DemoHttp.queryParam(q, "content"));
         String ad = DemoHttp.decode(DemoHttp.queryParam(q, "ad"));
@@ -62,8 +66,9 @@ public final class PlayApi implements HttpHandler {
             ex.sendResponseHeaders(302, -1);
             ex.close();
         } catch (IllegalArgumentException e) {
-            DemoHttp.send(ex, 400, "application/json; charset=utf-8",
-                    "{\"error\":" + DemoHttp.jsonString(e.getMessage()) + "}");
+            DemoHttp.sendError(ex, 400, DemoHttp.errorText(e));
+        } catch (Exception e) {
+            DemoHttp.sendError(ex, 500, DemoHttp.errorText(e));
         }
     }
 }
