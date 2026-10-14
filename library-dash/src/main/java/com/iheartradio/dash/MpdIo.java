@@ -59,6 +59,9 @@ public final class MpdIo {
     }
 
     public MPD parse(InputStream in) throws IOException {
+        if (in == null) {
+            throw new IOException("MPD input is null");
+        }
         return parser.parse(in);
     }
 
@@ -70,10 +73,16 @@ public final class MpdIo {
     }
 
     public String write(MPD mpd) throws IOException {
+        if (mpd == null) {
+            throw new IOException("MPD is null");
+        }
         return parser.writeAsString(mpd);
     }
 
     public byte[] writeBytes(MPD mpd) throws IOException {
+        if (mpd == null) {
+            throw new IOException("MPD is null");
+        }
         return parser.writeAsBytes(mpd);
     }
 }

@@ -188,6 +188,9 @@ public final class DemoPlaylistPipeline {
 
     public Result process(DemoSession session, String playlistUrl, String publicBase)
             throws Exception {
+        if (playlistUrl == null || playlistUrl.length() == 0) {
+            throw new DemoHttp.HttpException(400, "playlist url is required");
+        }
         long t0 = System.currentTimeMillis();
         DemoHttp.FetchResult remote = fetch.fetch(playlistUrl);
         if (DemoHttp.looksLikePlaylist(playlistUrl, remote.contentType, remote.body)) {

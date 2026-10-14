@@ -64,7 +64,31 @@ public final class DemoHttp {
         FetchResult fetch(String url) throws IOException;
     }
 
+    /** A message that is safe to put in a JSON error. Never null or blank. */
+    public static String errorText(Throwable e) {
+        if (e == null) {
+            return "unknown error";
+        }
+        String msg = e.getMessage();
+        if (msg == null || msg.trim().length() == 0) {
+            return e.getClass().getSimpleName();
+        }
+        return msg;
+    }
+
+    public static String errorJson(String message) {
+        String text = message == null || message.trim().length() == 0 ? "unknown error" : message;
+        return "{\"error\":" + jsonString(text) + "}";
+    }
+
+    public static void sendError(HttpExchange ex, int code, String message) throws IOException {
+        send(ex, code, "application/json; charset=utf-8", errorJson(message));
+    }
+
     public static void requireHttpUrl(String url) {
+        if (url == null || url.trim().length() == 0) {
+            throw new IllegalArgumentException("url is required");
+        }
         try {
             URI uri = new URI(url);
             String scheme = uri.getScheme();
@@ -80,6 +104,9 @@ public final class DemoHttp {
     }
 
     public static FetchResult fetchRemote(String target, String rangeHeader) throws IOException {
+        if (target == null || target.length() == 0) {
+            throw new IOException("url is required");
+        }
         HttpURLConnection conn = (HttpURLConnection) new URL(target).openConnection();
         conn.setInstanceFollowRedirects(true);
         conn.setConnectTimeout(15000);
@@ -107,6 +134,12 @@ public final class DemoHttp {
 
     public static void streamRemote(HttpExchange ex, String target, String rangeHeader)
             throws IOException {
+        if (ex == null) {
+            throw new IOException("response is required");
+        }
+        if (target == null || target.length() == 0) {
+            throw new IOException("url is required");
+        }
         HttpURLConnection conn = (HttpURLConnection) new URL(target).openConnection();
         conn.setInstanceFollowRedirects(true);
         conn.setConnectTimeout(15000);
@@ -221,7 +254,7 @@ public final class DemoHttp {
     }
 
     public static String firstHeader(Headers headers, String name) {
-        if (headers == null) {
+        if (headers == null || name == null) {
             return null;
         }
         List<String> values = headers.get(name);
@@ -255,7 +288,7 @@ public final class DemoHttp {
     }
 
     public static String queryParam(String rawQuery, String name) {
-        if (rawQuery == null) {
+        if (rawQuery == null || name == null) {
             return null;
         }
         String[] parts = rawQuery.split("&");
@@ -601,14 +634,18 @@ public final class DemoHttp {
 
     public static void send(HttpExchange ex, int code, String contentType, String body)
             throws IOException {
-        sendCors(ex, code, body.getBytes(StandardCharsets.UTF_8), contentType);
+        byte[] bytes = body == null ? new byte[0] : body.getBytes(StandardCharsets.UTF_8);
+        sendCors(ex, code, bytes, contentType);
     }
 
     public static void sendCors(HttpExchange ex, int code, byte[] body, String contentType)
             throws IOException {
+        if (ex == null) {
+            throw new IOException("response is required");
+        }
         Headers h = ex.getResponseHeaders();
         applyCorsHeaders(ex);
-        h.set("Content-Type", contentType);
+        h.set("Content-Type", contentType == null ? "application/octet-stream" : contentType);
         h.set("Cache-Control", "no-store");
         if (body == null || body.length == 0) {
             ex.sendResponseHeaders(code, -1);
@@ -623,6 +660,15 @@ public final class DemoHttp {
 
     public static void writePlaylistResponse(HttpExchange ex, byte[] body, String target,
                                             String kind, String strategy) throws IOException {
+        if (ex == null) {
+            throw new IOException("response is required");
+        }
+        if (body == null) {
+            body = new byte[0];
+        }
+        if (kind == null) {
+            kind = "";
+        }
         Headers outHeaders = ex.getResponseHeaders();
         applyCorsHeaders(ex);
         outHeaders.set("Cache-Control", "no-store");
@@ -649,6 +695,9 @@ public final class DemoHttp {
 
     public static boolean serveStatic(HttpExchange ex, File staticRoot, String path)
             throws IOException {
+        if (ex == null || staticRoot == null) {
+            return false;
+        }
         if (path == null || path.equals("/") || path.length() == 0) {
             path = "/index.html";
         }
@@ -683,6 +732,9 @@ public final class DemoHttp {
     }
 
     public static byte[] readAll(InputStream in) throws IOException {
+        if (in == null) {
+            return new byte[0];
+        }
         ByteArrayOutputStream bos = new ByteArrayOutputStream();
         byte[] buf = new byte[8192];
         int n;
@@ -699,6 +751,9 @@ public final class DemoHttp {
     }
 
     public static String contentTypeFor(String name) {
+        if (name == null) {
+            return "application/octet-stream";
+        }
         String lower = name.toLowerCase();
         if (lower.endsWith(".html") || lower.endsWith(".htm")) return "text/html; charset=utf-8";
         if (lower.endsWith(".js")) return "application/javascript; charset=utf-8";

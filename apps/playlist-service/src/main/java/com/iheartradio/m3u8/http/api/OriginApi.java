@@ -31,8 +31,7 @@ public final class OriginApi implements HttpHandler {
         try {
             DemoHttp.requireHttpUrl(target);
         } catch (IllegalArgumentException e) {
-            DemoHttp.send(ex, 400, "application/json; charset=utf-8",
-                    "{\"error\":" + DemoHttp.jsonString(e.getMessage()) + "}");
+            DemoHttp.sendError(ex, 400, DemoHttp.errorText(e));
             return;
         }
         String range = DemoHttp.firstHeader(ex.getRequestHeaders(), "Range");
@@ -63,9 +62,7 @@ public final class OriginApi implements HttpHandler {
             }
             DemoHttp.streamRemote(ex, target, range);
         } catch (Exception e) {
-            DemoHttp.send(ex, 502, "application/json; charset=utf-8",
-                    "{\"error\":" + DemoHttp.jsonString("origin fetch failed: " + e.getMessage())
-                            + "}");
+            DemoHttp.sendError(ex, 502, "origin fetch failed: " + DemoHttp.errorText(e));
         }
     }
 }

@@ -27,7 +27,11 @@ public final class StaticApi implements HttpHandler {
             DemoHttp.send(ex, 405, "text/plain", "method not allowed");
             return;
         }
-        String path = ex.getRequestURI().getPath();
+        if (staticRoot == null) {
+            DemoHttp.send(ex, 404, "text/plain", "not found");
+            return;
+        }
+        String path = ex.getRequestURI() == null ? null : ex.getRequestURI().getPath();
         if (path != null && (path.startsWith("/api/") || path.startsWith("/s/")
                 || path.startsWith("/media/") || path.equals("/play") || path.startsWith("/play/"))) {
             DemoHttp.send(ex, 404, "text/plain", "not found");

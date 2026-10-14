@@ -29,6 +29,10 @@ public final class IngestApi implements HttpHandler {
             DemoHttp.sendCors(ex, 204, new byte[0], "application/json");
             return;
         }
+        if (ingest == null) {
+            DemoHttp.sendError(ex, 500, "ingest unavailable");
+            return;
+        }
         if ("GET".equalsIgnoreCase(ex.getRequestMethod())
                 || "HEAD".equalsIgnoreCase(ex.getRequestMethod())) {
             sendJob(ex);
@@ -44,6 +48,10 @@ public final class IngestApi implements HttpHandler {
         }
         try {
             IngestService.Result result = ingest.accept(ex);
+            if (result == null) {
+                DemoHttp.sendError(ex, 500, "ingest returned no result");
+                return;
+            }
             Title t = result.title;
             boolean dup = t != null && t.status == DemoJobStatus.DUPLICATE;
             DemoLog.event("ingest")
@@ -55,12 +63,10 @@ public final class IngestApi implements HttpHandler {
             DemoHttp.send(ex, dup ? 409 : 202, "application/json; charset=utf-8",
                     CatalogStore.write(Collections.singletonList(t)));
         } catch (IllegalArgumentException e) {
-            DemoHttp.send(ex, 400, "application/json; charset=utf-8",
-                    "{\"error\":" + DemoHttp.jsonString(e.getMessage()) + "}");
+            DemoHttp.sendError(ex, 400, DemoHttp.errorText(e));
         } catch (Exception e) {
-            e.printStackTrace();
-            DemoHttp.send(ex, 500, "application/json; charset=utf-8",
-                    "{\"error\":" + DemoHttp.jsonString(e.getMessage()) + "}");
+            DemoLog.event("error").put("evSrc", "ingest").put("msg", DemoHttp.errorText(e)).write();
+            DemoHttp.sendError(ex, 500, DemoHttp.errorText(e));
         }
     }
 
@@ -100,8 +106,7 @@ public final class IngestApi implements HttpHandler {
             sb.append('}');
             DemoHttp.send(ex, 200, "application/json; charset=utf-8", sb.toString());
         } catch (Exception e) {
-            DemoHttp.send(ex, 500, "application/json; charset=utf-8",
-                    "{\"error\":" + DemoHttp.jsonString(e.getMessage()) + "}");
+            DemoHttp.sendError(ex, 500, DemoHttp.errorText(e));
         }
     }
 
@@ -131,51 +136,63 @@ public final class IngestApi implements HttpHandler {
                             t != null && t.status != null ? t.status.wire : null)
                             + "}");
         } catch (IngestService.NotFoundException e) {
-            DemoHttp.send(ex, 404, "application/json; charset=utf-8",
-                    "{\"error\":" + DemoHttp.jsonString(e.getMessage()) + "}");
+            DemoHttp.sendError(ex, 404, DemoHttp.errorText(e));
         } catch (IngestService.DeleteBlockedException e) {
             StringBuilder sb = new StringBuilder("{\"error\":");
-            sb.append(DemoHttp.jsonString(e.getMessage()));
+            sb.append(DemoHttp.jsonString(DemoHttp.errorText(e)));
             sb.append(",\"usedBy\":[");
-            for (int i = 0; i < e.usedBy.size(); i++) {
-                if (i > 0) {
-                    sb.append(',');
+            int n = 0;
+            if (e.usedBy != null) {
+                for (int i = 0; i < e.usedBy.size(); i++) {
+                    if (e.usedBy.get(i) == null) {
+                        continue;
+                    }
+                    if (n > 0) {
+                        sb.append(',');
+                    }
+                    n++;
+                    sb.append(DemoHttp.jsonString(e.usedBy.get(i)));
                 }
-                sb.append(DemoHttp.jsonString(e.usedBy.get(i)));
             }
             sb.append("]}");
             DemoHttp.send(ex, 409, "application/json; charset=utf-8", sb.toString());
         } catch (IllegalArgumentException e) {
-            DemoHttp.send(ex, 400, "application/json; charset=utf-8",
-                    "{\"error\":" + DemoHttp.jsonString(e.getMessage()) + "}");
+            DemoHttp.sendError(ex, 400, DemoHttp.errorText(e));
         } catch (Exception e) {
-            e.printStackTrace();
-            DemoHttp.send(ex, 500, "application/json; charset=utf-8",
-                    "{\"error\":" + DemoHttp.jsonString(e.getMessage()) + "}");
+            DemoLog.event("error").put("evSrc", "ingest").put("msg", DemoHttp.errorText(e)).write();
+            DemoHttp.sendError(ex, 500, DemoHttp.errorText(e));
         }
     }
 
     private void deleteAllJobs(HttpExchange ex) throws IOException {
         try {
             List<Title> gone = ingest.deleteAll();
+            if (gone == null) {
+                gone = Collections.emptyList();
+            }
             DemoLog.event("ingest")
                     .put("status", "deleted-all")
                     .put("count", gone.size())
                     .write();
             StringBuilder sb = new StringBuilder();
             sb.append("{\"deleted\":true,\"count\":").append(gone.size()).append(",\"ids\":[");
+            int written = 0;
             for (int i = 0; i < gone.size(); i++) {
-                if (i > 0) {
+                Title row = gone.get(i);
+                if (row == null) {
+                    continue;
+                }
+                if (written > 0) {
                     sb.append(',');
                 }
-                sb.append(DemoHttp.jsonString(gone.get(i).id));
+                written++;
+                sb.append(DemoHttp.jsonString(row.id));
             }
             sb.append("]}");
             DemoHttp.send(ex, 200, "application/json; charset=utf-8", sb.toString());
         } catch (Exception e) {
-            e.printStackTrace();
-            DemoHttp.send(ex, 500, "application/json; charset=utf-8",
-                    "{\"error\":" + DemoHttp.jsonString(e.getMessage()) + "}");
+            DemoLog.event("error").put("evSrc", "ingest").put("msg", DemoHttp.errorText(e)).write();
+            DemoHttp.sendError(ex, 500, DemoHttp.errorText(e));
         }
     }
 }

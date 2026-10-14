@@ -48,7 +48,11 @@ public final class LogsApi implements HttpHandler {
                 before = -1L;
             }
         }
-        DemoHttp.send(ex, 200, "application/json; charset=utf-8",
-                DemoLog.pageJson(sid, event, limit, before));
+        try {
+            DemoHttp.send(ex, 200, "application/json; charset=utf-8",
+                    DemoLog.pageJson(sid, event, limit, before));
+        } catch (Exception e) {
+            DemoHttp.sendError(ex, 500, DemoHttp.errorText(e));
+        }
     }
 }

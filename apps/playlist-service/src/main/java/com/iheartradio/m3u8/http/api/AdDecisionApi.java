@@ -36,16 +36,19 @@ public final class AdDecisionApi implements HttpHandler {
             return;
         }
         String body = new String(DemoHttp.readAll(ex.getRequestBody()), StandardCharsets.UTF_8);
-        AdDecision.Request request;
         try {
-            request = AdDecision.Request.parse(body);
+            AdDecision.Request request = AdDecision.Request.parse(body);
+            String json = decision.decide(request, AdInventory.load(catalog),
+                    new MediaFileProbe(mediaRoot)).toJson();
+            if (json == null) {
+                DemoHttp.sendError(ex, 500, "empty decision");
+                return;
+            }
+            DemoHttp.send(ex, 200, "application/json; charset=utf-8", json);
         } catch (IllegalArgumentException e) {
-            DemoHttp.send(ex, 400, "application/json; charset=utf-8",
-                    "{\"error\":" + DemoHttp.jsonString(e.getMessage()) + "}");
-            return;
+            DemoHttp.sendError(ex, 400, DemoHttp.errorText(e));
+        } catch (Exception e) {
+            DemoHttp.sendError(ex, 500, DemoHttp.errorText(e));
         }
-        String json = decision.decide(request, AdInventory.load(catalog),
-                new MediaFileProbe(mediaRoot)).toJson();
-        DemoHttp.send(ex, 200, "application/json; charset=utf-8", json);
     }
 }
