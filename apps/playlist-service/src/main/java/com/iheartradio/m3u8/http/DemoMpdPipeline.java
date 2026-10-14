@@ -293,6 +293,9 @@ public final class DemoMpdPipeline {
         if (session.breaks.isEmpty()) {
             return events;
         }
+        if (picker != null) {
+            picker.skipMissingPins(session);
+        }
         int i = 0;
         for (DemoSession.Break br : session.breaks) {
             i++;
@@ -351,6 +354,9 @@ public final class DemoMpdPipeline {
         List<MpdSsaiUtil.AdBreak> out = new ArrayList<MpdSsaiUtil.AdBreak>();
         if (session.breaks.isEmpty()) {
             return out;
+        }
+        if (picker != null) {
+            picker.skipMissingPins(session);
         }
         int i = 0;
         for (DemoSession.Break br : session.breaks) {
